@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Church League Scoreboard</title><link rel="stylesheet" href="/admin.css"></head>
+<body>
+  <main class="wrap">
+    <h1>🏀 Church League Scoreboard</h1>
+    <p class="muted">Pick a court. TV and overlay links are public (read-only); the scorekeeper link asks for the court PIN.</p>
+    <table class="tbl"><thead><tr><th>Court</th><th>TV</th><th>Scorekeeper</th><th>OBS overlay</th></tr></thead><tbody id="courts"></tbody></table>
+    <p><a href="/admin">Admin →</a></p>
+  </main>
+  <script>
+    fetch('/api/public/courts').then(r => r.json()).then(cs => {
+      document.getElementById('courts').innerHTML = cs.map(c => {
+        const s = encodeURIComponent(c.slug);
+        return `<tr><td>${c.name.replace(/</g,'&lt;')}</td><td><a href="/tv/${s}">/tv/${s}</a></td><td><a href="/score/${s}">/score/${s}</a></td><td><a href="/overlay/${s}">/overlay/${s}</a></td></tr>`;
+      }).join('');
+    });
+  </script>
+</body>
+</html>

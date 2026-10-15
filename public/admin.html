@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · Church League Scoreboard</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <form id="login" class="wrap narrow" hidden>
+    <h1>🏀 Admin login</h1>
+    <input type="password" id="password" placeholder="Admin password" required autofocus>
+    <button class="primary">Log in</button>
+    <p class="err" id="login-err"></p>
+  </form>
+
+  <div id="app" class="wrap" hidden>
+    <header class="bar">
+      <h1>🏀 League Admin</h1>
+      <nav>
+        <a href="#today" class="tab">Today</a><a href="#teams" class="tab">Teams</a><a href="#courts" class="tab">Courts</a>
+        <a href="#schedule" class="tab">Schedule</a><a href="#data" class="tab">Import / Export</a>
+        <button id="logout" class="link">Log out</button>
+      </nav>
+    </header>
+    <p class="msg" id="msg"></p>
+
+    <section id="today" class="view">
+      <h2>Today's courts</h2>
+      <div id="court-cards" class="cards"></div>
+      <h2>Games</h2>
+      <table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="today-games"></tbody></table>
+    </section>
+
+    <section id="teams" class="view">
+      <h2>Teams</h2>
+      <form id="team-form" class="card form">
+        <input type="hidden" name="id">
+        <label>Name <input name="name" required maxlength="30"></label>
+        <label>Short (3–4) <input name="short_name" maxlength="4"></label>
+        <label>Primary color <input type="color" name="primary_color" value="#7a1020"></label>
+        <label>Accent color <input type="color" name="secondary_color" value="#f2b705"></label>
+        <label>Logo URL <input name="logo_url" placeholder="https://… (optional)"></label>
+        <label>…or upload logo <input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"></label>
+        <div class="actions"><button class="primary" id="team-save">Add team</button><button type="reset" class="link">Clear</button></div>
+      </form>
+      <table class="tbl"><thead><tr><th></th><th>Name</th><th>Short</th><th>Colors</th><th></th></tr></thead><tbody id="team-rows"></tbody></table>
+    </section>
+
+    <section id="courts" class="view">
+      <h2>Courts</h2>
+      <form id="court-form" class="card form">
+        <label>Name <input name="name" required placeholder="Court 3"></label>
+        <label>Location <input name="location" placeholder="Gym B"></label>
+        <div class="actions"><button class="primary">Add court</button></div>
+      </form>
+      <p class="muted">Scorekeeper PINs come from the <code>COURT_PINS</code> env var (e.g. <code>court-3:3333</code>). Restart after changing it.</p>
+      <table class="tbl"><thead><tr><th>Name</th><th>Slug</th><th>PIN set?</th><th>Links</th><th></th></tr></thead><tbody id="court-rows"></tbody></table>
+    </section>
+
+    <section id="schedule" class="view">
+      <h2>Schedule a game</h2>
+      <form id="game-form" class="card form">
+        <label>Court <select name="court_id" required></select></label>
+        <label>When <input type="datetime-local" name="scheduled_at"></label>
+        <label>Division <input name="division" placeholder="5th–6th Grade"></label>
+        <label>Home <select name="home_team_id" required></select></label>
+        <label>Away <select name="away_team_id" required></select></label>
+        <details class="full"><summary>Matchup overrides (alternate jerseys, display names)</summary>
+          <div class="form">
+            <label>Home display name <input name="homeName"></label>
+            <label>Home color <input type="color" name="homeColor" data-optional></label>
+            <label>Away display name <input name="awayName"></label>
+            <label>Away color <input type="color" name="awayColor" data-optional></label>
+            <p class="muted full">Colors only apply if you change them (tick ✔ means used): <label class="inline"><input type="checkbox" name="useHomeColor"> home</label> <label class="inline"><input type="checkbox" name="useAwayColor"> away</label></p>
+          </div>
+        </details>
+        <div class="actions"><button class="primary">Add game</button></div>
+      </form>
+      <h2>All games</h2>
+      <table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="game-rows"></tbody></table>
+    </section>
+
+    <section id="data" class="view">
+      <h2>Import / Export (Google Sheets compatible CSV)</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>Teams</h3>
+          <p class="muted">Columns: <code>name, short_name, primary_color, secondary_color, logo_url</code>. Existing names are updated.</p>
+          <p><a class="button" href="/api/export/teams.csv">Export teams.csv</a></p>
+          <input type="file" id="import-teams" accept=".csv,text/csv">
+        </div>
+        <div class="card">
+          <h3>Schedule</h3>
+          <p class="muted">Columns: <code>date (YYYY-MM-DD), time (HH:MM), court, division, home, away</code>. Export adds scores and status.</p>
+          <p><a class="button" href="/api/export/schedule.csv">Export schedule.csv</a></p>
+          <input type="file" id="import-schedule" accept=".csv,text/csv">
+        </div>
+      </div>
+      <p class="muted">In Google Sheets: File → Download → CSV to import here; File → Import → Upload to load an export.</p>
+    </section>
+  </div>
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>

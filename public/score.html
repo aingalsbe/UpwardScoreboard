@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#0f1320">
+  <title>Scorekeeper</title>
+  <link rel="stylesheet" href="/score.css">
+</head>
+<body>
+  <!-- PIN gate -->
+  <form id="pin-gate" class="pin-gate" hidden>
+    <h1>🏀 Scorekeeper</h1>
+    <p data-bind="court"></p>
+    <input id="pin" inputmode="numeric" autocomplete="one-time-code" placeholder="Court PIN" maxlength="12" required>
+    <button class="btn go" type="submit">Unlock</button>
+    <p class="err" id="pin-err"></p>
+  </form>
+
+  <div id="app" class="app" hidden>
+    <header class="hdr">
+      <div class="title">🏀 <span data-bind="title"></span></div>
+      <div class="pills">
+        <span class="pill conn" data-bind="connText"></span>
+        <span class="pill tv" data-bind="tvText"></span>
+        <span class="pill warn" id="pending" hidden></span>
+      </div>
+    </header>
+
+    <div class="no-game-msg">No game is running on this court yet. Ask the admin to press <b>Start</b> on a game.</div>
+
+    <main class="grid">
+      <section class="panel mid">
+        <div class="clock" data-clock>--:--</div>
+        <button class="btn go" id="clock-toggle" data-cmd='{"type":"CLOCK_START"}'>▶ START CLOCK</button>
+        <div class="row">
+          <button class="btn sm" data-cmd='{"type":"CLOCK_ADJUST","ms":-1000}'>−1 s</button>
+          <button class="btn sm" data-cmd='{"type":"CLOCK_ADJUST","ms":1000}'>+1 s</button>
+        </div>
+        <button class="btn sm" id="set-clock">Set clock…</button>
+        <div class="per">Period <b data-bind="period"></b> of <span data-bind="periods"></span></div>
+        <div class="row">
+          <button class="btn sm" data-cmd='{"type":"PERIOD","delta":-1}'>◀ Prev</button>
+          <button class="btn sm" data-cmd='{"type":"PERIOD","delta":1}'>Next ▶</button>
+        </div>
+        <button class="btn sm" data-cmd='{"type":"POSSESSION","team":"toggle"}'>Possession ⇄<small data-bind="possText"></small></button>
+      </section>
+
+      <section class="panel team home">
+        <div class="tn"><span class="sw" data-bind="home.short"></span><span data-bind="home.name"></span><em>HOME</em></div>
+        <div class="sc" data-bind="home.score"></div>
+        <div class="pts">
+          <button class="btn pt" data-cmd='{"type":"SCORE","team":"home","pts":1}'>+1</button>
+          <button class="btn pt" data-cmd='{"type":"SCORE","team":"home","pts":2}'>+2</button>
+          <button class="btn pt" data-cmd='{"type":"SCORE","team":"home","pts":3}'>+3</button>
+        </div>
+        <div class="small">
+          <button class="btn sm" data-cmd='{"type":"FOUL","team":"home","delta":1}'>+ Foul<small data-bind="home.foulText"></small></button>
+          <button class="btn sm" data-cmd='{"type":"TIMEOUT","team":"home","delta":-1}'>Timeout<small data-bind="home.toText"></small></button>
+          <button class="btn sm" data-cmd='{"type":"SCORE","team":"home","pts":-1}'>−1 point</button>
+          <button class="btn sm" data-cmd='{"type":"FOUL","team":"home","delta":-1}'>− Foul</button>
+        </div>
+      </section>
+
+      <section class="panel team away">
+        <div class="tn"><span class="sw" data-bind="away.short"></span><span data-bind="away.name"></span><em>AWAY</em></div>
+        <div class="sc" data-bind="away.score"></div>
+        <div class="pts">
+          <button class="btn pt" data-cmd='{"type":"SCORE","team":"away","pts":1}'>+1</button>
+          <button class="btn pt" data-cmd='{"type":"SCORE","team":"away","pts":2}'>+2</button>
+          <button class="btn pt" data-cmd='{"type":"SCORE","team":"away","pts":3}'>+3</button>
+        </div>
+        <div class="small">
+          <button class="btn sm" data-cmd='{"type":"FOUL","team":"away","delta":1}'>+ Foul<small data-bind="away.foulText"></small></button>
+          <button class="btn sm" data-cmd='{"type":"TIMEOUT","team":"away","delta":-1}'>Timeout<small data-bind="away.toText"></small></button>
+          <button class="btn sm" data-cmd='{"type":"SCORE","team":"away","pts":-1}'>−1 point</button>
+          <button class="btn sm" data-cmd='{"type":"FOUL","team":"away","delta":-1}'>− Foul</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <button class="btn sm undo" id="undo">↶ Undo<small data-bind="undoText"></small></button>
+      <button class="btn sm" id="redo">↷ Redo</button>
+      <button class="btn sm" id="banner">Show "Halftime"</button>
+      <button class="btn sm" id="end">End game &amp; save</button>
+    </footer>
+  </div>
+  <script type="module" src="/score.js"></script>
+</body>
+</html>

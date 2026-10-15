@@ -1,0 +1,50 @@
+/* Scorekeeper controller look (owned by Sage). Mobile-first; 3 columns on tablets.
+   Follows scorekeeper-controller-mockup.png. Logic sets --home-color etc. and classes
+   no-game, is-final, tv-off, two-controllers, data-conn on <html>. */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { --home-color: #7a1020; --home-accent: #f2b705; --away-color: #0d2c6b; --away-accent: #4fc3f7; }
+body { background: #0f1320; color: #fff; font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; padding: 12px; min-height: 100vh; user-select: none; }
+button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action: manipulation; }
+.btn { border-radius: 14px; background: #262d45; font-weight: 700; padding: 14px 6px; text-align: center; min-height: 56px; transition: transform .05s, filter .1s; }
+.btn:active { transform: scale(.96); filter: brightness(1.3); }
+.btn:disabled { opacity: .35; }
+.btn small { display: block; font-size: 13px; opacity: .65; font-weight: 400; margin-top: 3px; min-height: 1em; }
+.btn.go { background: #1f9d4c; font-size: 26px; font-weight: 900; padding: 18px 0; }
+.btn.go.stop { background: #c0392b; }
+.btn.pt { font-size: 32px; font-weight: 900; padding: 18px 0; min-height: 76px; }
+.home .btn.pt { background: var(--home-color); } .away .btn.pt { background: var(--away-color); }
+.btn.undo { background: #5a2330; }
+.hdr { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.title { font-size: 17px; font-weight: 700; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { font-size: 13px; padding: 5px 10px; border-radius: 20px; background: #173d22; color: #5be37d; border: 1px solid #2c6b3c; }
+[data-conn="offline"] .pill.conn, [data-conn="connecting"] .pill.conn, .tv-off .pill.tv, .pill.warn { background: #3a3010; color: #ffd24d; border-color: #6b5a1f; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.panel { background: #171c2e; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.team { border-top: 10px solid; }
+.home { border-color: var(--home-accent); } .away { border-color: var(--away-accent); }
+.tn { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 900; text-transform: uppercase; }
+.tn em { margin-left: auto; font-size: 13px; opacity: .6; font-style: normal; }
+.sw { width: 40px; height: 40px; border-radius: 50%; border: 3px solid #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.home .sw { background: var(--home-color); color: var(--home-accent); } .away .sw { background: var(--away-color); color: var(--away-accent); }
+.sc { font-size: 84px; font-weight: 900; text-align: center; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.pts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.small, .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.clock { font-family: "DejaVu Sans Mono", monospace; font-size: 64px; font-weight: 900; color: #ff3b30; background: #000; text-align: center; border-radius: 12px; padding: 4px 0; font-variant-numeric: tabular-nums; }
+.per { font-size: 20px; text-align: center; opacity: .85; } .per b { font-size: 32px; }
+.foot { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.no-game-msg { display: none; background: #3a3010; color: #ffd24d; border-radius: 12px; padding: 16px; margin-bottom: 12px; font-size: 18px; }
+.no-game .no-game-msg { display: block; }
+.no-game .grid, .no-game .foot { opacity: .3; pointer-events: none; }
+.is-final .grid { opacity: .6; }
+.pin-gate { max-width: 360px; margin: 15vh auto; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.pin-gate input { font-size: 32px; text-align: center; padding: 14px; border-radius: 12px; border: 2px solid #333a55; background: #171c2e; color: #fff; letter-spacing: 8px; }
+.err { color: #ff6b6b; min-height: 1em; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #c0392b; padding: 12px 18px; border-radius: 10px; font-weight: 700; z-index: 10; }
+/* Tablet landscape: team | clock | team, like the mockup */
+@media (min-width: 900px) {
+  .grid { grid-template-columns: 1fr 330px 1fr; }
+  .mid { order: 2; } .home { order: 1; } .away { order: 3; }
+  .foot { grid-template-columns: repeat(4, 1fr); }
+  .sc { font-size: 110px; }
+}

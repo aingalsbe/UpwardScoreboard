@@ -1,0 +1,31 @@
+# Local dev / POC: `docker compose up --build`. On a managed host you run only the
+# `app` image and point DATABASE_URL at the host's managed Postgres.
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      PGTZ: ${TZ:-Europe/Paris}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: scoreboard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scoreboard-dev}
+      POSTGRES_DB: scoreboard
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # teams, games, event log AND uploaded logos (bytea)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scoreboard"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  pgdata:
