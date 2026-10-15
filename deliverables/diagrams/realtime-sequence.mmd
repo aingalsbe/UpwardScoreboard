@@ -1,0 +1,25 @@
+sequenceDiagram
+  autonumber
+  participant SK as Scorekeeper (controller)
+  participant S as App server (authoritative)
+  participant DB as Postgres
+  participant TV as TV display
+  SK->>S: connect /ws?court=court-1&role=score + auth PIN
+  TV->>S: connect /ws?court=court-1&role=tv
+  S-->>SK: full snapshot (state, seq=41, serverNow)
+  S-->>TV: full snapshot (state, seq=41, serverNow)
+  Note over SK,TV: Clients estimate the server clock offset from ping/pong.<br/>Clock shown = remainingMs - (serverNow - startedAt)
+  SK->>S: cmd {id:"a1", type:SCORE, team:home, pts:2}
+  S->>S: queue per game, validate, reducer gives seq=42
+  S->>DB: save history + append game_event(seq 42)
+  S-->>SK: ack {id:"a1", seq:42}
+  S-->>TV: snapshot seq=42 (home +2)
+  Note over TV: Wi-Fi drops - TV goes offline
+  SK->>S: cmd {id:"a2", FOUL away}, applied as seq=43
+  SK->>S: retry cmd {id:"a2"} after network blip
+  S-->>SK: ack {id:"a2", seq:43, dup:true} (not applied twice)
+  TV->>S: reconnect (backoff 0.5s to 8s)
+  S-->>TV: full snapshot seq=43 = exact current state
+  Note over SK,S: A second controller on the same court:<br/>its commands join the same queue in arrival order
+  SK->>S: undo {id:"u1"}
+  S-->>TV: snapshot seq=44 (foul removed, clock untouched)

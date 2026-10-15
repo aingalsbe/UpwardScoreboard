@@ -1,0 +1,46 @@
+erDiagram
+  TEAMS ||--o{ GAMES : "home team"
+  TEAMS ||--o{ GAMES : "away team"
+  COURTS ||--o{ GAMES : "hosts"
+  COURTS |o--o| GAMES : "current game"
+  GAMES ||--o{ GAME_EVENTS : "logs"
+  TEAMS {
+    int id PK
+    text name UK
+    text short_name
+    text primary_color
+    text secondary_color
+    text logo_url
+    bytea logo_data
+    text logo_mime
+  }
+  COURTS {
+    int id PK
+    text slug UK
+    text name
+    text location
+    int current_game_id FK
+  }
+  GAMES {
+    int id PK
+    int court_id FK
+    int home_team_id FK
+    int away_team_id FK
+    timestamptz scheduled_at
+    text division
+    text status
+    jsonb theme
+    jsonb rules
+    jsonb history
+    int final_home
+    int final_away
+  }
+  GAME_EVENTS {
+    bigint id PK
+    int game_id FK
+    int seq
+    text client_cmd_id
+    text actor
+    jsonb command
+    timestamptz created_at
+  }

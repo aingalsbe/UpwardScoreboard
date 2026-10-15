@@ -1,0 +1,27 @@
+flowchart LR
+  subgraph Gym["Gym (per court) - no local server"]
+    SK["Scorekeeper phone/tablet<br/>/score/court-1<br/>(PIN)"]
+    TV["TV device browser<br/>/tv/court-1<br/>(read-only)"]
+    OBS["OBS laptop (optional)<br/>/overlay/court-1<br/>transparent scorebug"]
+  end
+  AD["Admin browser<br/>/admin (password)"]
+  subgraph Cloud["Managed host (e.g. Render) - HTTPS"]
+    subgraph App["UpwardScoreboard app container (Node 20 + TypeScript)"]
+      ST["Static pages<br/>HTML/CSS/JS"]
+      WS["WebSocket /ws<br/>per-court rooms"]
+      API["REST /api/*<br/>teams, courts, games, CSV"]
+      RED["Per-game queue<br/>+ game reducer"]
+    end
+    PG[("Managed Postgres<br/>teams, courts, games,<br/>game_events, logos")]
+  end
+  YT["YouTube / Facebook Live<br/>(future)"]
+  SK -- "commands" --> WS
+  WS -- "state snapshots" --> SK
+  WS -- "state snapshots" --> TV
+  WS -- "state snapshots" --> OBS
+  AD -- "REST + cookie" --> API
+  WS --> RED
+  API --> RED
+  RED --> PG
+  API --> PG
+  OBS -. "RTMP stream" .-> YT
