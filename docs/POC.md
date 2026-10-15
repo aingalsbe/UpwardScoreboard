@@ -1,4 +1,4 @@
-# Church League Scoreboard: POC features
+# UpwardScoreboard: POC features
 
 Status key: ✅ built in the POC · 🟡 partial · ⏭ next step (documented, not built)
 
@@ -64,7 +64,8 @@ Recommendation: pilot with **A on the TV only**. Add B once a volunteer owns OBS
 | Courts: add/delete, PIN status | ✅ | PINs come from the `COURT_PINS` env. |
 | Schedule: add games (court, time, division, home/away), delete | ✅ | |
 | Per-matchup overrides: display names and colors (alternate jerseys) | ✅ | Stored in `games.theme`. Logo override is supported by the API, not the form. |
-| CSV import/export for teams and schedule in Google-Sheets-friendly columns | ✅ | Teams upsert by name. Schedule import reports bad rows. Export includes scores and status. Formula-injection safe. |
+| CSV import/export for teams, courts and schedule in Google-Sheets-friendly columns | ✅ | Teams upsert by name; courts upsert by slug; schedule rows are added (bad rows reported, unknown court slugs auto-created, unknown teams rejected). Export adds scores and status. Formula-injection safe. Templates: `deliverables/sheets-templates/`. Import order: courts → teams → schedule. |
+| League time zone | ✅ | `TZ` (default `America/Chicago`, Kansas City area). Used for CSV times, the "up next" ticker and admin display, regardless of the viewer's device time zone. |
 | Game event log (`GET /api/games/:id/events`) | ✅ (API) | Audit of every change, with actor. |
 | Real Google Sheets sync | ⏭ | Use the Sheets API v4 with a service account shared on the league sheet. "Pull schedule" reads `Schedule!A:F` (`spreadsheets.values.get`) through the same import code. "Push results" writes scores back (`values.update`). Optional nightly cron. |
 | Users & roles | 🟡 | POC: **admin** = password, **scorekeeper** = per-court PIN, **public viewer** = TV/overlay with no login (read-only, enforced server-side). Next: a `users` table with Google sign-in (OIDC) for admins, and PINs/QR codes generated per game day from the admin UI instead of env. |

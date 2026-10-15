@@ -1,4 +1,4 @@
-# Church League Scoreboard (POC)
+# UpwardScoreboard (POC)
 
 Live youth-basketball scoreboard for the church league: a scorekeeper on the bench taps big buttons on a phone/tablet, and the score shows instantly on the gym TV (and an optional OBS stream overlay), with team names, colors and logos per matchup.
 
@@ -58,7 +58,15 @@ UI look and feel (Sage) lives only in `public/*.css` and the markup in `public/*
 
 ## Environment
 
-See `.env.example`. Never commit `.env`.
+See `.env.example`. Never commit `.env`. `TZ` defaults to `America/Chicago` (league in the Kansas City area) and controls CSV times, the ticker and admin times.
+
+## CSV / Google Sheets
+
+Templates are in `deliverables/sheets-templates/` (also `samples/`): `courts.csv` (`slug,name,location`), `teams.csv` (`name,short_name,primary_color,secondary_color,logo_url`), `schedule.csv` (`date,time,court,division,home,away`). Import in Admin → Import / Export in the order courts → teams → schedule. Endpoints: `GET /api/export/{courts,teams,schedule}.csv`, `POST /api/import/{courts,teams,schedule}.csv` (admin).
+
+## Deliverables
+
+`deliverables/` is the upload folder: `UpwardScoreboard-POC.md` (main doc), mockups, screenshots, diagrams (PNG + .mmd) and Sheets templates.
 
 ## Box note
 

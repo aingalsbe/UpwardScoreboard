@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin · Church League Scoreboard</title>
+  <title>Admin · UpwardScoreboard</title>
   <link rel="stylesheet" href="/admin.css">
 </head>
 <body>
   <form id="login" class="wrap narrow" hidden>
-    <h1>🏀 Admin login</h1>
+    <h1>🏀 UpwardScoreboard Admin</h1>
     <input type="password" id="password" placeholder="Admin password" required autofocus>
     <button class="primary">Log in</button>
     <p class="err" id="login-err"></p>
@@ -16,7 +16,7 @@
 
   <div id="app" class="wrap" hidden>
     <header class="bar">
-      <h1>🏀 League Admin</h1>
+      <h1>🏀 UpwardScoreboard · Admin</h1>
       <nav>
         <a href="#today" class="tab">Today</a><a href="#teams" class="tab">Teams</a><a href="#courts" class="tab">Courts</a>
         <a href="#schedule" class="tab">Schedule</a><a href="#data" class="tab">Import / Export</a>
@@ -62,7 +62,7 @@
       <h2>Schedule a game</h2>
       <form id="game-form" class="card form">
         <label>Court <select name="court_id" required></select></label>
-        <label>When <input type="datetime-local" name="scheduled_at"></label>
+        <label>When (league time) <input type="datetime-local" name="scheduled_at"></label>
         <label>Division <input name="division" placeholder="5th–6th Grade"></label>
         <label>Home <select name="home_team_id" required></select></label>
         <label>Away <select name="away_team_id" required></select></label>
@@ -91,8 +91,14 @@
           <input type="file" id="import-teams" accept=".csv,text/csv">
         </div>
         <div class="card">
+          <h3>Courts</h3>
+          <p class="muted">Columns: <code>slug, name, location</code>. Upserted by slug. Import courts before the schedule; scorekeeper PINs stay in <code>COURT_PINS</code>.</p>
+          <p><a class="button" href="/api/export/courts.csv">Export courts.csv</a></p>
+          <input type="file" id="import-courts" accept=".csv,text/csv">
+        </div>
+        <div class="card">
           <h3>Schedule</h3>
-          <p class="muted">Columns: <code>date (YYYY-MM-DD), time (HH:MM), court, division, home, away</code>. Export adds scores and status.</p>
+          <p class="muted">Columns: <code>date (YYYY-MM-DD), time (HH:MM), court (slug), division, home, away</code>. Times are league-local (TZ). Unknown court slugs are auto-created; unknown teams are rejected. Export adds home_score, away_score, status (ignored on import).</p>
           <p><a class="button" href="/api/export/schedule.csv">Export schedule.csv</a></p>
           <input type="file" id="import-schedule" accept=".csv,text/csv">
         </div>

@@ -142,6 +142,12 @@ ok(simp.body.created === 1 && simp.body.errors.length === 1, `schedule.csv impor
 const scsv = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
 ok(/2026-10-24,09:30,court-2,3rd-4th Grade,Crusaders,Eagles/.test(scsv), 'schedule.csv export round-trips the import');
 
+const cimp = await api('/api/import/courts.csv', { method: 'POST', body: 'slug,name,location\ncourt-9,Court 9,Annex\n' });
+ok(cimp.body.upserted === 1 && cimp.body.errors.length === 0, 'courts.csv imported (upsert by slug)');
+const ccsv = await fetch(BASE + '/api/export/courts.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
+ok(ccsv.startsWith('slug,name,location') && /court-9,Court 9,Annex/.test(ccsv), 'courts.csv export round-trips');
+await api(`/api/courts/${(await api('/api/courts')).body.find((c) => c.slug === 'court-9').id}`, { method: 'DELETE' });
+
 for (const c of [tv1b, tv2, sk1b, sk1c, sk2]) c.ws.close();
 console.log(`\nSmoke result: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

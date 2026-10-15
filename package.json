@@ -1,8 +1,8 @@
 {
-  "name": "church-scoreboard",
+  "name": "upward-scoreboard",
   "version": "0.1.0",
   "private": true,
-  "description": "Church League Scoreboard POC: Score (bench controller), Display (TV + overlay), Admin",
+  "description": "UpwardScoreboard POC: Score (bench controller), Display (TV + overlay), Admin",
   "type": "module",
   "main": "dist/src/server.js",
   "scripts": {

@@ -1,4 +1,4 @@
-// Church League Scoreboard: one Node process serves the web UI, REST API and
+// UpwardScoreboard: one Node process serves the web UI, REST API and
 // WebSocket realtime channel. Postgres is the only other moving part.
 import http from 'node:http';
 import fs from 'node:fs';
@@ -15,7 +15,7 @@ import {
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const LEAGUE_NAME = process.env.LEAGUE_NAME || 'Church League';
+const LEAGUE_NAME = process.env.LEAGUE_NAME || 'UpwardScoreboard';
 const COURT_PINS = new Map(
   (process.env.COURT_PINS || '').split(',').map((p) => p.trim().split(':')).filter((p) => p.length === 2) as [string, string][],
 );
@@ -319,7 +319,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   }
   // ---- everything below needs the admin session
   if (!validToken(tokenFrom(req))) return json(res, 401, { error: 'admin login required' });
-  if (p === '/api/me') return json(res, 200, { role: 'admin' });
+  if (p === '/api/me') return json(res, 200, { role: 'admin', tz: process.env.TZ || 'UTC' });
 
   if (seg[1] === 'teams') {
     const id = seg[2] ? Number(seg[2]) : undefined;
@@ -400,6 +400,25 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     }
     await refreshAllCourts(); return json(res, 200, { upserted: n, errors });
   }
+  if (p === '/api/export/courts.csv') {
+    const { rows } = await pool.query('SELECT slug, name, location FROM courts ORDER BY id');
+    return csvOut(res, 'courts.csv', toCsv(['slug', 'name', 'location'], rows));
+  }
+  if (p === '/api/import/courts.csv' && m === 'POST') {
+    // Upsert by slug (slug is what URLs, PINs and schedule.csv "court" refer to).
+    const rows = parseCsv(await readBody(req)); let n = 0; const errors: string[] = [];
+    for (const [i, r] of rows.entries()) {
+      try {
+        const name = (r.name || '').trim();
+        const slug = (r.slug || name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        if (!slug || !name) throw new Error('slug/name required');
+        await pool.query(`INSERT INTO courts(slug, name, location) VALUES ($1,$2,$3)
+          ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name, location=EXCLUDED.location`, [slug, name, r.location || null]);
+        n++;
+      } catch (e: any) { errors.push(`row ${i + 2}: ${e.message}`); }
+    }
+    await refreshAllCourts(); return json(res, 200, { upserted: n, errors });
+  }
   if (p === '/api/import/schedule.csv' && m === 'POST') { const r = await importSchedule(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   json(res, 404, { error: 'not found' });
 }
@@ -444,7 +463,7 @@ const server = http.createServer(async (req, res) => {
     fs.createReadStream(full).pipe(res);
   } catch (e: any) {
     const msg = String(e?.message || e);
-    const code = /duplicate key/.test(msg) ? 409 : /required|must|pick|larger|assign|JSON|too large|unknown/.test(msg) ? 400 : 500;
+    const code = /duplicate key/.test(msg) ? 409 : /foreign key/.test(msg) ? 400 : /required|must|pick|larger|assign|JSON|too large|unknown/.test(msg) ? 400 : 500;
     if (code === 500) console.error(e);
     if (!res.headersSent) json(res, code, { error: code === 500 ? 'server error' : msg });
     else res.end();

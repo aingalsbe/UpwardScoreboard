@@ -7,8 +7,7 @@ services:
       - "3000:3000"
     env_file: .env
     environment:
-      TZ: ${TZ:-Europe/Paris}
-      PGTZ: ${TZ:-Europe/Paris}
+      TZ: ${TZ:-America/Chicago}
     depends_on:
       db:
         condition: service_healthy

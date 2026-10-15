@@ -2,6 +2,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let teams = [], courts = [], games = [];
+let leagueTz; // all times shown in the league time zone (server TZ), not the viewer's
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: 'same-origin', ...opts, headers: { 'content-type': 'application/json', ...(opts.headers || {}) } });
@@ -18,7 +19,7 @@ $('#login').addEventListener('submit', guard(async (e) => {
   e.preventDefault();
   try { await api('/api/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) }); }
   catch (err) { $('#login-err').textContent = err.message; return; }
-  $('#login').hidden = true; boot();
+  $('#login').hidden = true; leagueTz = (await api('/api/me')).tz; boot();
 }));
 $('#logout').addEventListener('click', async () => { await fetch('/api/logout'); showLogin(); });
 
@@ -29,7 +30,7 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
-const when = (iso) => (iso ? new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+const when = (iso) => (iso ? new Date(iso).toLocaleString([], { timeZone: leagueTz, weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const swatch = (t) => `<span class="swatch" style="background:${esc(t.primary_color)};border-color:${esc(t.secondary_color)}"></span>`;
 
 async function load() {
@@ -106,11 +107,11 @@ $('#game-form').addEventListener('submit', guard(async (e) => {
   if (f.elements.useAwayColor.checked) theme.awayColor = f.elements.awayColor.value;
   await api('/api/games', { method: 'POST', body: JSON.stringify({
     court_id: Number(f.elements.court_id.value), home_team_id: Number(f.elements.home_team_id.value), away_team_id: Number(f.elements.away_team_id.value),
-    scheduled_at: f.elements.scheduled_at.value ? new Date(f.elements.scheduled_at.value).toISOString() : null, division: f.elements.division.value, theme }) });
+    scheduled_at: f.elements.scheduled_at.value || null /* naive local time, interpreted in league TZ by Postgres */, division: f.elements.division.value, theme }) });
   f.reset(); msg('Game added'); await load();
 }));
 
-for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-schedule', '/api/import/schedule.csv']]) {
+for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-courts', '/api/import/courts.csv'], ['#import-schedule', '/api/import/schedule.csv']]) {
   $(id).addEventListener('change', guard(async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const r = await api(path, { method: 'POST', body: await file.text(), headers: { 'content-type': 'text/csv' } });
@@ -120,4 +121,4 @@ for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-
 }
 
 async function boot() { $('#app').hidden = false; route(); await load(); setInterval(() => !document.hidden && load().catch(() => {}), 10000); }
-api('/api/me').then(boot).catch(() => {});
+api('/api/me').then((me) => { leagueTz = me.tz; boot(); }).catch(() => {});

@@ -46,6 +46,10 @@ Next: `seasons`, `divisions`, `users(id, email, role)`, `court_pins(court_id, pi
 - **Undo/redo** are full snapshots (100 deep, persisted in `games.history`, so they survive a restart). Undoing a non-clock change keeps the live clock.
 - **Scale.** One process holds the per-game queues, which is plenty for a league (a handful of courts, dozens of viewers). Running more than one instance would need Postgres `LISTEN/NOTIFY` or row locks. That's documented, not built.
 
+**Time zone.** The container `TZ` (default `America/Chicago`) is the league time zone. The Postgres session uses it, so naive CSV/admin times like `2026-10-24 09:00` are stored as Kansas City time, and exports, the ticker and the admin list show league time. The image includes `tzdata`.
+
+Diagrams: `deliverables/diagrams/architecture.png`, `realtime-sequence.png`, `er-data-model.png` (mermaid sources alongside).
+
 ## Auth
 
 POC: `ADMIN_PASSWORD` gives an HMAC-signed, HttpOnly, SameSite=Strict cookie (12 h). Each court's `COURT_PINS` entry unlocks scoring on that court's WebSocket only. TV and overlay connections are read-only, and the server rejects their commands. Comparisons are constant-time.
@@ -61,5 +65,5 @@ All three options run the same `Dockerfile` (1 web service) plus managed Postgre
 | **DigitalOcean App Platform** | Shared fixed 1 vCPU / 512 MiB **$5/mo** | "Development Database" 512 MiB **$7/mo** | **≈ $12/mo** | Cheapest, but the dev database is **not backed up by default** and is deleted with the app. A real managed Postgres cluster costs more (*estimate ~$15/mo, not verified on this page*), making it ≈ $20. | https://www.digitalocean.com/pricing/app-platform |
 | **Fly.io** | `shared-cpu-1x` 512 MB **$3.69/mo** | Managed Postgres Basic **$38/mo** + $0.28/GB | **≈ $42/mo** | Great CLI (`fly deploy`), but managed Postgres dominates the cost. Self-run "Fly Postgres" (~$2/mo) is marked unsupported, so it's not recommended for volunteers. No free tier. | https://fly.io/docs/about/pricing/ |
 
-**Recommendation: Render**, about $13/mo (~$156/yr). It's the right balance of price, backups and a volunteer-friendly dashboard. Deploy steps (on paper): create a Render Postgres, create a Web Service from the repo (Docker), set the env vars (`DATABASE_URL` = internal URL, `ADMIN_PASSWORD`, `SESSION_SECRET`, `COURT_PINS`, `TZ`, `SEED=false`), and set the health check to `/api/health`. A `render.yaml` blueprint can make this one click later.
+**Recommendation: Render**, about $13/mo (~$156/yr). It's the right balance of price, backups and a volunteer-friendly dashboard. Deploy steps (on paper): create a Render Postgres, create a Web Service from the repo (Docker), set the env vars (`DATABASE_URL` = internal URL, `ADMIN_PASSWORD`, `SESSION_SECRET`, `COURT_PINS`, `TZ=America/Chicago`, `SEED=false`), and set the health check to `/api/health`. A `render.yaml` blueprint can make this one click later.
 Volunteer upkeep: none per week. Each season: update the Node base image (rebuild), rotate the PINs, and export the schedule/results CSV as a backup.

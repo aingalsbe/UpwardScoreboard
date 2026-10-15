@@ -73,7 +73,7 @@ function render() {
   const p = $('#pending'); p.hidden = pending.size === 0; p.textContent = `${pending.size} tap${pending.size === 1 ? '' : 's'} sending…`;
   const view = {
     court: snap?.court?.name || court,
-    title: g ? `Scorekeeper · ${g.home.name} vs ${g.away.name} · ${snap.court.name}` : `Scorekeeper · ${snap?.court?.name || court}`,
+    title: g ? `UpwardScoreboard · ${g.home.name} vs ${g.away.name} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
     connText: online ? '● Online' : '● Reconnecting…',
     tvText: presence.displays ? `● TV connected${presence.controllers > 1 ? ` · ${presence.controllers} scorekeepers` : ''}` : '○ No TV connected',
   };

@@ -10,6 +10,7 @@ RUN npx tsc -p . && node --test dist/test/
 
 FROM node:20-alpine
 ENV NODE_ENV=production
+RUN apk add --no-cache tzdata
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
