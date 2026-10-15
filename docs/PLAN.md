@@ -13,7 +13,7 @@ Team: **Devon** (backend, architecture), **Sage** (TV/controller/admin UI), **Av
 
 1. Two courts at once: scores, fouls and clock never cross courts.
 2. Pull the TV's Wi-Fi or power for 30 s mid-game, then reconnect. The score and clock must match the controller exactly (compare to a stopwatch).
-3. Refresh or close the scorekeeper page mid-game: no lost state, and the PIN is remembered.
+3. Refresh or close the scorekeeper page mid-game: no lost state or taps, and no PIN prompt (12 h session). Wrong PINs on another court must not lock this one.
 4. Two phones scoring the same game: every tap counts once, and the "2 scorekeepers" pill shows.
 5. Airplane mode for 5 s, tap +2, then reconnect: applied exactly once ("taps sending…" pill clears).
 6. Undo/redo across score, fouls and the clock. Undoing a basket must not stop the running clock.

@@ -9,7 +9,7 @@ Prepared by Devon (lead developer) with Sage (UI/UX), Avery (QA) and Morgan (PM)
 - Approach: custom build, fully cloud-hosted. There is no computer at the gym; it needs only a TV device with a browser and the scorekeeper's phone or tablet.
 - Three modules: Score (bench controller), Display (TV board plus stream overlay), Admin (teams, courts, schedule).
 - Stack: one TypeScript Node 20 container that serves the web pages, the API and live WebSocket updates, plus managed Postgres.
-- Status: a working POC runs with docker compose. After QA round 1: unit tests 8/8, end-to-end smoke test 60/60 and a browser offline test 10/10 (13/13 including the server-freeze case) all pass on a freshly rebuilt container.
+- Status: a working POC runs with docker compose. After QA round 2: unit tests 10/10, browser offline test 13/13 (including the server-freeze case), browser lockout test 8/8, and the end-to-end smoke test 71/71 run twice in a row on the same used database, all on a freshly rebuilt container. (The earlier "60/60" was the round-1 smoke test, which only passed on a fresh database.)
 - Recommended host: Render, about $13 per month including managed Postgres.
 
 Research mockups the POC follows:
@@ -28,7 +28,7 @@ Development defaults only. Never reuse these values on a hosted server.
 4. Open http://localhost:3000 and pick a court. Admin is at http://localhost:3000/admin.
 5. In Admin > Today, press "Start on court" for a game. Open /tv/court-1 on the TV and /score/court-1 on the scorekeeper's phone.
 
-Tests: npm test (unit), node scripts/offline-e2e.mjs (browser offline test), node scripts/smoke.mjs (end to end; run it last because it deliberately triggers the 30-second PIN and login lockout), node scripts/latency.mjs (sync time).
+Tests: npm test (unit), node scripts/offline-e2e.mjs (browser offline test), node scripts/lockout-e2e.mjs (browser test: wrong PINs on court 2 do not affect court 1), node scripts/smoke.mjs (end to end; repeatable on a used database because it creates its own uniquely named teams and games; if a previous run left the admin login locked it waits out the lock, up to about a minute), node scripts/latency.mjs (sync time).
 
 ## 3. Module features
 
@@ -40,7 +40,8 @@ URL: /score/court-1 (one link per court). Mobile-first with big buttons: one col
 
 | Feature | Status | Notes |
 |---|---|---|
-| Unlock with a court PIN | Built | The PIN is remembered on the device |
+| Unlock with a court PIN | Built | A correct PIN gives the device a 12-hour session for that court only. Reconnects and reloads use the session with no PIN prompt. After too many wrong PINs a countdown shows until the next try |
+| Taps while disconnected | Built | Kept on the device (even if the page is closed) and sent automatically after reconnect, exactly once. Closing the page with unsent taps asks for confirmation |
 | Game clock start and stop | Built | One large toggle button |
 | Clock adjust +1 s / -1 s and Set clock (mm:ss) | Built | Never below 0 or above the period length |
 | Clock stops automatically at 0:00 | Built | Done on the server |
@@ -167,7 +168,7 @@ Planned later: seasons, divisions, users with roles, and hashed per-day court PI
 | Role | POC | Next step |
 |---|---|---|
 | Admin | Password from server settings. Signed session cookie for 12 hours. 5 wrong passwords lock that address for 30 s (doubling, max 15 min) with HTTP 429 and Retry-After | Google sign-in with a users table |
-| Scorekeeper | PIN for each court, valid only for that court. 5 wrong PINs close the connection; 10 wrong PINs from one network address lock it for 30 s, doubling each time up to 15 min | Per-day PINs or QR codes generated in Admin |
+| Scorekeeper | PIN for each court, valid only for that court. A correct PIN gives that device a signed 12-hour session for that court, stored on the device; reconnects use it and are never affected by lockouts. Wrong PINs are counted per court and per device: 5 wrong lock that device for that court for 30 s (doubling, max 15 min) with an on-screen countdown, and close the connection. A backstop of 50 wrong PINs from one network address locks that address. TV and overlay links are read-only, and their connections never count toward a lockout | Per-day PINs or QR codes generated in Admin |
 | Public viewer | TV and overlay need no login; the server rejects any command from them | Optional public live-scores page |
 
 HTTPS is provided by the host. Secrets live only in host settings, never in the code repository.
@@ -246,11 +247,11 @@ Files in sheets-templates/. They match the POC importer exactly. Import them in 
 |---|---|---|
 | courts.csv | slug, name, location (required: slug, name) | Matched by slug: adds new courts, updates changed ones, skips identical ones. slug must be lowercase letters, digits and dashes. Scorekeeper PINs are set separately (COURT_PINS) |
 | teams.csv | name, short_name, primary_color, secondary_color, logo_url (required: name) | Matched by name: adds, updates or skips. Colors must be #RRGGBB or empty (a bad color is a row error). logo_url must be http(s) or empty |
-| schedule.csv | id, date, time, court, division, home, away (required: date, time, court, home, away; id optional) | If id is filled (from an export), that game is updated. Otherwise games are matched by court + start time + home + away, which the database enforces as unique. Duplicate rows in one file are skipped. date is YYYY-MM-DD, time is HH:MM in league time (America/Chicago), court must be an existing court slug (unknown courts are a row error, not created), home and away must be existing teams |
+| schedule.csv | id, date, time, court, division, home, away (required columns: date, time, court, home, away; id optional) | Keep the id column when you edit an exported sheet: it is how a game whose time, court or teams changed is updated instead of added again. Leave id blank only for new games. If id is filled (from an export), that game is updated. Otherwise games are matched by court + start time + home + away, which the database enforces as unique. Duplicate rows in one file are skipped. date is YYYY-MM-DD, time is HH:MM in league time (America/Chicago), court must be an existing court slug (unknown courts are a row error, not created), home and away must be existing teams. A game that is not scheduled yet can have date and time both empty (and court empty); exports write such games that way and they re-import cleanly |
 
 A file missing a required column is rejected as a whole with a message naming the column. Every bad row is reported with its row number; good rows still import. Re-importing the same file, or an export, changes nothing (all rows reported as skipped).
 
-Exports use the same columns. The schedule export starts with the game id and adds home_score, away_score and status, which the importer ignores. In Google Sheets, use File > Download > CSV to produce a file for import, and File > Import > Upload to open an export.
+Exports use the same columns. The schedule export starts with the game id (keep it) and adds home_score, away_score and status, which the importer ignores. Scores are the final score for finished games and the current score for live games. A note on keeping the id column is also in sheets-templates/README.md. In Google Sheets, use File > Download > CSV to produce a file for import, and File > Import > Upload to open an export.
 
 ## 11. Known risks and gaps
 
@@ -259,7 +260,9 @@ Exports use the same columns. The schedule export starts with the game id and ad
 | Gym Wi-Fi (captive portal, weak signal) | The TV or controller can't reach the cloud | Test before the pilot; bring a hotspot or travel router; Keepthescore as fallback |
 | Taps during long outages are kept only in memory | Taps can be lost if the page is closed while offline | Offline app mode with stored queue (next step) |
 | POC-level auth (PINs in server settings, 4-digit PINs) | Guessing is now throttled, but PINs are shared and long-lived | Per-day PINs, Google sign-in for admins |
-| Lockouts are per network address and held in memory | A gym shares one address, so someone guessing could briefly lock out the real scorekeeper (10 tries, 30 s). Lockouts reset when the server restarts | Per-person logins later; admin can restart if needed |
+| PIN lockouts are per court and device, held in memory | Someone guessing on one court cannot lock out other courts or a scorekeeper already signed in (sessions skip the PIN). Lockouts reset when the server restarts, and a guesser who clears site data gets a new device id (5 more tries); the 50-per-address backstop and 4-digit PINs limit this to slow guessing | Per-day PINs, per-person logins later |
+| Scorekeeper sessions last 12 hours | Anyone holding an unlocked phone can score on that court for the day. Changing SESSION_SECRET signs everyone out | Per-day PINs; a sign-out button |
+| Schedule times in the 1 a.m. hour on the night clocks fall back are ambiguous in league time | Two such games with the same court and teams could look like duplicates on re-import. Not realistic for youth games | Store the UTC offset in exports if ever needed |
 | Single app instance | Restart takes a few seconds (state is preserved) | Fine for a league; coordination layer before scaling out |
 | No database migration tool yet | Riskier schema changes later | Add a migration tool before the first post-launch change |
 | Direct Google Sheets sync not built | Manual CSV steps | Sheets API sync in phase 2 |
@@ -269,17 +272,18 @@ Exports use the same columns. The schedule export starts with the game id and ad
 
 ## 12. Known bugs and backlog
 
-From QA round 1 (Avery). Fixed in this round: silent network drops (#1), duplicate schedule imports (#2), PIN and login guessing (#3), oversized logo dropping the connection (#4), contrast (#5, fixed by Sage), unclear CSV errors (#8), raw error when deleting a team (#9), logo file and URL validation (#10).
+From QA round 1 (Avery). Fixed in round 1: silent network drops (#1), duplicate schedule imports (#2), PIN and login guessing (#3), oversized logo dropping the connection (#4), contrast (#5, fixed by Sage), unclear CSV errors (#8), raw error when deleting a team (#9), logo file and URL validation (#10).
 
 | Item | Status | Notes |
 |---|---|---|
-| QA #6 | Backlog | From Avery's QA report. The report text was not available to the developer, so see Avery's report for the details |
-| QA #7 | Backlog | From Avery's QA report (see the report for details) |
-| QA #11 | Backlog | From Avery's QA report (see the report for details) |
+| QA #6: closing the controller with unsent taps lost them silently (the queue was only in memory, no warning) | Fixed (round 2) | Unsent taps are saved on the device and resent after reopening; closing the page with unsent taps asks for confirmation. A saved tap for a game that has since changed is discarded with a message |
+| QA #7: Undo right after the clock reached 0 undid the earlier clock start with no visible change (the "End of period" step was not recognised as a clock step) | Fixed (round 2) | The automatic stop at 0 keeps the previous undo label, so Undo now undoes the last real action. Unit test added |
+| QA #11: Prev after an accidental Next did not bring back the fouls reset at halftime, and reset the clock | Fixed (round 2) | Prev right after Next restores the period's fouls and clock. Unit test added |
+| QA round 2 A and D: wrong PINs on one court locked out the whole gym, including a signed-in scorekeeper after a Wi-Fi blip | Fixed (round 2) | See section 7. Smoke and browser tests reproduce the exact scenario |
+| QA round 2 B: an exported game with no date failed to re-import | Fixed (round 2) | Empty date and time (and court) are accepted |
 | Colored logo images are not contrast-checked | Backlog | Only the team color pairs are checked |
 | Grey team colors near #808080 are borderline | Backlog | They pass at about 4.78:1, just above the 4.5:1 minimum |
 | Clock can run up to about 3 s before freezing in a silent drop | Known limit | Turning Wi-Fi off is detected immediately; a silent drop takes the 3 s watchdog |
-| Offline taps are kept in memory only | Backlog | Lost if the page is closed while offline |
 | Phone controller shows the clock above the teams | Backlog (Sage) | Decide the layout order after the pilot |
 | Horn, player fouls, shot clock; matchup logo override in the Admin form | Backlog | |
 
@@ -293,8 +297,8 @@ Do this at the gym about a week before the pilot, with the real TV device and th
 4. Tap +2, a foul and a timeout. The TV should update immediately.
 5. Start the clock and compare it with a phone stopwatch for 2 minutes. It should match within a second.
 6. Turn the TV device's Wi-Fi off for 30 seconds while the clock runs, then on again. The TV clock should freeze and dim, then come back with the correct time and score.
-7. Do the same with the phone. It should show "Offline · reconnecting…", then recover. Taps made just before the drop should count once.
-8. If there are two courts, run both at once and confirm that nothing crosses over.
+7. Do the same with the phone. It should show "Offline · reconnecting…", then recover. Taps made just before or during the drop should count once, with no PIN prompt after reconnect.
+8. If there are two courts, run both at once and confirm that nothing crosses over. On the second court's phone, enter a wrong PIN 5 times: it should show a countdown, and the first court's phone must keep working.
 9. Try a mobile hotspot as a backup network and repeat step 4.
 10. Write down anything confusing for the volunteer and send it to Morgan.
 

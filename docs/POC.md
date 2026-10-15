@@ -10,7 +10,7 @@ Big buttons, mobile-first: a single column on phones, and team | clock | team on
 
 | Feature | Status | Notes |
 |---|---|---|
-| Unlock with a per-court PIN | ✅ | The PIN is remembered on the device (localStorage). A wrong PIN shows the gate again. |
+| Unlock with a per-court PIN | ✅ | A correct PIN gives the device a 12 h session for that court (localStorage); reconnects/reloads skip the PIN. Wrong PINs are limited per court + device, with a countdown after 5. Unsent taps survive closing the page and are resent; closing with unsent taps asks first. |
 | Game clock start/stop | ✅ | One large toggle (green ▶ START / red ■ STOP). |
 | Clock adjust ±1 s, "Set clock… mm:ss" | ✅ | Clamped to 0..period length. |
 | Clock auto-stops at 0:00 | ✅ | A server timer fires `CLOCK_EXPIRE`. |
@@ -66,7 +66,7 @@ Recommendation: pilot with **A on the TV only**. Add B once a volunteer owns OBS
 | Courts: add/delete, PIN status | ✅ | PINs come from the `COURT_PINS` env. |
 | Schedule: add games (court, time, division, home/away), delete | ✅ | |
 | Per-matchup overrides: display names and colors (alternate jerseys) | ✅ | Stored in `games.theme`. Logo override is supported by the API, not the form. |
-| CSV import/export for teams, courts and schedule in Google-Sheets-friendly columns | ✅ | **Idempotent (QA #2):** re-importing never duplicates; returns created/updated/skipped. Schedule matches by exported `id`, else court + start time + home + away (unique index); in-file duplicates are skipped. Explicit errors (QA #8): missing required column → 400; bad color, non-http logo URL, bad date/time, **unknown court slug** (no longer auto-created), unknown team → row errors. |
+| CSV import/export for teams, courts and schedule in Google-Sheets-friendly columns | ✅ | **Idempotent (QA #2):** re-importing never duplicates; returns created/updated/skipped. Schedule matches by exported `id`, else court + start time + home + away (unique index); in-file duplicates are skipped. Explicit errors (QA #8): missing required column → 400; bad color, non-http logo URL, bad date/time, **unknown court slug** (no longer auto-created), unknown team → row errors. **Keep the `id` column when editing an exported sheet** (that's how moved games update instead of duplicating). Undated games (empty date+time, optional empty court) import and round-trip (QA r2-B). The export carries final scores, and current scores for live games. |
 | League time zone | ✅ | `TZ` (default `America/Chicago`, Kansas City area). Used for CSV times, the "up next" ticker and admin display, regardless of the viewer's device time zone. |
 | Game event log (`GET /api/games/:id/events`) | ✅ (API) | Audit of every change, with actor. |
 | Real Google Sheets sync | ⏭ | Use the Sheets API v4 with a service account shared on the league sheet. "Pull schedule" reads `Schedule!A:F` (`spreadsheets.values.get`) through the same import code. "Push results" writes scores back (`values.update`). Optional nightly cron. |

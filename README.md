@@ -26,7 +26,7 @@ The first start seeds 6 teams, 2 courts (`court-1`, `court-2`) and 5 games for t
 
 Dev defaults from `.env.example`: admin password `change-me-admin`, PINs `court-1:1111`, `court-2:2222`. **Change them in any shared or hosted deployment.**
 
-Game-day flow: in Admin → Today press **Start on court** for a game. The TV for that court switches to the matchup, and the scorekeeper page unlocks with the court PIN.
+Game-day flow: in Admin → Today press **Start on court** for a game. The TV for that court switches to the matchup, and the scorekeeper page unlocks with the court PIN (the device then keeps a 12 h session for that court). When editing an exported schedule in Sheets, **keep the `id` column** so changed games update instead of duplicating.
 
 ## Tests
 
@@ -34,7 +34,9 @@ Game-day flow: in Admin → Today press **Start on court** for a game. The TV fo
 npm install
 npm test                  # reducer unit tests (score, fouls/bonus, clock, timeouts, undo/redo, validation)
 CHROME_PATH=/usr/bin/google-chrome node scripts/offline-e2e.mjs  # Playwright setOffline: Offline in <5 s, clock freezes, recovers
-node scripts/smoke.mjs    # end-to-end: 2 courts, sync, reconnect, undo, idempotent CSV, errors, logos, rate limits (run LAST: it locks the IP for 30 s)
+CHROME_PATH=/usr/bin/google-chrome node scripts/lockout-e2e.mjs # wrong PINs on court-2 don't affect signed-in court-1; queued tap delivered
+node scripts/smoke.mjs    # end-to-end (71 checks): 2 courts, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
+                          # Repeatable on a used DB (own uniquely named fixtures); waits out an admin-login lock left by a previous run
 node scripts/latency.mjs  # tap -> TV latency (median/p95)
 CHROME_PATH=/usr/bin/google-chrome node scripts/screenshots.mjs   # writes docs/screenshots/*.png
 ```
