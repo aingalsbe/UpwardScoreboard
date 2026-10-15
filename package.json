@@ -1,0 +1,26 @@
+{
+  "name": "church-scoreboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Church League Scoreboard POC: Score (bench controller), Display (TV + overlay), Admin",
+  "type": "module",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/src/server.js",
+    "test": "tsc -p . && node --test dist/test/",
+    "smoke": "node scripts/smoke.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "pg": "^8.12.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.6",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.5.4"
+  }
+}
