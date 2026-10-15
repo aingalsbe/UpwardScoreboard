@@ -10,7 +10,7 @@ export function connect({ court, role, onState, onStatus, onMessage }) {
   function open() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/ws?court=${encodeURIComponent(court)}&role=${role}`);
-    status('connecting');
+    queueMicrotask(() => status('connecting'));
     ws.onopen = () => { backoff = 500; bestRtt = Infinity; status('online'); ping(); clearInterval(pingTimer); pingTimer = setInterval(ping, 10000); };
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);

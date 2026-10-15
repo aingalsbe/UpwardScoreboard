@@ -48,3 +48,4 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
   .foot { grid-template-columns: repeat(4, 1fr); }
   .sc { font-size: 110px; }
 }
+[hidden] { display: none !important; }

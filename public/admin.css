@@ -35,3 +35,4 @@ img.mini { width: 30px; height: 30px; object-fit: contain; border-radius: 50%; b
 .msg { min-height: 1.4em; margin: 8px 0; } .msg.ok { color: #5be37d; } .msg.bad { color: #ff6b6b; }
 code { background: #222840; padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 700px) { .tbl th:nth-child(1), .tbl td:nth-child(1) { display: none; } }
+[hidden] { display: none !important; }
