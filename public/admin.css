@@ -35,4 +35,11 @@ img.mini { width: 30px; height: 30px; object-fit: contain; border-radius: 50%; b
 .msg { min-height: 1.4em; margin: 8px 0; } .msg.ok { color: #5be37d; } .msg.bad { color: #ff6b6b; }
 code { background: #222840; padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 700px) { .tbl th:nth-child(1), .tbl td:nth-child(1) { display: none; } }
+/* Contrast warning under the team color pickers (filled by contrast.js). */
+.contrast-warn { background: #3a3010; color: #ffe08a; border: 1px solid #6b5a1f; border-radius: 10px; padding: 10px 12px; font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
+.contrast-warn .cw-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.contrast-warn .cw-chip { display: inline-block; min-width: 2.6em; padding: 2px 8px; border-radius: 6px; font-weight: 900; text-align: center; box-shadow: 0 0 0 1px #6b5a1f; }
+.contrast-warn .cw-chip.cw-tv { background: #1b2340; }
+.contrast-warn code { background: #171c2e; color: #fff; }
+.contrast-warn button.sm { background: #ffe08a; color: #111; font-weight: 700; }
 [hidden] { display: none !important; }

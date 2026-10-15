@@ -40,6 +40,7 @@
         <label>Short (3–4) <input name="short_name" maxlength="4"></label>
         <label>Primary color <input type="color" name="primary_color" value="#7a1020"></label>
         <label>Accent color <input type="color" name="secondary_color" value="#f2b705"></label>
+        <div class="contrast-warn full" data-contrast-for="team-form" role="status" aria-live="polite" hidden></div>
         <label>Logo URL <input name="logo_url" placeholder="https://… (optional)"></label>
         <label>…or upload logo <input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"></label>
         <div class="actions"><button class="primary" id="team-save">Add team</button><button type="reset" class="link">Clear</button></div>
@@ -72,6 +73,7 @@
             <label>Home color <input type="color" name="homeColor" data-optional></label>
             <label>Away display name <input name="awayName"></label>
             <label>Away color <input type="color" name="awayColor" data-optional></label>
+            <div class="contrast-warn full" data-contrast-for="game-form" role="status" aria-live="polite" hidden></div>
             <p class="muted full">Colors only apply if you change them (tick ✔ means used): <label class="inline"><input type="checkbox" name="useHomeColor"> home</label> <label class="inline"><input type="checkbox" name="useAwayColor"> away</label></p>
           </div>
         </details>
@@ -106,6 +108,7 @@
       <p class="muted">In Google Sheets: File → Download → CSV to import here; File → Import → Upload to load an export.</p>
     </section>
   </div>
+  <script src="/contrast.js"></script>
   <script type="module" src="/admin.js"></script>
 </body>
 </html>

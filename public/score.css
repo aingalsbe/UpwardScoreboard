@@ -12,7 +12,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .btn.go { background: #1f9d4c; font-size: 26px; font-weight: 900; padding: 18px 0; }
 .btn.go.stop { background: #c0392b; }
 .btn.pt { font-size: 32px; font-weight: 900; padding: 18px 0; min-height: 76px; }
-.home .btn.pt { background: var(--home-color); } .away .btn.pt { background: var(--away-color); }
+.home .btn.pt { background: var(--home-color); color: var(--home-fg, #fff); } .away .btn.pt { background: var(--away-color); color: var(--away-fg, #fff); }
 .btn.undo { background: #5a2330; }
 .hdr { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .title { font-size: 17px; font-weight: 700; }
@@ -26,7 +26,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .tn { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 900; text-transform: uppercase; }
 .tn em { margin-left: auto; font-size: 13px; opacity: .6; font-style: normal; }
 .sw { width: 40px; height: 40px; border-radius: 50%; border: 3px solid #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; }
-.home .sw { background: var(--home-color); color: var(--home-accent); } .away .sw { background: var(--away-color); color: var(--away-accent); }
+.home .sw { background: var(--home-color); color: var(--home-logo-fg, var(--home-accent)); } .away .sw { background: var(--away-color); color: var(--away-logo-fg, var(--away-accent)); }
 .sc { font-size: 84px; font-weight: 900; text-align: center; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .pts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .small, .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

@@ -6,8 +6,10 @@ body { font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; color: 
 .bug { position: absolute; left: 48px; bottom: 48px; display: grid; grid-template-columns: 260px 260px 200px; grid-template-rows: 64px auto;
   box-shadow: 0 8px 24px rgba(0,0,0,.5); border-radius: 10px; overflow: hidden; }
 .side { display: flex; align-items: center; gap: 10px; padding: 0 14px; font-weight: 900; }
-.home { background: var(--home-color); border-bottom: 6px solid var(--home-accent); }
-.away { background: var(--away-color); border-bottom: 6px solid var(--away-accent); }
+.home { background: var(--home-color); color: var(--home-fg, #fff); border-bottom: 6px solid var(--home-accent); }
+.away { background: var(--away-color); color: var(--away-fg, #fff); border-bottom: 6px solid var(--away-accent); }
+/* Light team colors: ring the white logo chip so it doesn't melt into the side panel. */
+.home-light .home .logo, .away-light .away .logo { box-shadow: 0 0 0 2px #111; }
 .logo { width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #111; display: flex; align-items: center; justify-content: center; font-size: 20px; overflow: hidden; }
 .logo img { width: 100%; height: 100%; object-fit: contain; }
 .name { font-size: 26px; letter-spacing: 2px; flex: 1; }

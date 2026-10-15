@@ -18,10 +18,13 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 .logo { width: 9.4rem; height: 9.4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   font-size: 4.4rem; font-weight: 900; border: .4rem solid #fff; box-shadow: 0 10px 40px rgba(0,0,0,.5); overflow: hidden; }
 .logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
-.home .logo { background: var(--home-color); color: var(--home-accent); }
-.away .logo { background: var(--away-color); color: var(--away-accent); }
+/* contrast.js derives --*-logo-fg (accent if >=4.5:1 on the team color, else #fff/#111) and
+   --*-on-dark (accent lightened to >=4.5:1 on the dark chrome). Fallbacks keep the old look. */
+.home .logo { background: var(--home-color); color: var(--home-logo-fg, var(--home-accent)); }
+.away .logo { background: var(--away-color); color: var(--away-logo-fg, var(--away-accent)); }
 .name { font-size: 3.75rem; font-weight: 900; margin-top: 1.3rem; letter-spacing: .2rem; text-transform: uppercase; }
-.home .name { color: var(--home-accent); } .away .name { color: var(--away-accent); }
+.home .name { color: var(--home-on-dark, var(--home-accent)); } .away .name { color: var(--away-on-dark, var(--away-accent)); }
+.name { text-shadow: 0 0 .2rem #000, 0 .15rem .4rem rgba(0,0,0,.8); }
 .score { font-size: 15.6rem; font-weight: 900; line-height: 1; margin-top: .5rem; font-variant-numeric: tabular-nums; text-shadow: 0 8px 30px rgba(0,0,0,.6); }
 .stats { display: flex; gap: 2.6rem; margin-top: 1rem; align-items: center; min-height: 4.5rem; }
 .lbl { opacity: .6; font-size: 1.15rem; letter-spacing: .1rem; display: block; text-align: center; }
