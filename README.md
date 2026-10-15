@@ -33,7 +33,9 @@ Game-day flow: in Admin → Today press **Start on court** for a game. The TV fo
 ```bash
 npm install
 npm test                  # reducer unit tests (score, fouls/bonus, clock, timeouts, undo/redo, validation)
-node scripts/smoke.mjs    # end-to-end against a running server: 2 courts, WS sync, reconnect, undo, CSV
+CHROME_PATH=/usr/bin/google-chrome node scripts/offline-e2e.mjs  # Playwright setOffline: Offline in <5 s, clock freezes, recovers
+node scripts/smoke.mjs    # end-to-end: 2 courts, sync, reconnect, undo, idempotent CSV, errors, logos, rate limits (run LAST: it locks the IP for 30 s)
+node scripts/latency.mjs  # tap -> TV latency (median/p95)
 CHROME_PATH=/usr/bin/google-chrome node scripts/screenshots.mjs   # writes docs/screenshots/*.png
 ```
 

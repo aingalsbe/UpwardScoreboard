@@ -35,7 +35,9 @@ Big buttons, mobile-first: a single column on phones, and team | clock | team on
 **TV layout** (follows `tv-scoreboard-mockup.png`, 16:9, scales to any resolution):
 league name and court/division header; per team a color bar, logo (or initial badge), name in the team's accent color, huge score, fouls, timeout dots and a BONUS tag; center red LED-style clock, period (OT1, OT2…), possession arrow; bottom "UP NEXT" ticker from the court's schedule; HALFTIME/FINAL banner; a "Waiting for the next game" screen when nothing is on court.
 
-**Live sync**: WebSocket. Every accepted change pushes the full authoritative state to every screen on that court, typically in under 50 ms on the box.
+**Live sync**: WebSocket. Every accepted change pushes the full authoritative state to every screen on that court. Measured on the box: median 6.3 ms, p95 9.4 ms tap-to-TV.
+
+**Online indicator**: Online = a server message within the last 3 s (1 s app ping). Silent drops show Offline within about 3–4 s; Wi-Fi off shows it immediately. While offline the clock freezes (dimmed) and never counts down past a stop. The overlay shows team short names.
 
 **Reconnect behavior**:
 - The display reconnects automatically with exponential backoff (0.5 s up to 8 s). A small dot in the bottom-right corner turns red and blinks while offline.
@@ -60,11 +62,11 @@ Recommendation: pilot with **A on the TV only**. Add B once a volunteer owns OBS
 |---|---|---|
 | Login (admin password from env) | ✅ | HttpOnly cookie, 12 h session. |
 | Today view: courts with the live game, links to TV/Score/Overlay, Start/Re-show a game on its court | ✅ | Starting a game switches the court's TV and controller instantly. |
-| Teams: name, short name, primary + accent colors, logo by URL **or** upload | ✅ | Uploads (≤1 MB png/jpg/gif/webp/svg) are stored in Postgres (`bytea`) and served from `/logos/:id`. |
+| Teams: name, short name, primary + accent colors, logo by URL **or** upload | ✅ | Colors must be `#RRGGBB` (empty → default). Uploads ≤1 MB, PNG/JPEG/GIF/WebP verified by magic bytes; SVG rejected; oversize → 413 with a message (QA #4, #10). URLs must be http(s). Deleting a team that has games → friendly 409 (QA #9). Contrast: Sage's `public/contrast.js` keeps each text/color pair ≥ 4.5:1 and warns in Admin. |
 | Courts: add/delete, PIN status | ✅ | PINs come from the `COURT_PINS` env. |
 | Schedule: add games (court, time, division, home/away), delete | ✅ | |
 | Per-matchup overrides: display names and colors (alternate jerseys) | ✅ | Stored in `games.theme`. Logo override is supported by the API, not the form. |
-| CSV import/export for teams, courts and schedule in Google-Sheets-friendly columns | ✅ | Teams upsert by name; courts upsert by slug; schedule rows are added (bad rows reported, unknown court slugs auto-created, unknown teams rejected). Export adds scores and status. Formula-injection safe. Templates: `deliverables/sheets-templates/`. Import order: courts → teams → schedule. |
+| CSV import/export for teams, courts and schedule in Google-Sheets-friendly columns | ✅ | **Idempotent (QA #2):** re-importing never duplicates; returns created/updated/skipped. Schedule matches by exported `id`, else court + start time + home + away (unique index); in-file duplicates are skipped. Explicit errors (QA #8): missing required column → 400; bad color, non-http logo URL, bad date/time, **unknown court slug** (no longer auto-created), unknown team → row errors. |
 | League time zone | ✅ | `TZ` (default `America/Chicago`, Kansas City area). Used for CSV times, the "up next" ticker and admin display, regardless of the viewer's device time zone. |
 | Game event log (`GET /api/games/:id/events`) | ✅ (API) | Audit of every change, with actor. |
 | Real Google Sheets sync | ⏭ | Use the Sheets API v4 with a service account shared on the league sheet. "Pull schedule" reads `Schedule!A:F` (`spreadsheets.values.get`) through the same import code. "Push results" writes scores back (`values.update`). Optional nightly cron. |
