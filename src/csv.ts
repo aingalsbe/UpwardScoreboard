@@ -1,7 +1,10 @@
 // Minimal RFC-4180 CSV reader/writer. Column headers match what a Google Sheet
 // "File > Download > CSV" produces, so the same files round-trip through Sheets.
 
-export function parseCsv(text: string): Record<string, string>[] {
+export function parseCsv(text: string): Record<string, string>[] { return parseCsvTable(text).rows; }
+
+/** Parse and also return the normalized header names (to check required columns). */
+export function parseCsvTable(text: string): { headers: string[]; rows: Record<string, string>[] } {
   const rows: string[][] = [];
   let row: string[] = [], field = '', q = false;
   text = text.replace(/^\uFEFF/, '');
@@ -21,9 +24,9 @@ export function parseCsv(text: string): Record<string, string>[] {
   }
   row.push(field);
   if (row.some((f) => f.trim() !== '')) rows.push(row);
-  if (!rows.length) return [];
+  if (!rows.length) return { headers: [], rows: [] };
   const head = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
-  return rows.slice(1).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()])));
+  return { headers: head, rows: rows.slice(1).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()]))) };
 }
 
 export function toCsv(headers: string[], rows: Record<string, unknown>[]): string {

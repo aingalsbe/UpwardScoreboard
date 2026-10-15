@@ -49,3 +49,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
   .sc { font-size: 110px; }
 }
 [hidden] { display: none !important; }
+
+/* State hook (functional, added by Devon for QA #1; Sage may restyle): while the
+   connection is not live the clock is frozen at the last confirmed value and dimmed. */
+[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { opacity: .4; }

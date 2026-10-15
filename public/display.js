@@ -1,6 +1,6 @@
 // Display logic shared by tv.html and overlay.html. Markup and CSS own the look;
 // this file only fills [data-bind] text, sets CSS variables and state classes.
-import { connect, courtFromPath, clockMs, fmtClock, periodLabel, bindText } from './common.js';
+import { connect, courtFromPath, displayNow, clockMs, fmtClock, periodLabel, bindText } from './common.js';
 
 const court = courtFromPath();
 const role = document.body.dataset.role || 'tv';
@@ -54,7 +54,7 @@ const conn = connect({
 // Repaint only the clock, every animation frame, from server time.
 function tick() {
   const el = document.querySelector('[data-clock]');
-  if (el && snap?.game) { const t = fmtClock(clockMs(snap.game.state.clock, conn.serverNow())); if (el.textContent !== t) el.textContent = t; }
+  if (el && snap?.game) { const t = fmtClock(clockMs(snap.game.state.clock, displayNow(conn))); if (el.textContent !== t) el.textContent = t; }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);

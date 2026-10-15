@@ -136,17 +136,97 @@ console.log('8. CSV export / import');
 const tcsv = await fetch(BASE + '/api/export/teams.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
 ok(tcsv.startsWith('name,short_name,primary_color,secondary_color,logo_url') && /Lions/.test(tcsv), 'teams.csv exported');
 const imp = await api('/api/import/teams.csv', { method: 'POST', body: 'name,short_name,primary_color,secondary_color,logo_url\r\nCrusaders,CRU,#003366,#ffd700,\r\n"Saints",SNT,#14532d,#a3e635,\r\n' });
-ok(imp.body.upserted === 2 && imp.body.errors.length === 0, 'teams.csv imported (1 new, 1 updated)');
+ok(imp.body.created === 1 && imp.body.updated === 1 && imp.body.errors.length === 0, `teams.csv imported (created ${imp.body.created}, updated ${imp.body.updated})`);
 const simp = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n2026-10-24,09:30,court-2,3rd-4th Grade,Crusaders,Eagles\n2026-10-24,10:30,court-1,5th-6th Grade,Nobodies,Lions\n' });
 ok(simp.body.created === 1 && simp.body.errors.length === 1, `schedule.csv imported 1 row, bad row reported: "${simp.body.errors[0]}"`);
 const scsv = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-ok(/2026-10-24,09:30,court-2,3rd-4th Grade,Crusaders,Eagles/.test(scsv), 'schedule.csv export round-trips the import');
+ok(/^id,date,time,court,division,home,away,home_score,away_score,status/.test(scsv) && /\d+,2026-10-24,09:30,court-2,3rd-4th Grade,Crusaders,Eagles/.test(scsv), 'schedule.csv export (with id column) round-trips the import');
 
 const cimp = await api('/api/import/courts.csv', { method: 'POST', body: 'slug,name,location\ncourt-9,Court 9,Annex\n' });
-ok(cimp.body.upserted === 1 && cimp.body.errors.length === 0, 'courts.csv imported (upsert by slug)');
+ok(cimp.body.created === 1 && cimp.body.errors.length === 0, 'courts.csv imported (upsert by slug)');
 const ccsv = await fetch(BASE + '/api/export/courts.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
 ok(ccsv.startsWith('slug,name,location') && /court-9,Court 9,Annex/.test(ccsv), 'courts.csv export round-trips');
 await api(`/api/courts/${(await api('/api/courts')).body.find((c) => c.slug === 'court-9').id}`, { method: 'DELETE' });
+
+
+console.log('9. Idempotent re-import (QA #2)');
+const auth = { authorization: `Bearer ${token}` };
+const countGames = async () => (await api('/api/games')).body.length;
+const exp = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
+const n0 = await countGames();
+const re1 = await api('/api/import/schedule.csv', { method: 'POST', body: exp });
+ok(re1.body.created === 0 && re1.body.updated === 0 && re1.body.skipped === n0 && (await countGames()) === n0, `re-importing the export changes nothing (${n0} games, skipped ${re1.body.skipped})`);
+const dupFile = 'date,time,court,division,home,away\n2026-11-07,09:00,court-1,Dup test,Lions,Eagles\n2026-11-07,09:00,court-1,Dup test,Lions,Eagles\n';
+const d1i = await api('/api/import/schedule.csv', { method: 'POST', body: dupFile });
+ok(d1i.body.created === 1 && d1i.body.skipped === 1, `duplicate rows within one file: created ${d1i.body.created}, skipped ${d1i.body.skipped}`);
+const d2i = await api('/api/import/schedule.csv', { method: 'POST', body: dupFile });
+ok(d2i.body.created === 0 && d2i.body.skipped === 2 && (await countGames()) === n0 + 1, 'importing the same file twice does not duplicate');
+const upd = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n2026-11-07,09:00,court-1,Renamed div,Lions,Eagles\n' });
+ok(upd.body.updated === 1 && upd.body.created === 0, 'natural-key match updates the division instead of adding a game');
+const gid = (await api('/api/games')).body.find((g) => g.division === 'Renamed div').id;
+const byId = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,division,home,away\n${gid},2026-11-07,10:00,court-2,Renamed div,Lions,Eagles\n` });
+ok(byId.body.updated === 1 && (await countGames()) === n0 + 1, 'exported id column moves the game (time/court change) without duplicating');
+const tAgain = await api('/api/import/teams.csv', { method: 'POST', body: tcsv });
+ok(tAgain.body.created === 0 && tAgain.body.errors.length === 0, `teams re-import idempotent (created 0, skipped ${tAgain.body.skipped})`);
+const ccsv2 = await fetch(BASE + '/api/export/courts.csv', { headers: auth }).then((r) => r.text());
+const cAgain = await api('/api/import/courts.csv', { method: 'POST', body: ccsv2 });
+ok(cAgain.body.created === 0 && cAgain.body.updated === 0, 'courts re-import idempotent');
+const dupGame = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: g1.court_id, home_team_id: g1.home_team_id, away_team_id: g1.away_team_id, scheduled_at: games.find((g) => g.id === g1.id).scheduled_at }) });
+ok(dupGame.status === 409 && /already scheduled/.test(dupGame.body.error), `admin double-add -> 409 "${dupGame.body.error}"`);
+
+console.log('10. Explicit CSV errors (QA #8)');
+const badColor = await api('/api/import/teams.csv', { method: 'POST', body: 'name,short_name,primary_color,secondary_color,logo_url\nPurples,PUR,purple,#ffffff,\n' });
+ok(badColor.body.created === 0 && /primary_color "purple" is not a color/.test(badColor.body.errors[0]), `bad color -> row error: ${badColor.body.errors[0]}`);
+const badUrl = await api('/api/import/teams.csv', { method: 'POST', body: 'name,logo_url\nXSS,javascript:alert(1)\n' });
+ok(badUrl.body.created === 0 && /http/.test(badUrl.body.errors[0]), `javascript: logo URL rejected: ${badUrl.body.errors[0]}`);
+const missing = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,court,home,away\n2026-11-07,court-1,Lions,Eagles\n' });
+ok(missing.status === 400 && /missing required column\(s\): time/.test(missing.body.error), `missing column -> 400: ${missing.body.error}`);
+const courtsBefore = (await api('/api/courts')).body.length;
+const unk = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n2026-11-07,09:00,court-77,X,Lions,Eagles\n' });
+ok(unk.body.created === 0 && /unknown court "court-77"/.test(unk.body.errors[0]) && (await api('/api/courts')).body.length === courtsBefore, 'unknown court slug -> row error, no court auto-created');
+const badDate = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n10/24/2026,9am,court-1,X,Lions,Eagles\n' });
+ok(/must be YYYY-MM-DD/.test(badDate.body.errors[0]), 'bad date format -> row error');
+
+console.log('11. Logos and delete (QA #4, #9, #10)');
+const big = 'data:image/png;base64,' + Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(2_300_000)]).toString('base64');
+const r413 = await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: 'Bigs', logo_data_url: big }) });
+ok(r413.status === 413 && /1 MB/.test(r413.body.error), `2.3 MB logo -> 413 "${r413.body.error}"`);
+ok((await api('/api/health')).status === 200, 'server still healthy after oversized upload');
+const svg = await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: 'Svgs', logo_data_url: 'data:image/svg+xml;base64,' + Buffer.from('<svg onload="alert(1)"/>').toString('base64') }) });
+ok(svg.status === 415 && /SVG/.test(svg.body.error), 'SVG logo rejected (415)');
+const fake = await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: 'Fakes', logo_data_url: 'data:image/png;base64,' + Buffer.from('<html>hi</html>').toString('base64') }) });
+ok(fake.status === 415, 'non-image bytes labeled image/png rejected (magic bytes)');
+const tiny = 'data:image/png;base64,' + Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+ok((await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: 'Realpng', logo_data_url: tiny }) })).status === 201, 'real PNG accepted');
+const jsUrl = await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: 'Jsurl', logo_url: 'javascript:alert(1)' }) });
+ok(jsUrl.status === 400, 'javascript: logo URL rejected (400)');
+const lions = (await api('/api/teams')).body.find((t) => t.name === 'Lions');
+const del = await api(`/api/teams/${lions.id}`, { method: 'DELETE' });
+ok(del.status === 409 && /Lions" is in \d+ games/.test(del.body.error), `delete team with games -> 409 "${del.body.error}"`);
+
+console.log('12. Brute-force protection (QA #3) - run last: it locks this IP for 30 s');
+const brute = client('court-2', 'score'); await brute.open;
+const closed = new Promise((r) => brute.ws.on('close', (code) => r(code)));
+for (let i = 0; i < 5; i++) { brute.send({ type: 'auth', pin: String(9000 + i) }); await brute.wait((m) => m.type === 'auth'); }
+ok((await closed) === 4008, 'socket closed after 5 wrong PINs (code 4008)');
+const brute2 = client('court-2', 'score'); await brute2.open;
+let last;
+for (let i = 0; i < 5; i++) { brute2.send({ type: 'auth', pin: String(9100 + i) }); last = await brute2.wait((m) => m.type === 'auth'); }
+ok(last.locked === true && last.retryAfter > 0, `10 failures from one IP -> locked, retryAfter ${last.retryAfter}s`);
+const brute3 = client('court-2', 'score'); await brute3.open;
+brute3.send({ type: 'auth', pin: PIN2 });
+const lockedOk = await brute3.wait((m) => m.type === 'auth');
+ok(lockedOk.ok === false && lockedOk.locked, 'even the correct PIN is refused while locked');
+const t0b = Date.now(); let tries = 0;
+for (let i = 0; i < 200; i++) { brute3.send({ type: 'auth', pin: String(i) }); tries++; }
+await sleep(300);
+ok(true, `(${tries} rapid guesses sent in ${Date.now() - t0b} ms; none can succeed while locked)`);
+let l429;
+for (let i = 0; i < 6; i++) l429 = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'guess' + i }) });
+ok(l429.status === 429 && Number(l429.headers.get('retry-after')) > 0, `admin login: 429 with Retry-After ${l429.headers.get('retry-after')}s after 5 failures`);
+const good = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: ADMIN }) });
+ok(good.status === 429, 'correct admin password also refused during lockout');
+for (const c of [brute2, brute3]) c.ws.close();
 
 for (const c of [tv1b, tv2, sk1b, sk1c, sk2]) c.ws.close();
 console.log(`\nSmoke result: ${pass} passed, ${fail} failed`);

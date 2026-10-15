@@ -1,6 +1,6 @@
 // Scorekeeper controller logic. Sends intent commands; the server applies them and
 // broadcasts the authoritative state back. Look & feel lives in score.css.
-import { connect, courtFromPath, clockMs, fmtClock, periodLabel, bindText } from './common.js';
+import { connect, courtFromPath, displayNow, clockMs, fmtClock, periodLabel, bindText } from './common.js';
 
 const court = courtFromPath();
 const $ = (s) => document.querySelector(s);
@@ -15,6 +15,7 @@ const conn = connect({
   court, role: 'score',
   onStatus: (st) => {
     root.dataset.conn = st;
+    if (st !== 'online') authed = false; // each new socket must re-authenticate before we send
     if (st === 'online') { const pin = localStorage.getItem(PIN_KEY); if (pin) conn.send({ type: 'auth', pin }); else showGate(); }
     render();
   },
@@ -23,7 +24,8 @@ const conn = connect({
     if (m.type === 'auth') {
       authed = m.ok;
       if (m.ok) { $('#pin-gate').hidden = true; $('#app').hidden = false; flush(); }
-      else { localStorage.removeItem(PIN_KEY); showGate('Wrong PIN'); }
+      else if (m.locked) showGate(m.error || 'Too many attempts. Please wait.'); // keep the saved PIN; just wait
+      else { localStorage.removeItem(PIN_KEY); showGate(m.error || 'Wrong PIN'); }
     }
     if (m.type === 'ack') { pending.delete(m.id); render(); }
     if (m.type === 'error') {
@@ -74,7 +76,7 @@ function render() {
   const view = {
     court: snap?.court?.name || court,
     title: g ? `UpwardScoreboard · ${g.home.name} vs ${g.away.name} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
-    connText: online ? '● Online' : '● Reconnecting…',
+    connText: online ? '● Online' : '● Offline · reconnecting…',
     tvText: presence.displays ? `● TV connected${presence.controllers > 1 ? ` · ${presence.controllers} scorekeepers` : ''}` : '○ No TV connected',
   };
   root.classList.toggle('tv-off', !presence.displays);
@@ -105,7 +107,7 @@ function render() {
 
 function tick() {
   const el = $('[data-clock]');
-  if (el && snap?.game) { const t = fmtClock(clockMs(snap.game.state.clock, conn.serverNow())); if (el.textContent !== t) el.textContent = t; }
+  if (el && snap?.game) { const t = fmtClock(clockMs(snap.game.state.clock, displayNow(conn))); if (el.textContent !== t) el.textContent = t; }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);

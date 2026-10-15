@@ -8,10 +8,11 @@ async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: 'same-origin', ...opts, headers: { 'content-type': 'application/json', ...(opts.headers || {}) } });
   const body = r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text();
   if (r.status === 401 && path !== '/api/login') { showLogin(); throw new Error('login required'); }
+  if (r.status === 413 && typeof body !== 'object') throw new Error('Upload too large. Logos must be 1 MB or smaller.');
   if (!r.ok) throw new Error(body.error || r.statusText);
   return body;
 }
-function msg(t, bad = false) { const m = $('#msg'); m.textContent = t; m.className = 'msg ' + (bad ? 'bad' : 'ok'); clearTimeout(msg.t); msg.t = setTimeout(() => (m.textContent = ''), 5000); }
+function msg(t, bad = false) { const m = $('#msg'); m.textContent = t; m.className = 'msg ' + (bad ? 'bad' : 'ok'); clearTimeout(msg.t); msg.t = setTimeout(() => (m.textContent = ''), bad ? 20000 : 5000); }
 const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { if (e.message !== 'login required') msg(e.message, true); } };
 
 function showLogin() { $('#app').hidden = true; $('#login').hidden = false; }
@@ -78,6 +79,8 @@ document.addEventListener('click', guard(async (e) => {
   if (b.dataset.editTeam) {
     const t = teams.find((x) => x.id === Number(b.dataset.editTeam)); const f = $('#team-form');
     for (const k of ['id', 'name', 'short_name', 'primary_color', 'secondary_color', 'logo_url']) f.elements[k].value = t[k] ?? '';
+    // let listeners (Sage's contrast warning) react to programmatic fills immediately
+    for (const k of ['primary_color', 'secondary_color']) f.elements[k].dispatchEvent(new Event('input', { bubbles: true }));
     $('#team-save').textContent = 'Save team'; f.scrollIntoView({ behavior: 'smooth' });
   }
 }));
@@ -87,7 +90,9 @@ const fileToDataUrl = (file) => new Promise((ok, bad) => { const r = new FileRea
 $('#team-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;
   const body = Object.fromEntries(['name', 'short_name', 'primary_color', 'secondary_color', 'logo_url'].map((k) => [k, f.elements[k].value]));
-  if (f.elements.logo_file.files[0]) body.logo_data_url = await fileToDataUrl(f.elements.logo_file.files[0]);
+  const file = f.elements.logo_file.files[0];
+  if (file && file.size > 1024 * 1024) throw new Error(`Logo is ${(file.size / 1048576).toFixed(1)} MB; the limit is 1 MB. Please use a smaller image.`);
+  if (file) body.logo_data_url = await fileToDataUrl(file);
   if (f.elements.id.value) await api(`/api/teams/${f.elements.id.value}`, { method: 'PUT', body: JSON.stringify(body) });
   else await api('/api/teams', { method: 'POST', body: JSON.stringify(body) });
   f.reset(); f.elements.id.value = ''; $('#team-save').textContent = 'Add team'; msg('Team saved'); await load();
@@ -115,7 +120,7 @@ for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-
   $(id).addEventListener('change', guard(async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const r = await api(path, { method: 'POST', body: await file.text(), headers: { 'content-type': 'text/csv' } });
-    msg(`Imported ${r.upserted ?? r.created} rows${r.errors.length ? `; ${r.errors.length} errors: ${r.errors.slice(0, 3).join('; ')}` : ''}`, r.errors.length > 0);
+    msg(`${file.name}: ${r.created} created, ${r.updated} updated, ${r.skipped} unchanged/skipped${r.errors.length ? ` · ${r.errors.length} problem(s): ${r.errors.slice(0, 5).join('; ')}${r.errors.length > 5 ? '; …' : ''}` : ''}`, r.errors.length > 0);
     e.target.value = ''; await load();
   }));
 }

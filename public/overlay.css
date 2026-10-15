@@ -24,3 +24,7 @@ body { font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; color: 
 .banner { display: none; grid-column: 1 / 4; background: #ffcc00; color: #111; text-align: center; font-weight: 900; font-size: 20px; padding: 4px; letter-spacing: 3px; }
 .has-banner .banner { display: block; }
 .no-game .bug { display: none; }
+
+/* State hook (functional, added by Devon for QA #1; Sage may restyle): while the
+   connection is not live the clock is frozen at the last confirmed value and dimmed. */
+[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { opacity: .4; }

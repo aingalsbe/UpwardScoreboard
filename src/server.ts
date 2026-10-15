@@ -7,7 +7,9 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { pool, migrate, seedIfEmpty } from './db.js';
-import { parseCsv, toCsv } from './csv.js';
+import { parseCsvTable, toCsv } from './csv.js';
+import { Limiter } from './limits.js';
+import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus,
 } from './game.js';
@@ -40,6 +42,20 @@ function tokenFrom(req: http.IncomingMessage): string | undefined {
   if (h?.startsWith('Bearer ')) return h.slice(7);
   const m = /(?:^|;\s*)sb_admin=([^;]+)/.exec(req.headers.cookie || '');
   return m?.[1];
+}
+// Brute-force protection. Per IP: PIN failures lock after 10 (a gym shares one NAT IP),
+// admin-login failures after 5. Per socket: close after 5 bad PINs. Lockouts double (30s, 60s, ... max 15 min).
+const LOCK_BASE_MS = Number(process.env.RATE_LIMIT_BASE_MS || 30_000);
+const pinLimiter = new Limiter(10, LOCK_BASE_MS);
+const loginLimiter = new Limiter(5, LOCK_BASE_MS);
+const SOCKET_MAX_PIN_FAILS = 5;
+setInterval(() => { pinLimiter.prune(); loginLimiter.prune(); }, 600_000).unref();
+function clientIp(req: http.IncomingMessage): string {
+  if (process.env.TRUST_PROXY === 'true') {
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (xff) return xff;
+  }
+  return req.socket.remoteAddress || 'unknown';
 }
 const pinOk = (court: string, pin: unknown) => typeof pin === 'string' && COURT_PINS.has(court) && safeEq(pin, COURT_PINS.get(court)!);
 
@@ -182,25 +198,43 @@ function attachWs(server: http.Server) {
     const client: Client = { ws, court, role, authed: false };
     if (role === 'score' && validToken(tokenFrom(req))) client.authed = true; // admin may score any court
     clients.add(client);
-    let alive = true;
-    ws.on('pong', () => { alive = true; });
+    // Heartbeat: ping every 2s; if nothing (pong or message) for ~3.5s the peer is gone
+    // (half-open socket after a silent network drop) -> terminate so presence is accurate.
+    const ip = clientIp(req);
+    let lastSeen = Date.now(), pinFails = 0;
+    ws.on('pong', () => { lastSeen = Date.now(); });
+    let lastTick = Date.now();
     const hb = setInterval(() => {
-      if (!alive) return ws.terminate();
-      alive = false; ws.ping();
-      send(client, { type: 'time', serverNow: Date.now() }); // keeps clock skew estimate fresh
-    }, 5000);
+      const now = Date.now(), stalled = now - lastTick > 3000; lastTick = now;
+      // If our own event loop was stalled (GC, host suspend), give peers one more round to answer.
+      if (stalled) lastSeen = Math.max(lastSeen, now - 2000);
+      else if (now - lastSeen > 3500) return ws.terminate();
+      ws.ping();
+      send(client, { type: 'time', serverNow: Date.now() }); // also feeds the client-side watchdog
+    }, 2000);
     ws.on('close', () => { clearInterval(hb); clients.delete(client); void broadcastCourt(court); });
     ws.on('message', async (raw) => {
+      lastSeen = Date.now();
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return send(client, { type: 'error', error: 'bad json' }); }
       try {
         if (msg.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
         if (msg.type === 'resync') { const s = await courtSnapshot(court); return s && send(client, s); }
         if (msg.type === 'auth') {
+          const key = `pin:${ip}`;
+          const wait = pinLimiter.retryAfter(key);
+          if (wait) return send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(wait / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(wait / 1000)} s.` });
           if (role === 'score' && (pinOk(court, msg.pin) || validToken(msg.token))) {
+            pinLimiter.succeed(key); pinFails = 0;
             client.authed = true; send(client, { type: 'auth', ok: true }); return void broadcastCourt(court);
           }
-          return send(client, { type: 'auth', ok: false });
+          const locked = pinLimiter.fail(key);
+          pinFails++;
+          send(client, locked
+            ? { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(locked / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(locked / 1000)} s.` }
+            : { type: 'auth', ok: false, error: 'Wrong PIN' });
+          if (pinFails >= SOCKET_MAX_PIN_FAILS) ws.close(4008, 'too many PIN attempts');
+          return;
         }
         if (['cmd', 'undo', 'redo'].includes(msg.type)) {
           if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
@@ -240,32 +274,41 @@ function json(res: http.ServerResponse, code: number, body: unknown, headers: Re
   res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
   res.end(JSON.stringify(body));
 }
-function readBody(req: http.IncomingMessage, limit = 3 * 1024 * 1024): Promise<string> {
+const TOO_LARGE = 'Upload too large. Logos must be 1 MB or smaller; CSV files 2 MB or smaller.';
+/** Read a request body. Oversized bodies are drained (not reset) and rejected with a clean 413. */
+function readBody(req: http.IncomingMessage, limit = 2 * 1024 * 1024): Promise<string> {
   return new Promise((ok, bad) => {
-    let size = 0; const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => { size += c.length; if (size > limit) { bad(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => ok(Buffer.concat(chunks).toString('utf8')));
+    const declared = Number(req.headers['content-length'] || 0);
+    if (declared > 20 * 1024 * 1024) return bad(new HttpError(413, TOO_LARGE)); // absurd: don't even drain
+    let size = 0, over = false; const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => { size += c.length; if (size > limit) { over = true; chunks.length = 0; } else if (!over) chunks.push(c); });
+    req.on('end', () => (over ? bad(new HttpError(413, TOO_LARGE)) : ok(Buffer.concat(chunks).toString('utf8'))));
     req.on('error', bad);
   });
 }
-const readJson = async (req: http.IncomingMessage) => { const t = await readBody(req); return t ? JSON.parse(t) : {}; };
+const readJson = async (req: http.IncomingMessage) => {
+  const t = await readBody(req);
+  try { return t ? JSON.parse(t) : {}; } catch { throw new HttpError(400, 'Request body is not valid JSON'); }
+};
 const HEX = /^#[0-9a-fA-F]{6}$/;
-const color = (v: any, d: string) => (typeof v === 'string' && HEX.test(v) ? v : d);
-
-function decodeLogo(dataUrl: any): { data: Buffer; mime: string } | null {
-  if (typeof dataUrl !== 'string' || !dataUrl) return null;
-  const m = /^data:(image\/(png|jpeg|gif|webp|svg\+xml));base64,(.+)$/.exec(dataUrl);
-  if (!m) throw new Error('logo must be a png/jpeg/gif/webp/svg image');
-  const data = Buffer.from(m[3], 'base64');
-  if (data.length > 1024 * 1024) throw new Error('logo larger than 1 MB');
-  return { data, mime: m[1] };
+/** Strict color: empty -> default, valid #RRGGBB -> itself, anything else -> 400. */
+function color(v: any, d: string, field: string): string {
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!s) return d;
+  if (!HEX.test(s)) throw new HttpError(400, `${field} "${s.slice(0, 20)}" is not a color; use #RRGGBB, e.g. #7a1020`);
+  return s.toLowerCase();
 }
 
-async function upsertTeam(b: any, id?: number) {
+function teamValues(b: any) {
   const name = String(b.name || '').trim();
-  if (!name) throw new Error('name required');
+  if (!name) throw new HttpError(400, 'name required');
+  if (name.length > 30) throw new HttpError(400, 'name longer than 30 characters');
+  return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), color(b.primary_color, '#333333', 'primary_color'),
+    color(b.secondary_color, '#ffffff', 'secondary_color'), safeLogoUrl(b.logo_url)] as const;
+}
+async function upsertTeam(b: any, id?: number) {
+  const vals = teamValues(b);
   const logo = decodeLogo(b.logo_data_url);
-  const vals = [name, String(b.short_name || name.slice(0, 3)).toUpperCase().slice(0, 4), color(b.primary_color, '#333333'), color(b.secondary_color, '#ffffff'), b.logo_url ? String(b.logo_url) : null];
   if (id) {
     await pool.query('UPDATE teams SET name=$2, short_name=$3, primary_color=$4, secondary_color=$5, logo_url=$6 WHERE id=$1', [id, ...vals]);
     if (logo) await pool.query('UPDATE teams SET logo_data=$2, logo_mime=$3 WHERE id=$1', [id, logo.data, logo.mime]);
@@ -278,24 +321,101 @@ async function upsertTeam(b: any, id?: number) {
 
 async function refreshAllCourts() { const { rows } = await pool.query('SELECT slug FROM courts'); for (const r of rows) await broadcastCourt(r.slug); }
 
-async function importSchedule(text: string) {
-  const rows = parseCsv(text); let created = 0; const errors: string[] = [];
+type ImportResult = { created: number; updated: number; skipped: number; errors: string[] };
+function requireColumns(headers: string[], need: string[], file: string) {
+  if (!headers.length) throw new HttpError(400, `${file} is empty`);
+  const missing = need.filter((c) => !headers.includes(c));
+  if (missing.length) throw new HttpError(400, `${file} is missing required column(s): ${missing.join(', ')}. Expected header: ${need.join(',')}`);
+}
+
+async function importTeams(text: string): Promise<ImportResult> {
+  const { headers, rows } = parseCsvTable(text);
+  requireColumns(headers, ['name'], 'teams.csv');
+  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
   for (const [i, r] of rows.entries()) {
+    const line = i + 2;
     try {
-      const team = async (n: string) => {
-        const q = await pool.query('SELECT id FROM teams WHERE lower(name)=lower($1)', [n]);
-        if (!q.rows.length) throw new Error(`unknown team "${n}"`);
-        return q.rows[0].id;
-      };
-      let court = (await pool.query('SELECT id FROM courts WHERE lower(slug)=lower($1) OR lower(name)=lower($1)', [r.court])).rows[0];
-      if (!court && r.court) court = (await pool.query('INSERT INTO courts(slug,name) VALUES ($1,$2) RETURNING id', [r.court.toLowerCase().replace(/[^a-z0-9]+/g, '-'), r.court])).rows[0];
-      const when = r.date ? `${r.date} ${r.time || '00:00'}` : null; // interpreted in the server's TZ
-      await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division) VALUES ($1,$2,$3,$4::timestamp,$5)',
-        [court?.id ?? null, await team(r.home), await team(r.away), when, r.division || null]);
-      created++;
-    } catch (e: any) { errors.push(`row ${i + 2}: ${e.message}`); }
+      const v = teamValues(r); const key = v[0].toLowerCase();
+      if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (skipped)`); continue; }
+      seen.set(key, line);
+      const ex = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows[0];
+      if (!ex) { await upsertTeam(r); out.created++; continue; }
+      const same = ex.name === v[0] && ex.short_name === v[1] && ex.primary_color.toLowerCase() === v[2] && ex.secondary_color.toLowerCase() === v[3] && (ex.logo_url ?? null) === v[4];
+      if (same) { out.skipped++; continue; }
+      await upsertTeam(r, ex.id); out.updated++;
+    } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
   }
-  return { created, errors };
+  return out;
+}
+
+async function importCourts(text: string): Promise<ImportResult> {
+  const { headers, rows } = parseCsvTable(text);
+  requireColumns(headers, ['slug', 'name'], 'courts.csv');
+  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
+  for (const [i, r] of rows.entries()) {
+    const line = i + 2;
+    try {
+      const name = (r.name || '').trim(), slug = (r.slug || '').trim().toLowerCase(), location = (r.location || '').trim() || null;
+      if (!name) throw new HttpError(400, 'name required');
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) throw new HttpError(400, `slug "${r.slug}" must be lowercase letters, digits and dashes (e.g. court-1)`);
+      if (seen.has(slug)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(slug)} (skipped)`); continue; }
+      seen.set(slug, line);
+      const ex = (await pool.query('SELECT id, name, location FROM courts WHERE slug=$1', [slug])).rows[0];
+      if (!ex) { await pool.query('INSERT INTO courts(slug, name, location) VALUES ($1,$2,$3)', [slug, name, location]); out.created++; }
+      else if (ex.name === name && (ex.location ?? null) === location) out.skipped++;
+      else { await pool.query('UPDATE courts SET name=$2, location=$3 WHERE id=$1', [ex.id, name, location]); out.updated++; }
+    } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
+  }
+  return out;
+}
+
+/** Idempotent schedule import: match by exported id, else by court+start+home+away (unique index). */
+async function importSchedule(text: string): Promise<ImportResult> {
+  const { headers, rows } = parseCsvTable(text);
+  requireColumns(headers, ['date', 'time', 'court', 'home', 'away'], 'schedule.csv');
+  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
+  const team = async (n: string, col: string) => {
+    if (!n) throw new HttpError(400, `${col} team is empty`);
+    const q = await pool.query('SELECT id FROM teams WHERE lower(name)=lower($1)', [n]);
+    if (!q.rows.length) throw new HttpError(400, `unknown ${col} team "${n}" (import teams.csv first)`);
+    return q.rows[0].id as number;
+  };
+  for (const [i, r] of rows.entries()) {
+    const line = i + 2;
+    try {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) throw new HttpError(400, `date "${r.date}" must be YYYY-MM-DD`);
+      if (!/^\d{1,2}:\d{2}$/.test(r.time || '')) throw new HttpError(400, `time "${r.time}" must be HH:MM (24h, league time)`);
+      const court = (await pool.query('SELECT id FROM courts WHERE slug=lower($1)', [(r.court || '').trim()])).rows[0];
+      if (!court) throw new HttpError(400, `unknown court "${r.court}" (use a slug from courts.csv, e.g. court-1)`);
+      const home = await team(r.home, 'home'), away = await team(r.away, 'away');
+      if (home === away) throw new HttpError(400, 'home and away are the same team');
+      const when = `${r.date} ${r.time}`; const division = (r.division || '').trim() || null;
+      const id = (r.id || '').trim();
+      const ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date;
+      const key = `${court.id}|${ts.getTime()}|${home}|${away}`;
+      if (seen.has(key) || (id && seen.has('id:' + id))) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key) ?? seen.get('id:' + id)} (skipped)`); continue; }
+      seen.set(key, line); if (id) seen.set('id:' + id, line);
+      let ex;
+      if (id) {
+        if (!/^\d+$/.test(id)) throw new HttpError(400, `id "${id}" must be a number from an export (or leave it blank)`);
+        ex = (await pool.query('SELECT * FROM games WHERE id=$1', [Number(id)])).rows[0];
+        if (!ex) throw new HttpError(400, `unknown game id ${id} (leave id blank to add a new game)`);
+      } else {
+        ex = (await pool.query('SELECT * FROM games WHERE court_id=$1 AND scheduled_at=$2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
+      }
+      if (!ex) {
+        await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division) VALUES ($1,$2,$3,$4,$5)', [court.id, home, away, ts, division]);
+        out.created++; continue;
+      }
+      const same = ex.court_id === court.id && new Date(ex.scheduled_at).getTime() === ts.getTime() && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division;
+      if (same) { out.skipped++; continue; }
+      await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, home_team_id=$4, away_team_id=$5, division=$6 WHERE id=$1', [ex.id, court.id, ts, home, away, division]);
+      out.updated++;
+    } catch (e: any) {
+      out.errors.push(`row ${line}: ${/duplicate key/.test(e.message) ? 'another game already has this court, time and teams' : e.message}`);
+    }
+  }
+  return out;
 }
 
 async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL): Promise<void> {
@@ -303,8 +423,16 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   const seg = p.split('/').filter(Boolean); // ['api', ...]
   if (p === '/api/health') { await pool.query('SELECT 1'); return json(res, 200, { ok: true, serverNow: Date.now() }); }
   if (p === '/api/login' && m === 'POST') {
+    const key = `login:${clientIp(req)}`;
+    const wait = loginLimiter.retryAfter(key);
+    if (wait) return json(res, 429, { error: `Too many failed logins. Try again in ${Math.ceil(wait / 1000)} s.`, retryAfter: Math.ceil(wait / 1000) }, { 'retry-after': String(Math.ceil(wait / 1000)) });
     const b = await readJson(req);
-    if (!ADMIN_PASSWORD || !safeEq(String(b.password || ''), ADMIN_PASSWORD)) return json(res, 401, { error: 'wrong password' });
+    if (!ADMIN_PASSWORD || !safeEq(String(b.password || ''), ADMIN_PASSWORD)) {
+      const locked = loginLimiter.fail(key);
+      if (locked) return json(res, 429, { error: `Too many failed logins. Try again in ${Math.ceil(locked / 1000)} s.`, retryAfter: Math.ceil(locked / 1000) }, { 'retry-after': String(Math.ceil(locked / 1000)) });
+      return json(res, 401, { error: 'wrong password' });
+    }
+    loginLimiter.succeed(key);
     const t = makeToken();
     return json(res, 200, { token: t }, { 'set-cookie': `sb_admin=${t}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200` });
   }
@@ -326,7 +454,12 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY name')).rows);
     if (m === 'POST') return json(res, 201, { id: await upsertTeam(await readJson(req)) });
     if (m === 'PUT' && id) { await upsertTeam(await readJson(req), id); await refreshAllCourts(); return json(res, 200, { id }); }
-    if (m === 'DELETE' && id) { await pool.query('DELETE FROM teams WHERE id=$1', [id]); return json(res, 200, { ok: true }); }
+    if (m === 'DELETE' && id) {
+      const t = (await pool.query('SELECT name, (SELECT count(*)::int FROM games WHERE home_team_id=$1 OR away_team_id=$1) AS n FROM teams WHERE id=$1', [id])).rows[0];
+      if (!t) return json(res, 404, { error: 'team not found' });
+      if (t.n > 0) return json(res, 409, { error: `"${t.name}" is in ${t.n} game${t.n === 1 ? '' : 's'}. Delete or change those games first, then delete the team.` });
+      await pool.query('DELETE FROM teams WHERE id=$1', [id]); return json(res, 200, { ok: true });
+    }
   }
   if (seg[1] === 'courts') {
     const id = seg[2] ? Number(seg[2]) : undefined;
@@ -355,8 +488,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     if (m === 'POST' && !id) {
       const b = await readJson(req);
       if (!b.home_team_id || !b.away_team_id || b.home_team_id === b.away_team_id) throw new Error('pick two different teams');
-      const r = await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, theme, rules) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
-        [b.court_id || null, b.home_team_id, b.away_team_id, b.scheduled_at || null, b.division || null, sanitizeTheme(b.theme), b.rules || {}]);
+      let r;
+      try {
+        r = await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, theme, rules) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+          [b.court_id || null, b.home_team_id, b.away_team_id, b.scheduled_at || null, b.division || null, sanitizeTheme(b.theme), b.rules || {}]);
+      } catch (e: any) {
+        if (/duplicate key/.test(e.message)) throw new HttpError(409, 'That game (same court, time and teams) is already scheduled.');
+        throw e;
+      }
       return json(res, 201, { id: r.rows[0].id });
     }
     if (m === 'PUT' && id && seg.length === 3) {
@@ -383,42 +522,19 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     return csvOut(res, 'teams.csv', toCsv(['name', 'short_name', 'primary_color', 'secondary_color', 'logo_url'], rows));
   }
   if (p === '/api/export/schedule.csv') {
-    const { rows } = await pool.query(`SELECT to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'YYYY-MM-DD') AS date,
+    const { rows } = await pool.query(`SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'YYYY-MM-DD') AS date,
       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'HH24:MI') AS time, COALESCE(c.slug,'') AS court, g.division,
       h.name AS home, a.name AS away, g.final_home AS home_score, g.final_away AS away_score, g.status
       FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
       ORDER BY g.scheduled_at NULLS LAST, g.id`);
-    return csvOut(res, 'schedule.csv', toCsv(['date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status'], rows));
+    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status'], rows));
   }
-  if (p === '/api/import/teams.csv' && m === 'POST') {
-    const rows = parseCsv(await readBody(req)); let n = 0; const errors: string[] = [];
-    for (const [i, r] of rows.entries()) {
-      try {
-        const ex = (await pool.query('SELECT id FROM teams WHERE lower(name)=lower($1)', [r.name])).rows[0];
-        await upsertTeam(r, ex?.id); n++;
-      } catch (e: any) { errors.push(`row ${i + 2}: ${e.message}`); }
-    }
-    await refreshAllCourts(); return json(res, 200, { upserted: n, errors });
-  }
+  if (p === '/api/import/teams.csv' && m === 'POST') { const r = await importTeams(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   if (p === '/api/export/courts.csv') {
     const { rows } = await pool.query('SELECT slug, name, location FROM courts ORDER BY id');
     return csvOut(res, 'courts.csv', toCsv(['slug', 'name', 'location'], rows));
   }
-  if (p === '/api/import/courts.csv' && m === 'POST') {
-    // Upsert by slug (slug is what URLs, PINs and schedule.csv "court" refer to).
-    const rows = parseCsv(await readBody(req)); let n = 0; const errors: string[] = [];
-    for (const [i, r] of rows.entries()) {
-      try {
-        const name = (r.name || '').trim();
-        const slug = (r.slug || name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        if (!slug || !name) throw new Error('slug/name required');
-        await pool.query(`INSERT INTO courts(slug, name, location) VALUES ($1,$2,$3)
-          ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name, location=EXCLUDED.location`, [slug, name, r.location || null]);
-        n++;
-      } catch (e: any) { errors.push(`row ${i + 2}: ${e.message}`); }
-    }
-    await refreshAllCourts(); return json(res, 200, { upserted: n, errors });
-  }
+  if (p === '/api/import/courts.csv' && m === 'POST') { const r = await importCourts(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   if (p === '/api/import/schedule.csv' && m === 'POST') { const r = await importSchedule(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   json(res, 404, { error: 'not found' });
 }
@@ -430,7 +546,7 @@ function sanitizeTheme(t: any) {
     if (t[`${side}Name`]) o[`${side}Name`] = String(t[`${side}Name`]).slice(0, 30);
     if (HEX.test(t[`${side}Color`] || '')) o[`${side}Color`] = t[`${side}Color`];
     if (HEX.test(t[`${side}Accent`] || '')) o[`${side}Accent`] = t[`${side}Accent`];
-    if (/^(https?:\/\/|\/)/.test(t[`${side}Logo`] || '')) o[`${side}Logo`] = String(t[`${side}Logo`]);
+    if (t[`${side}Logo`]) o[`${side}Logo`] = safeLogoUrl(t[`${side}Logo`])!;
   }
   return o;
 }
@@ -451,7 +567,7 @@ const server = http.createServer(async (req, res) => {
     const lm = /^\/logos\/(\d+)$/.exec(u.pathname);
     if (lm) {
       const r = (await pool.query('SELECT logo_data, logo_mime FROM teams WHERE id=$1', [Number(lm[1])])).rows[0];
-      if (!r?.logo_data) { res.writeHead(404); return res.end(); }
+      if (!r?.logo_data || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(r.logo_mime)) { res.writeHead(404); return res.end(); }
       res.writeHead(200, { 'content-type': r.logo_mime, 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
       return res.end(r.logo_data);
     }
@@ -463,9 +579,9 @@ const server = http.createServer(async (req, res) => {
     fs.createReadStream(full).pipe(res);
   } catch (e: any) {
     const msg = String(e?.message || e);
-    const code = /duplicate key/.test(msg) ? 409 : /foreign key/.test(msg) ? 400 : /required|must|pick|larger|assign|JSON|too large|unknown/.test(msg) ? 400 : 500;
+    const code = e instanceof HttpError ? e.status : /duplicate key/.test(msg) ? 409 : /foreign key/.test(msg) ? 400 : /required|must|pick|larger|assign|JSON|too large|unknown/.test(msg) ? 400 : 500;
     if (code === 500) console.error(e);
-    if (!res.headersSent) json(res, code, { error: code === 500 ? 'server error' : msg });
+    if (!res.headersSent) json(res, code, { error: code === 500 ? 'server error' : msg }, code === 413 ? { connection: 'close' } : {});
     else res.end();
   }
 });

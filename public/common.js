@@ -4,43 +4,82 @@
 //   from server timestamps, never by counting ticks locally.
 export function courtFromPath() { return decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || ''); }
 
+// Liveness: browsers can't see protocol-level pings, so we send an app-level ping every
+// second and treat ~3s of silence (no pong/state/time message) as a dead connection. That
+// catches half-open sockets after a silent Wi-Fi drop. window offline/online events speed it up.
+const PING_MS = 1000, DEAD_MS = 3000;
+
 export function connect({ court, role, onState, onStatus, onMessage }) {
-  let ws, backoff = 500, offset = 0, bestRtt = Infinity, closedByUs = false, pingTimer;
-  const status = (s) => onStatus && onStatus(s);
+  let ws = null, backoff = 500, offset = 0, bestRtt = Infinity, closedByUs = false;
+  let pingTimer = null, watchdog = null, retryTimer = null, lastMsgAt = 0, offlineAt = 0, state = 'connecting';
+  const status = (s) => { if (s === state) return; state = s; onStatus && onStatus(s); };
+
+  function detach(sock) { if (!sock) return; sock.onopen = sock.onmessage = sock.onclose = sock.onerror = null; try { sock.close(); } catch {} }
+  function scheduleReconnect(delay = backoff) {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(open, delay);
+    backoff = Math.min(backoff * 2, 8000);
+  }
+  function goOffline() {
+    if (closedByUs) return;
+    clearInterval(pingTimer); clearInterval(watchdog);
+    detach(ws); ws = null;
+    if (!offlineAt) offlineAt = Date.now(); // the clock freezes here (no jump back, no further countdown)
+    status('offline');
+    scheduleReconnect();
+  }
   function open() {
+    clearTimeout(retryTimer);
+    detach(ws);
+    if (!navigator.onLine) { status('offline'); return; } // the 'online' event will call us
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/ws?court=${encodeURIComponent(court)}&role=${role}`);
-    queueMicrotask(() => status('connecting'));
-    ws.onopen = () => { backoff = 500; bestRtt = Infinity; status('online'); ping(); clearInterval(pingTimer); pingTimer = setInterval(ping, 10000); };
-    ws.onmessage = (ev) => {
+    const sock = new WebSocket(`${proto}://${location.host}/ws?court=${encodeURIComponent(court)}&role=${role}`);
+    ws = sock;
+    if (state !== 'offline') queueMicrotask(() => status('connecting'));
+    sock.onopen = () => {
+      backoff = 500; bestRtt = Infinity; lastMsgAt = Date.now();
+      ping();
+      clearInterval(pingTimer); pingTimer = setInterval(ping, PING_MS);
+      clearInterval(watchdog); watchdog = setInterval(() => { if (Date.now() - lastMsgAt > DEAD_MS) goOffline(); }, 500);
+    };
+    sock.onmessage = (ev) => {
+      lastMsgAt = Date.now();
       const m = JSON.parse(ev.data);
       if (m.type === 'pong') {
         const rtt = Date.now() - m.t;
         if (rtt <= bestRtt) { bestRtt = rtt; offset = m.serverNow + rtt / 2 - Date.now(); }
         return;
       }
-      if (m.type === 'state') { if (bestRtt === Infinity) offset = m.serverNow - Date.now(); onState(m); }
+      if (m.type === 'state') {
+        if (bestRtt === Infinity) offset = m.serverNow - Date.now();
+        offlineAt = 0;
+        onState(m);
+        status('online'); // only "online" once we hold fresh server state
+      }
       onMessage && onMessage(m);
     };
-    ws.onclose = () => {
-      clearInterval(pingTimer);
-      if (closedByUs) return;
-      status('offline');
-      setTimeout(open, backoff); backoff = Math.min(backoff * 2, 8000);
-    };
-    ws.onerror = () => ws.close();
+    sock.onclose = (ev) => { if (sock === ws) { if (ev.code === 4008) backoff = 8000; goOffline(); } };
+    sock.onerror = () => { if (sock === ws) goOffline(); };
   }
-  function ping() { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); }
+  function ping() { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); }
+  window.addEventListener('offline', goOffline);
+  window.addEventListener('online', () => { backoff = 500; open(); });
   open();
   // Coming back from sleep / tab hidden: force a fresh snapshot.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resync' })); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resync' })); });
   return {
-    send: (obj) => { if (ws.readyState !== 1) return false; ws.send(JSON.stringify(obj)); return true; },
+    send: (obj) => { if (!ws || ws.readyState !== 1 || state !== 'online') return false; ws.send(JSON.stringify(obj)); return true; },
     serverNow: () => Date.now() + offset,
-    isOpen: () => ws.readyState === 1,
-    close: () => { closedByUs = true; ws.close(); },
+    /** Server time at which we lost the connection (or last heard from it): clocks freeze here. */
+    lastServerNow: () => (offlineAt || lastMsgAt) + offset,
+    isOpen: () => state === 'online',
+    status: () => state,
+    close: () => { closedByUs = true; clearInterval(pingTimer); clearInterval(watchdog); clearTimeout(retryTimer); detach(ws); },
   };
 }
+
+/** Clock time to show: live from server time when online; frozen at the last confirmed moment when not. */
+export function displayNow(conn) { return conn.isOpen() ? conn.serverNow() : conn.lastServerNow(); }
 
 export function clockMs(clock, serverNow) {
   if (!clock) return 0;
