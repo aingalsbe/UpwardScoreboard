@@ -88,3 +88,30 @@ test('possession toggles and commands are validated', () => {
   assert.throws(() => parseCommand({ type: 'DROP_TABLE' }));
   assert.deepEqual(parseCommand({ type: 'SCORE', team: 'away', pts: '3' }), { type: 'SCORE', team: 'away', pts: 3 });
 });
+
+test('QA #7: undo after the clock auto-expires undoes the clock start consistently', () => {
+  let h = newHistory(initialState({ periodLengthMs: 60_000 }));
+  h = dispatch(h, { type: 'CLOCK_SET', ms: 1500 }, T0);
+  h = dispatch(h, { type: 'CLOCK_START' }, T0);
+  h = dispatch(h, { type: 'CLOCK_EXPIRE' }, T0 + 1600);
+  assert.equal(h.present.clock.remainingMs, 0);
+  assert.equal(h.present.lastLabel, 'Clock start', 'undo button names the real top of history');
+  h = undo(h, T0 + 2000);
+  assert.equal(h.present.clock.remainingMs, 1500, 'undo restores the time before the start');
+  assert.equal(h.present.clock.running, false);
+});
+
+test('QA #11: Prev right after Next restores fouls and clock', () => {
+  let s = initialState({ periods: 4, foulReset: 'half', periodLengthMs: 60_000 });
+  s = apply(s, { type: 'PERIOD', delta: 1 }, T0); // -> 2
+  for (let i = 0; i < 8; i++) s = apply(s, { type: 'FOUL', team: 'away', delta: 1 }, T0);
+  s = apply(s, { type: 'CLOCK_SET', ms: 12_000 }, T0);
+  s = apply(s, { type: 'PERIOD', delta: 1 }, T0); // -> 3, fouls reset
+  assert.equal(s.away.fouls, 0);
+  s = apply(s, { type: 'PERIOD', delta: -1 }, T0); // back to 2
+  assert.equal(s.period, 2);
+  assert.equal(s.away.fouls, 8);
+  assert.equal(s.clock.remainingMs, 12_000);
+  s = apply(s, { type: 'PERIOD', delta: -1 }, T0); // 2 -> 1: nothing saved, plain reset
+  assert.equal(s.clock.remainingMs, 60_000);
+});

@@ -43,13 +43,29 @@ function tokenFrom(req: http.IncomingMessage): string | undefined {
   const m = /(?:^|;\s*)sb_admin=([^;]+)/.exec(req.headers.cookie || '');
   return m?.[1];
 }
-// Brute-force protection. Per IP: PIN failures lock after 10 (a gym shares one NAT IP),
-// admin-login failures after 5. Per socket: close after 5 bad PINs. Lockouts double (30s, 60s, ... max 15 min).
+// Brute-force protection (QA r2-A: never lock out a whole gym).
+// - PIN failures are counted per court + device (client-generated id) and per socket: 5 -> lock/close.
+// - Only a much higher per-IP backstop (50) applies across devices, so one kid guessing on court-2
+//   can't lock court-1. Devices holding a valid court session token skip the PIN check and all limits.
+// - Admin login: 5 failures per IP. Lockouts double (30s, 60s, ... max 15 min).
 const LOCK_BASE_MS = Number(process.env.RATE_LIMIT_BASE_MS || 30_000);
-const pinLimiter = new Limiter(10, LOCK_BASE_MS);
+const pinDeviceLimiter = new Limiter(5, LOCK_BASE_MS);
+const pinIpBackstop = new Limiter(50, LOCK_BASE_MS);
 const loginLimiter = new Limiter(5, LOCK_BASE_MS);
 const SOCKET_MAX_PIN_FAILS = 5;
-setInterval(() => { pinLimiter.prune(); loginLimiter.prune(); }, 600_000).unref();
+setInterval(() => { pinDeviceLimiter.prune(); pinIpBackstop.prune(); loginLimiter.prune(); }, 600_000).unref();
+
+// Court session tokens: HMAC-signed "court.expiry.sig", 12 h, scoped to one court. Issued after a
+// correct PIN, kept in the device's localStorage, used on every reconnect instead of the PIN.
+const SESSION_MS = 12 * 3600_000;
+function makeCourtSession(court: string): string { const exp = String(Date.now() + SESSION_MS); return `${court}.${exp}.${sign(`court:${court}:${exp}`)}`; }
+function validCourtSession(t: unknown, court: string): boolean {
+  if (typeof t !== 'string' || t.length > 200) return false;
+  const i = t.lastIndexOf('.'), j = t.lastIndexOf('.', i - 1);
+  if (i < 0 || j < 0) return false;
+  const c = t.slice(0, j), exp = t.slice(j + 1, i), sig = t.slice(i + 1);
+  return c === court && Number(exp) > Date.now() && safeEq(sig, sign(`court:${c}:${exp}`));
+}
 function clientIp(req: http.IncomingMessage): string {
   if (process.env.TRUST_PROXY === 'true') {
     const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -221,19 +237,33 @@ function attachWs(server: http.Server) {
         if (msg.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
         if (msg.type === 'resync') { const s = await courtSnapshot(court); return s && send(client, s); }
         if (msg.type === 'auth') {
-          const key = `pin:${ip}`;
-          const wait = pinLimiter.retryAfter(key);
-          if (wait) return send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(wait / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(wait / 1000)} s.` });
-          if (role === 'score' && (pinOk(court, msg.pin) || validToken(msg.token))) {
-            pinLimiter.succeed(key); pinFails = 0;
-            client.authed = true; send(client, { type: 'auth', ok: true }); return void broadcastCourt(court);
-          }
-          const locked = pinLimiter.fail(key);
+          // Displays are read-only: an auth attempt there is refused but never counted.
+          if (role !== 'score') return send(client, { type: 'auth', ok: false, error: 'This is a read-only display link.' });
+          const welcome = (session: string | null, how: string) => {
+            client.authed = true; pinFails = 0;
+            send(client, { type: 'auth', ok: true, how, ...(session ? { session } : {}) });
+            return void broadcastCourt(court);
+          };
+          // 1) Session token or admin token: no PIN, no limiter, never locked out.
+          if (validCourtSession(msg.session, court)) return welcome(null, 'session');
+          if (validToken(msg.token)) return welcome(null, 'admin');
+          if (msg.pin == null) return send(client, { type: 'auth', ok: false, needPin: true, error: msg.session ? 'Session expired. Enter the PIN.' : 'Enter the PIN.' });
+          // 2) PIN: limited per court + device and per socket, with a high per-IP backstop.
+          const dev = typeof msg.device === 'string' && /^[\w-]{8,64}$/.test(msg.device) ? msg.device : `sock-${ip}-${court}`;
+          const devKey = `pin:${court}:${dev}`, ipKey = `pinip:${ip}`;
+          const locked = (ms: number) => send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(ms / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(ms / 1000)} s.` });
+          const wait = Math.max(pinDeviceLimiter.retryAfter(devKey), pinIpBackstop.retryAfter(ipKey));
+          if (wait) return locked(wait);
+          if (pinOk(court, msg.pin)) { pinDeviceLimiter.succeed(devKey); pinIpBackstop.succeed(ipKey); return welcome(makeCourtSession(court), 'pin'); }
+          const lockMs = Math.max(pinDeviceLimiter.fail(devKey), pinIpBackstop.fail(ipKey));
           pinFails++;
-          send(client, locked
-            ? { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(locked / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(locked / 1000)} s.` }
-            : { type: 'auth', ok: false, error: 'Wrong PIN' });
-          if (pinFails >= SOCKET_MAX_PIN_FAILS) ws.close(4008, 'too many PIN attempts');
+          if (lockMs) locked(lockMs);
+          else send(client, { type: 'auth', ok: false, error: `Wrong PIN (${SOCKET_MAX_PIN_FAILS - pinFails} ${SOCKET_MAX_PIN_FAILS - pinFails === 1 ? 'try' : 'tries'} left)` });
+          if (pinFails >= SOCKET_MAX_PIN_FAILS) {
+            const ms = Math.max(pinDeviceLimiter.retryAfter(devKey), LOCK_BASE_MS);
+            send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(ms / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(ms / 1000)} s.` });
+            ws.close(4008, 'too many PIN attempts');
+          }
           return;
         }
         if (['cmd', 'undo', 'redo'].includes(msg.type)) {
@@ -383,16 +413,20 @@ async function importSchedule(text: string): Promise<ImportResult> {
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
     try {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) throw new HttpError(400, `date "${r.date}" must be YYYY-MM-DD`);
-      if (!/^\d{1,2}:\d{2}$/.test(r.time || '')) throw new HttpError(400, `time "${r.time}" must be HH:MM (24h, league time)`);
-      const court = (await pool.query('SELECT id FROM courts WHERE slug=lower($1)', [(r.court || '').trim()])).rows[0];
+      const date = (r.date || '').trim(), time = (r.time || '').trim();
+      if (date || time) { // both empty = "not scheduled yet" (allowed; exports write it that way)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, `date "${r.date}" must be YYYY-MM-DD (or leave date and time both empty)`);
+        if (!/^\d{1,2}:\d{2}$/.test(time)) throw new HttpError(400, `time "${r.time}" must be HH:MM (24h, league time)`);
+      }
+      const slug = (r.court || '').trim();
+      const court = slug ? (await pool.query('SELECT id FROM courts WHERE slug=lower($1)', [slug])).rows[0] : { id: null };
       if (!court) throw new HttpError(400, `unknown court "${r.court}" (use a slug from courts.csv, e.g. court-1)`);
       const home = await team(r.home, 'home'), away = await team(r.away, 'away');
       if (home === away) throw new HttpError(400, 'home and away are the same team');
-      const when = `${r.date} ${r.time}`; const division = (r.division || '').trim() || null;
+      const when = date ? `${date} ${time}` : null; const division = (r.division || '').trim() || null;
       const id = (r.id || '').trim();
-      const ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date;
-      const key = `${court.id}|${ts.getTime()}|${home}|${away}`;
+      const ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date | null;
+      const key = `${court.id}|${ts?.getTime() ?? ''}|${home}|${away}`;
       if (seen.has(key) || (id && seen.has('id:' + id))) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key) ?? seen.get('id:' + id)} (skipped)`); continue; }
       seen.set(key, line); if (id) seen.set('id:' + id, line);
       let ex;
@@ -401,13 +435,13 @@ async function importSchedule(text: string): Promise<ImportResult> {
         ex = (await pool.query('SELECT * FROM games WHERE id=$1', [Number(id)])).rows[0];
         if (!ex) throw new HttpError(400, `unknown game id ${id} (leave id blank to add a new game)`);
       } else {
-        ex = (await pool.query('SELECT * FROM games WHERE court_id=$1 AND scheduled_at=$2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
+        ex = (await pool.query('SELECT * FROM games WHERE court_id IS NOT DISTINCT FROM $1 AND scheduled_at IS NOT DISTINCT FROM $2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
       }
       if (!ex) {
         await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division) VALUES ($1,$2,$3,$4,$5)', [court.id, home, away, ts, division]);
         out.created++; continue;
       }
-      const same = ex.court_id === court.id && new Date(ex.scheduled_at).getTime() === ts.getTime() && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division;
+      const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division;
       if (same) { out.skipped++; continue; }
       await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, home_team_id=$4, away_team_id=$5, division=$6 WHERE id=$1', [ex.id, court.id, ts, home, away, division]);
       out.updated++;
@@ -524,7 +558,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   if (p === '/api/export/schedule.csv') {
     const { rows } = await pool.query(`SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'YYYY-MM-DD') AS date,
       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'HH24:MI') AS time, COALESCE(c.slug,'') AS court, g.division,
-      h.name AS home, a.name AS away, g.final_home AS home_score, g.final_away AS away_score, g.status
+      h.name AS home, a.name AS away,
+      CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int) END AS home_score,
+      CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int) END AS away_score, g.status
       FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
       ORDER BY g.scheduled_at NULLS LAST, g.id`);
     return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status'], rows));

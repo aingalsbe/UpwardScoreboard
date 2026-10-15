@@ -35,6 +35,8 @@ export interface GameState {
   banner: string | null;    // e.g. "HALFTIME", shown on the TV
   rules: Rules;
   lastLabel: string | null; // human label of last change, for the Undo button
+  /** Snapshot taken when "Next period" was pressed, so an accidental Next can be reversed with Prev. */
+  beforeNext?: { period: number; homeFouls: number; awayFouls: number; remainingMs: number } | null;
 }
 
 export type Command =
@@ -139,10 +141,17 @@ export function apply(s: GameState, c: Command, now: number): GameState {
       if (p === s.period) return s;
       next.period = p;
       next.clock = { running: false, remainingMs: s.rules.periodLengthMs, startedAt: null };
+      const back = c.delta < 0 && s.beforeNext && s.beforeNext.period === p ? s.beforeNext : null;
       const half = Math.ceil(s.rules.periods / 2);
       const reset = s.rules.foulReset === 'period' ||
         (s.rules.foulReset === 'half' && c.delta > 0 && s.period <= half && p > half);
       if (reset) { next.home.fouls = 0; next.away.fouls = 0; }
+      if (c.delta > 0) next.beforeNext = { period: s.period, homeFouls: s.home.fouls, awayFouls: s.away.fouls, remainingMs: remainingMs(s.clock, now) };
+      if (back) { // Prev right after Next: bring back that period's fouls and clock (QA #11)
+        next.home.fouls = back.homeFouls; next.away.fouls = back.awayFouls;
+        next.clock = { running: false, remainingMs: back.remainingMs, startedAt: null };
+      }
+      if (c.delta < 0) next.beforeNext = null;
       label = `Period ${p}`; break;
     }
     case 'POSSESSION': {
@@ -175,7 +184,8 @@ export function newHistory(state: GameState): History { return { present: state,
 export function dispatch(h: History, c: Command, now: number): History {
   const n = apply(h.present, c, now);
   if (n === h.present) return h;
-  if (c.type === 'CLOCK_EXPIRE') return { ...h, present: n }; // system event, not undoable
+  // System event, not undoable: keep the Undo label pointing at the real top of the history (QA #7).
+  if (c.type === 'CLOCK_EXPIRE') return { ...h, present: { ...n, lastLabel: h.present.lastLabel } };
   return { present: n, past: [...h.past, h.present].slice(-HISTORY_LIMIT), future: [] };
 }
 
