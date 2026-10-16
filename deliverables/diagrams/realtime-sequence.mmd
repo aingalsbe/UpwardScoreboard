@@ -4,8 +4,8 @@ sequenceDiagram
   participant S as App server (authoritative)
   participant DB as Postgres
   participant TV as TV display
-  SK->>S: connect /ws?court=court-1&role=score + auth PIN
-  TV->>S: connect /ws?court=court-1&role=tv
+  SK->>S: connect /ws?court=west&role=score + auth PIN
+  TV->>S: connect /ws?court=west&role=tv
   S-->>SK: full snapshot (state, seq=41, serverNow)
   S-->>TV: full snapshot (state, seq=41, serverNow)
   Note over SK,TV: Clients estimate the server clock offset from ping/pong.<br/>Clock shown = remainingMs - (serverNow - startedAt)

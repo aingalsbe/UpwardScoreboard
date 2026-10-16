@@ -1,8 +1,8 @@
 flowchart LR
   subgraph Gym["Gym (per court) - no local server"]
-    SK["Scorekeeper phone/tablet<br/>/score/court-1<br/>(PIN)"]
-    TV["TV device browser<br/>/tv/court-1<br/>(read-only)"]
-    OBS["OBS laptop (optional)<br/>/overlay/court-1<br/>transparent scorebug"]
+    SK["Scorekeeper phone/tablet<br/>/score/west<br/>(PIN)"]
+    TV["TV device browser<br/>/upwardbasketballscores/westcourt<br/>(read-only)"]
+    OBS["OBS laptop (optional)<br/>/upwardbasketballscores/westcourt/overlay<br/>transparent scorebug"]
   end
   AD["Admin browser<br/>/admin (password)"]
   subgraph Cloud["Managed host (e.g. Render) - HTTPS"]

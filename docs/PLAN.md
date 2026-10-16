@@ -32,3 +32,7 @@ Team: **Devon** (backend, architecture), **Sage** (TV/controller/admin UI), **Av
 3. **How many courts** run at once, and which TV device per court (Fire TV + Fully Kiosk vs. Chromebook/mini PC)? Is the gym Wi-Fi usable, or do we need a hotspot?
 4. **Who are the scorekeepers**: a parent volunteer per game, or a trained crew? That decides PIN-per-court vs. per-person logins.
 5. **League rules**: quarters or halves, period length, timeouts per game, foul count for the bonus, when fouls reset, overtime length. These map directly to `games.rules` (defaults: 4 × 8 min, 3 timeouts, bonus at 7, reset at half).
+
+## Update (courts, shared floor, season colors, grades, QR scorekeeping flow)
+
+Courts are now full, west and east (Full shares the floor with West and East; GAME_MINUTES default 60 with a per-game override). Statuses are scheduled/active/complete with one active game per court. Scorekeepers sign in with a weekly signed court QR (PIN fallback) and pick today's game. TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt} and /overlay variants, plus /tv/split. Season colors (Maroon #800000 / Gold #FFC72C) replace team colors; teams have grades. Full details: deliverables/UpwardScoreboard-POC.md section 3.4.

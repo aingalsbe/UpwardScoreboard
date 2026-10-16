@@ -49,10 +49,10 @@ league name and court/division header; per team a color bar, logo (or initial ba
 
 | Option | How | Pros | Cons |
 |---|---|---|---|
-| **A. OBS browser-source overlay** ✅ (page built) | OBS on a laptop: camera + Browser Source `https://<host>/overlay/court-1` at 1920×1080. The page background is transparent. | Pro look, live scorebug synced to the controller, no extra cost, the same laptop can also drive the TV over HDMI. | Needs a laptop and someone comfortable with OBS. Upload bandwidth at the gym. |
+| **A. OBS browser-source overlay** ✅ (page built) | OBS on a laptop: camera + Browser Source `https://<host>/upwardbasketballscores/westcourt/overlay` at 1920×1080. The page background is transparent. | Pro look, live scorebug synced to the controller, no extra cost, the same laptop can also drive the TV over HDMI. | Needs a laptop and someone comfortable with OBS. Upload bandwidth at the gym. |
 | **B. YouTube / Facebook Live via OBS** ⏭ | Option A plus OBS "Start Streaming" with a YouTube/Facebook stream key. | Families watch from home, recordings are kept. | YouTube needs channel verification/eligibility for live streaming. Minors on camera need a church consent/privacy policy. Music copyright strikes during warm-ups. |
 | **C. Phone-camera path** ⏭ | A phone on a tripod streams with the YouTube app (no overlay), or with an RTMP app that supports a web-page overlay (e.g., Larix/Streamlabs-type apps), or the phone feeds OBS over NDI/OBS Camera. | Cheapest: no laptop. | Overlay support varies by app. Battery/heat. Quality depends on cellular/Wi-Fi uplink. |
-| D. Just a parents' live score link | Share `/tv/court-1` (read-only) or a future mobile "live scores" page with a QR code. | Zero video complexity. | No video. |
+| D. Just a parents' live score link | Share `/upwardbasketballscores/westcourt` (read-only) or a future mobile "live scores" page with a QR code. | Zero video complexity. | No video. |
 
 Recommendation: pilot with **A on the TV only**. Add B once a volunteer owns OBS and the consent policy is settled.
 
@@ -72,3 +72,7 @@ Recommendation: pilot with **A on the TV only**. Add B once a volunteer owns OBS
 | Real Google Sheets sync | ⏭ | Use the Sheets API v4 with a service account shared on the league sheet. "Pull schedule" reads `Schedule!A:F` (`spreadsheets.values.get`) through the same import code. "Push results" writes scores back (`values.update`). Optional nightly cron. |
 | Users & roles | 🟡 | POC: **admin** = password, **scorekeeper** = per-court PIN, **public viewer** = TV/overlay with no login (read-only, enforced server-side). Next: a `users` table with Google sign-in (OIDC) for admins, and PINs/QR codes generated per game day from the admin UI instead of env. |
 | Seasons, divisions, standings | ⏭ | |
+
+## Update (courts, shared floor, season colors, grades, QR scorekeeping flow)
+
+Courts are now full, west and east (Full shares the floor with West and East; GAME_MINUTES default 60 with a per-game override). Statuses are scheduled/active/complete with one active game per court. Scorekeepers sign in with a weekly signed court QR (PIN fallback) and pick today's game. TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt} and /overlay variants, plus /tv/split. Season colors (Maroon #800000 / Gold #FFC72C) replace team colors; teams have grades. Full details: deliverables/UpwardScoreboard-POC.md section 3.4.

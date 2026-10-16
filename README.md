@@ -15,16 +15,19 @@ cp .env.example .env        # then edit the passwords/PINs
 docker compose up --build   # app on http://localhost:3000, Postgres in a volume
 ```
 
-The first start seeds 6 teams, 2 courts (`court-1`, `court-2`) and 5 games for today (`SEED=true`).
+The first start seeds 10 teams in 4 grades, 3 courts (`full`, `west`, `east`; Full shares the floor with West and East) and 7 games for today, branded Lenexa Baptist Church with the 2026–27 Upward Maroon/Gold season colors (`SEED=true`).
 
 | What | URL |
 |---|---|
 | Court picker | http://localhost:3000/ |
 | Admin | http://localhost:3000/admin (password = `ADMIN_PASSWORD`) |
-| Court 1 scorekeeper / TV / overlay | http://localhost:3000/score/court-1 · /tv/court-1 · /overlay/court-1 |
-| Court 2 scorekeeper / TV / overlay | http://localhost:3000/score/court-2 · /tv/court-2 · /overlay/court-2 |
+| Full scorekeeper / TV / overlay | http://localhost:3000/score/full · /upwardbasketballscores/fullcourt · /upwardbasketballscores/fullcourt/overlay |
+| West scorekeeper / TV / overlay | http://localhost:3000/score/west · /upwardbasketballscores/westcourt · /upwardbasketballscores/westcourt/overlay |
+| East scorekeeper / TV / overlay | http://localhost:3000/score/east · /upwardbasketballscores/eastcourt · /upwardbasketballscores/eastcourt/overlay |
+| West + East on one TV | http://localhost:3000/tv/split |
+| Weekly court QR sheet | Admin > Courts > Print QR codes (valid until Sunday 23:59 America/Chicago) |
 
-Dev defaults from `.env.example`: admin password `change-me-admin`, PINs `court-1:1111`, `court-2:2222`. **Change them in any shared or hosted deployment.**
+Dev defaults from `.env.example`: admin password `change-me-admin`, PINs `full:1111`, `west:2222`, `east:3333`, `GAME_MINUTES=60` (default game length for the shared-floor rule). **Change them in any shared or hosted deployment.**
 
 Game-day flow: in Admin → Today press **Start on court** for a game. The TV for that court switches to the matchup, and the scorekeeper page unlocks with the court PIN (the device then keeps a 12 h session for that court). When editing an exported schedule in Sheets, **keep the `id` column** so changed games update instead of duplicating.
 
@@ -34,8 +37,9 @@ Game-day flow: in Admin → Today press **Start on court** for a game. The TV fo
 npm install
 npm test                  # reducer unit tests (score, fouls/bonus, clock, timeouts, undo/redo, validation)
 CHROME_PATH=/usr/bin/google-chrome node scripts/offline-e2e.mjs  # Playwright setOffline: Offline in <5 s, clock freezes, recovers
-CHROME_PATH=/usr/bin/google-chrome node scripts/lockout-e2e.mjs # wrong PINs on court-2 don't affect signed-in court-1; queued tap delivered
-node scripts/smoke.mjs    # end-to-end (71 checks): 2 courts, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
+CHROME_PATH=/usr/bin/google-chrome node scripts/lockout-e2e.mjs # wrong PINs on east don't affect signed-in west; queued tap delivered
+CHROME_PATH=/usr/bin/google-chrome node scripts/flow-e2e.mjs    # QR sign-in, picker, complete lock, resume, TV switching
+node scripts/smoke.mjs    # end-to-end (126 checks, repeatable on a used DB): 3 courts + shared-floor rule, grades, season colors, cheer squads, QR flow, statuses, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
                           # Repeatable on a used DB (own uniquely named fixtures); waits out an admin-login lock left by a previous run
 node scripts/latency.mjs  # tap -> TV latency (median/p95)
 CHROME_PATH=/usr/bin/google-chrome node scripts/screenshots.mjs   # writes docs/screenshots/*.png
@@ -49,7 +53,7 @@ You need Node 20+ and a Postgres 14+ database.
 
 ```bash
 npm install && npm run build
-DATABASE_URL=postgres://user:pass@localhost:5432/scoreboard ADMIN_PASSWORD=... SESSION_SECRET=... COURT_PINS=court-1:1111 SEED=true npm start
+DATABASE_URL=postgres://user:pass@localhost:5432/scoreboard ADMIN_PASSWORD=... SESSION_SECRET=... COURT_PINS=full:1111,west:2222,east:3333 SEED=true npm start
 ```
 
 ## Deploying (on paper, not done yet)
@@ -75,3 +79,7 @@ Templates are in `deliverables/sheets-templates/` (also `samples/`): `courts.csv
 ## Box note
 
 On the dev box Docker inter-container traffic was blocked by a leftover `iptables-legacy` FORWARD DROP policy. This was fixed with `iptables-legacy -I FORWARD -i br-+ -j ACCEPT` (and `-o br-+`). That's not needed on a normal Docker install.
+
+## Upgrading an existing database
+
+No wipe needed: on start, `court-1`/`court-2` are renamed to `west`/`east` (games kept), `full` is added with `conflicts_with = west east`, statuses live/final become active/complete, and new columns get defaults. Idempotent. For a fresh demo seed: `docker compose down -v`.

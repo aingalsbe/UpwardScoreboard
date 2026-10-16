@@ -31,7 +31,7 @@
 | `teams` | id, name (unique), short_name, primary_color, secondary_color, logo_url, logo_data (bytea), logo_mime |
 | `courts` | id, slug (unique, used in URLs and PINs), name, location, current_game_id → games |
 | `games` (unique natural key: court_id + scheduled_at + home + away, `NULLS NOT DISTINCT`) | id, court_id, home_team_id, away_team_id, scheduled_at, division, status (scheduled/live/final), theme jsonb (per-matchup name/color/logo overrides), rules jsonb (period count/length, timeouts, bonus, foul reset), history jsonb ({present, past[], future[]}), final_home, final_away |
-| `game_events` | id, game_id, seq, client_cmd_id, actor (`pin:court-1`, `admin`, `system`), command jsonb, created_at. This is the append-only audit log. |
+| `game_events` | id, game_id, seq, client_cmd_id, actor (`pin:west`, `admin`, `system`), command jsonb, created_at. This is the append-only audit log. |
 
 Next: `seasons`, `divisions`, `users(id, email, role)`, `court_pins(court_id, pin_hash, valid_on)`.
 
@@ -70,3 +70,7 @@ All three options run the same `Dockerfile` (1 web service) plus managed Postgre
 
 **Recommendation: Render**, about $13/mo (~$156/yr). It's the right balance of price, backups and a volunteer-friendly dashboard. Deploy steps (on paper): create a Render Postgres, create a Web Service from the repo (Docker), set the env vars (`DATABASE_URL` = internal URL, `ADMIN_PASSWORD`, `SESSION_SECRET`, `COURT_PINS`, `TZ=America/Chicago`, `SEED=false`), and set the health check to `/api/health`. A `render.yaml` blueprint can make this one click later.
 Volunteer upkeep: none per week. Each season: update the Node base image (rebuild), rotate the PINs, and export the schedule/results CSV as a backup.
+
+## Update (courts, shared floor, season colors, grades, QR scorekeeping flow)
+
+Courts are now full, west and east (Full shares the floor with West and East; GAME_MINUTES default 60 with a per-game override). Statuses are scheduled/active/complete with one active game per court. Scorekeepers sign in with a weekly signed court QR (PIN fallback) and pick today's game. TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt} and /overlay variants, plus /tv/split. Season colors (Maroon #800000 / Gold #FFC72C) replace team colors; teams have grades. Full details: deliverables/UpwardScoreboard-POC.md section 3.4.
