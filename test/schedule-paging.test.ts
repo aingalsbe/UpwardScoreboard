@@ -91,3 +91,16 @@ test('pinned rows align by time across West/East (empty cell where a court has n
   assert.deepEqual(late.map((r: any) => r.type), ['split', 'full']);
   assert.equal(late[0].rows.length, 1);
 });
+
+test('companion: an upcoming game next to a pinned one at the same time joins the pinned row (no empty cells)', { skip }, async () => {
+  const v = await load();
+  // Avery's morning: West 8:00 live, East 8:00 next -> West next is 9:00; East 9:00 rides along in the pinned 9:00 row.
+  const p = v.planSchedule(day((t, c) => (t === '08:00' && c === 'west' ? 'active' : 'scheduled')));
+  assert.deepEqual(ids(p.pinned), ['08:00 west', '08:00 east', '09:00 west', '09:00 east']);
+  assert.equal(p.later[0].time, '10:00');
+  assert.ok(v.blocksOf(p.pinned)[0].rows.every((r: any) => r.west && r.east));
+  assert.ok(!p.nextIds.has(p.pinned[3].id)); // the companion isn't UP NEXT (it keeps its time tag)
+  // A final next to a pinned game does not move up (finals stay lowest priority): pinned keeps an empty cell.
+  const mid = v.planSchedule(day((t, c) => (t < '10:00' || (t === '10:00' && c === 'west') ? 'complete' : t === '10:00' ? 'active' : 'scheduled')));
+  assert.deepEqual(ids(mid.pinned), ['10:00 east', '11:00 west', '11:00 east']);
+});

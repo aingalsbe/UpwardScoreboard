@@ -42,16 +42,22 @@ export function nextIdsOf(games) {
 }
 
 /**
- * Order the day for the screen. pinned = live + UP NEXT (never paged), later = the other upcoming games,
+ * Order the day for the screen. pinned = live + UP NEXT (never paged) + upcoming same-time companions on the other
+ * split court, later = the other upcoming games,
  * finals = complete games; each list time-sorted (West before East at one time).
  */
 export function planSchedule(games) {
   const nextIds = nextIdsOf(games);
   const all = [...games].sort(byTime);
+  const key = new Set(all.filter((g) => g.status === 'active' || nextIds.has(g.id)).map((g) => g.id));
+  // Companion: an upcoming West/East game whose same-time game on the other court is pinned joins that pinned row, so
+  // neither the pinned row nor the track gets an empty cell for it (e.g. West 9:00 next + East 9:00).
+  const partnerPinned = (g) => isSplit(g) && all.some((o) => key.has(o.id) && isSplit(o) && o.court !== g.court && o.time === g.time);
+  const pin = new Set([...key, ...all.filter((g) => g.status === 'scheduled' && !key.has(g.id) && partnerPinned(g)).map((g) => g.id)]);
   return {
     phase: phaseOf(games), nextIds,
-    pinned: all.filter((g) => g.status === 'active' || nextIds.has(g.id)),
-    later: all.filter((g) => g.status === 'scheduled' && !nextIds.has(g.id)),
+    pinned: all.filter((g) => pin.has(g.id)),
+    later: all.filter((g) => g.status === 'scheduled' && !pin.has(g.id)),
     finals: all.filter((g) => g.status === 'complete'),
   };
 }

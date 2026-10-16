@@ -138,9 +138,17 @@ function layout() {
  * the TV/overlay get; server falls back to the first 3 letters). data-short="true" marks a swapped bind.
  */
 function fitNames() {
-  for (const n of document.querySelectorAll('.game[data-compact] .chip[data-full]')) {
-    n.textContent = n.dataset.full; delete n.dataset.short;
-    if (n.scrollWidth > n.clientWidth + 0.5 && n.dataset.shortName) { n.textContent = n.dataset.shortName; n.dataset.short = 'true'; }
+  const over = (n) => n.scrollWidth > n.clientWidth + 1; // 1px tolerance: 187 in 187 (subpixel) fits
+  for (const game of document.querySelectorAll('.game[data-compact]')) {
+    const names = [...game.querySelectorAll('.chip[data-full]')];
+    // Reset BOTH names first: a still-long partner squeezes the row and would make a fitting name look too wide.
+    for (const n of names) { n.textContent = n.dataset.full; delete n.dataset.short; }
+    for (let i = 0; i < names.length; i++) { // shorten the widest overflowing name, re-measure, repeat (max 2 rounds)
+      const cand = names.filter((n) => !n.dataset.short && n.dataset.shortName && over(n));
+      if (!cand.length) break;
+      const w = cand.reduce((a, b) => (b.scrollWidth > a.scrollWidth ? b : a));
+      w.textContent = w.dataset.shortName; w.dataset.short = 'true';
+    }
   }
 }
 

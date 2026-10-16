@@ -38,8 +38,11 @@ const rows = games0.map((g) => [DATE, new Date(g.scheduled_at).toLocaleString('s
 const LONG = 'Lenexa Westside Thunder Strike', LONG_SHORT = 'LWT';
 const G15 = games0.find((g) => g.court === 'West' && new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(11, 16) === '15:00');
 if (!(await api('/api/teams')).some((t) => t.name === LONG && t.grade === G15.grade && t.gender === G15.gender)) await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: LONG, short_name: LONG_SHORT, grade: G15.grade, gender: G15.gender }) });
+// Its opponent gets a long name too (Avery's repro: both go short; renaming LWT to 'Thunder' must bring the full name back).
+const LONG2 = 'Overland Park Sparkling Comets', LONG2_SHORT = 'OPC';
+if (!(await api('/api/teams')).some((t) => t.name === LONG2 && t.grade === G15.grade && t.gender === G15.gender)) await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: LONG2, short_name: LONG2_SHORT, grade: G15.grade, gender: G15.gender }) });
 const i15 = rows.findIndex((r) => r.split(',')[1] === '15:00' && r.split(',')[2] === 'west');
-if (i15 >= 0) { const c = rows[i15].split(','); c[5] = LONG; rows[i15] = c.join(','); }
+if (i15 >= 0) { const c = rows[i15].split(','); c[5] = LONG; c[6] = LONG2; rows[i15] = c.join(','); }
 const imp = await csv('date,time,court,grade,gender,home,away,cheer\n' + rows.join('\n') + '\n');
 ok(imp.created === games0.length && games0.length >= 12, `scene day ${DATE}: ${imp.created} games copied from the demo Saturday (${sat.date})`);
 const mine = (await api('/api/games')).filter((g) => g.scheduled_at && localDay(g.scheduled_at) === DATE);
@@ -72,7 +75,13 @@ const inspect = () => page.evaluate(() => {
     keyCount: key.length, keyInPinned: key.every((g) => g.closest('.sched-pinned') && !g.closest('.sched-track')),
     keyVisible: key.every((g) => { const b = g.getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight && b.height > 0; }),
     keyRects: key.map(r), pinnedTransform: getComputedStyle(pinnedEl).transform, pinnedAncestorTrack: !!pinnedEl.closest('.sched-track'),
-    pinnedOnlyKey: [...pinnedEl.querySelectorAll('.game')].every((g) => g.dataset.state === 'active' || g.dataset.next === 'true'),
+    // Pinned = live + UP NEXT, plus upcoming same-time companions on the other split court (fill the pinned row).
+    pinnedOnlyKey: [...pinnedEl.querySelectorAll('.game')].every((g) => g.dataset.state === 'active' || g.dataset.next === 'true'
+      || (g.dataset.state === 'upcoming' && [...pinnedEl.querySelectorAll('.game')].some((o) => o !== g && (o.dataset.state === 'active' || o.dataset.next === 'true') && o.closest('.slot').dataset.time === g.closest('.slot').dataset.time))),
+    // Track empty cells only where the other court really has nothing at that time (not because a game moved to pinned).
+    // (Upcoming rows only: a compact final row keeps its empty cell for alignment, finals never move up.)
+    trackEmptyForPinned: [...document.querySelectorAll('.sched-track .split:not(:has(.game[data-compact])) .slot[data-empty]')].filter((x) => pinnedEl.querySelector(`.slot[data-time="${x.dataset.time}"]:not([data-empty])`)).length,
+    trackEmpty: document.querySelectorAll('.sched-track .slot[data-empty]').length,
     order: trackGames.map((g) => g.dataset.state),
     finalsShown: trackGames.filter((g) => g.dataset.state === 'complete').length,
     compact: document.querySelectorAll('.game[data-compact="true"]').length,
@@ -102,6 +111,7 @@ async function scene(name, expectPhase, totalFinals) {
   ok(s.phase === expectPhase, `${name}: data-phase=${s.phase}`);
   ok(s.keyInPinned && s.pinnedOnlyKey && !s.pinnedAncestorTrack && s.pinnedTransform === 'none', `${name}: live + UP NEXT (${s.keyCount}) are all in .sched-pinned (untransformed, outside the track), nothing else is`);
   ok(s.keyVisible, `${name}: live + UP NEXT fully visible at 1920x1080`);
+  ok(s.trackEmptyForPinned === 0, `${name}: no empty track cell for a game that moved to pinned (${s.trackEmpty} empty track cell(s) in total)`);
   const pr = s.pinnedRows;
   ok(pr.same && pr.distinct && pr.splitCells % 2 === 0, `${name}: pinned rows aligned by time (${pr.times.join(', ') || 'none'}; same time = same top, different times = different rows; ${pr.empty} empty cell(s))`);
   ok(s.titlesOk, `${name}: every team-name chip has a title with the full name`);
@@ -116,6 +126,7 @@ async function scene(name, expectPhase, totalFinals) {
 // Early: 8:00 East live, nothing complete.
 await live(at('08:00', 'East'), [['home', 2], ['away', 2], ['home', 3]]);
 const e = await scene('early', 'early', 0);
+ok(e.trackEmpty === 0, 'early: the track has no empty dashed slots (Avery r6: West 9:00)');
 ok(e.keyCount >= 2 && Number(e.pages) > 1 && e.finalsShown === 0, 'early: upcoming alone overflow -> only the later upcoming page; live + next stay fixed');
 // The rotation moves the track only: after one page turn the pinned games haven't moved.
 await sleep(12_600);
@@ -140,10 +151,24 @@ ok(end.times.at(-1) === '6:30', `end: the last game of the day (6:30) is among t
 const lng = end.names.find((x) => x.full === LONG);
 ok(lng && lng.short && lng.text === LONG_SHORT && lng.title === LONG && lng.fits, `end: long name in a compact final falls back to its short name (${lng?.text}, data-short, title = full name)`);
 ok(end.names.filter((x) => !x.short).every((x) => x.fits && x.text === x.full) && end.names.filter((x) => x.short).every((x) => x.fits), `end: other compact names stay full when they fit (${end.names.filter((x) => x.short).length} short of ${end.names.length})`);
+const opc = end.names.find((x) => x.full === LONG2);
+ok(lng?.short && opc?.short, `end: both long names in one row go short (${lng?.text} vs ${opc?.text})`);
+// Avery r7: rename LWT -> 'Thunder' (fits): after the live update the full name shows, no data-short (both names reset, then measured).
+const lt = (await api('/api/teams')).find((t) => t.name === LONG && t.grade === G15.grade && t.gender === G15.gender);
+const putTeam = (name) => api(`/api/teams/${lt.id}`, { method: 'PUT', body: JSON.stringify({ name, short_name: LONG_SHORT, grade: lt.grade, gender: lt.gender }) });
+await putTeam('Thunder');
+const th = await page.waitForFunction(() => { const c = [...document.querySelectorAll('.game[data-compact] .chip[data-full="Thunder"]')][0]; return c && { text: c.textContent, short: c.dataset.short === 'true', sw: c.scrollWidth, cw: c.clientWidth }; }, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => null);
+ok(th && th.text === 'Thunder' && !th.short, `rename to 'Thunder' (live update): full name shown, no data-short (${th ? `${th.sw}px in ${th.cw}px` : 'no update'})`);
+await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.conn === 'online'); await sleep(1200);
+const th2 = await page.evaluate(() => { const c = document.querySelector('.game[data-compact] .chip[data-full="Thunder"]'); return c && { text: c.textContent, short: c.dataset.short === 'true' }; });
+ok(th2 && th2.text === 'Thunder' && !th2.short, "after a reload: still the full 'Thunder'");
+await putTeam(LONG); // restore the test data
+ok((await api('/api/teams')).some((t) => t.id === lt.id && t.name === LONG), 'test team name restored');
+await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.conn === 'online'); await sleep(1200);
 await page.setViewportSize({ width: 1280, height: 720 }); await sleep(800);
 const small = await inspect(); ok(small.names.every((x) => x.fits), `resize to 1280x720: names re-measured, all fit (${small.names.filter((x) => x.short).length} short)`);
 await page.setViewportSize({ width: 1920, height: 1080 }); await sleep(800);
-const back = await inspect(); ok(JSON.stringify(back.names.map((x) => x.short)) === JSON.stringify(end.names.map((x) => x.short)), 'resize back to 1920x1080: same names full/short as before');
+const back = await inspect(); ok(JSON.stringify(back.names.map((x) => [x.full, x.short])) === JSON.stringify(end.names.map((x) => [x.full, x.short])), 'resize back to 1920x1080: same names full/short as before');
 await browser.close();
 console.log(`\nSchedule paging e2e: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
