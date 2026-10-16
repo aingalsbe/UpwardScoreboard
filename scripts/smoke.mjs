@@ -5,7 +5,8 @@ import WebSocket from 'ws';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const WSB = BASE.replace(/^http/, 'ws');
 const ADMIN = process.env.ADMIN_PASSWORD || 'change-me-admin';
-const PIN1 = process.env.PIN1 || '1111', PIN2 = process.env.PIN2 || '2222';
+// One gym floor: Full (full) or West (west) + East (east). PIN1 = west, PIN2 = east, PINF = full.
+const PIN1 = process.env.PIN1 || '2222', PIN2 = process.env.PIN2 || '3333', PINF = process.env.PINF || '1111';
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  PASS', m); } else { fail++; console.log('  FAIL', m); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -53,31 +54,32 @@ for (let i = 0; i < 3 && !token; i++) {
   token = (await r.json()).token;
 }
 ok(!!token, 'admin login ok');
-// Own fixtures: 4 teams + courts court-1/court-2 (created if missing) + 2 games.
+// Own fixtures: 4 teams + courts full/west/east (created if missing) + 2 games on west/east.
 const T = {};
 for (const [k, c1, c2] of [['A', '#7a1020', '#f2b705'], ['B', '#0d2c6b', '#4fc3f7'], ['C', '#14532d', '#a3e635'], ['D', '#4c1d95', '#f0abfc']]) {
   T[k] = { name: `Smoke${k}-${RUN}`, id: (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `Smoke${k}-${RUN}`, short_name: `S${k}`, primary_color: c1, secondary_color: c2 }) })).body.id };
 }
 let courtsNow = (await api('/api/courts')).body;
-for (const slug of ['court-1', 'court-2']) if (!courtsNow.find((c) => c.slug === slug)) await api('/api/courts', { method: 'POST', body: JSON.stringify({ name: slug === 'court-1' ? 'Court 1' : 'Court 2', slug }) });
+for (const [slug, name, conflicts_with] of [['full', 'Full', 'west east'], ['west', 'West', ''], ['east', 'East', '']]) if (!courtsNow.find((c) => c.slug === slug)) await api('/api/courts', { method: 'POST', body: JSON.stringify({ name, slug, conflicts_with }) });
 courtsNow = (await api('/api/courts')).body;
-const C1 = courtsNow.find((c) => c.slug === 'court-1'), C2 = courtsNow.find((c) => c.slug === 'court-2');
+const C1 = courtsNow.find((c) => c.slug === 'west'), C2 = courtsNow.find((c) => c.slug === 'east'), CF = courtsNow.find((c) => c.slug === 'full');
 const mkGame = async (court, h, a) => {
-  // daytime league hours (07:00-19:00 Chicago), whole minutes; avoids the ambiguous DST fall-back hour
+  // morning league hours (07:00-12:00 Chicago start), whole minutes; avoids the ambiguous DST fall-back
+  // hour and the afternoon slots section 14 uses for the shared-floor tests
   const day = new Date(); day.setUTCHours(12, 0, 0, 0);
-  const at = new Date(day.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000 + (60 + Math.floor(Math.random() * 660)) * 60_000).toISOString();
+  const at = new Date(day.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000 + (60 + Math.floor(Math.random() * 300)) * 60_000).toISOString();
   const id = (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: court.id, home_team_id: h.id, away_team_id: a.id, scheduled_at: at, division: `Smoke ${RUN}` }) })).body.id;
   return { id, home: h.name, away: a.name, home_team_id: h.id, away_team_id: a.id, court_id: court.id, scheduled_at: at };
 };
 const g1 = await mkGame(C1, T.A, T.B), g2 = await mkGame(C2, T.C, T.D);
 const games = [g1, g2];
 ok(g1.id && g2.id, `created games on both courts (#${g1.id} ${g1.home} v ${g1.away}, #${g2.id} ${g2.home} v ${g2.away})`);
-ok((await api(`/api/games/${g1.id}/start`, { method: 'POST' })).body.court === 'court-1', 'started game on court-1');
-ok((await api(`/api/games/${g2.id}/start`, { method: 'POST' })).body.court === 'court-2', 'started game on court-2');
+ok((await api(`/api/games/${g1.id}/start`, { method: 'POST' })).body.court === 'west', 'started game on west');
+ok((await api(`/api/games/${g2.id}/start`, { method: 'POST' })).body.court === 'east', 'started game on east');
 
 console.log('2. Connect TVs and controllers');
-const tv1 = client('court-1', 'tv'), tv2 = client('court-2', 'tv');
-const sk1 = client('court-1', 'score'), sk2 = client('court-2', 'score');
+const tv1 = client('west', 'tv'), tv2 = client('east', 'tv');
+const sk1 = client('west', 'score'), sk2 = client('east', 'score');
 await Promise.all([tv1.open, tv2.open, sk1.open, sk2.open]);
 const s1 = await tv1.wait(stateWhere((g) => g.id === g1.id));
 ok(s1.game.home.name === g1.home && s1.game.home.color.startsWith('#'), `TV1 got snapshot: ${s1.game.home.name} (${s1.game.home.color}) vs ${s1.game.away.name}`);
@@ -86,13 +88,13 @@ ok(r0.type === 'error' && /read-only/.test(r0.error), 'TV (public) cannot send c
 sk1.send({ type: 'auth', pin: '0000', device: DEV('sk1') });
 ok((await sk1.wait((m) => m.type === 'auth')).ok === false, 'wrong PIN rejected');
 sk1.send({ type: 'auth', pin: PIN2, device: DEV('sk1') });
-ok((await sk1.wait((m) => m.type === 'auth')).ok === false, "court-2 PIN doesn't unlock court-1");
-sk1.send({ type: 'auth', pin: PIN1, device: DEV('c1') }); ok((await sk1.wait((m) => m.type === 'auth')).ok, 'court-1 PIN accepted');
-sk2.send({ type: 'auth', pin: PIN2, device: DEV('c2') }); ok((await sk2.wait((m) => m.type === 'auth')).ok, 'court-2 PIN accepted');
+ok((await sk1.wait((m) => m.type === 'auth')).ok === false, "east PIN doesn't unlock west");
+sk1.send({ type: 'auth', pin: PIN1, device: DEV('c1') }); ok((await sk1.wait((m) => m.type === 'auth')).ok, 'west PIN accepted');
+sk2.send({ type: 'auth', pin: PIN2, device: DEV('c2') }); ok((await sk2.wait((m) => m.type === 'auth')).ok, 'east PIN accepted');
 
 console.log('3. Score change on controller shows on the right TV only');
-const base1 = (await api('/api/public/court/court-1')).body.game.state;
-const base2 = (await api('/api/public/court/court-2')).body.game.state;
+const base1 = (await api('/api/public/court/west')).body.game.state;
+const base2 = (await api('/api/public/court/east')).body.game.state;
 tv1.msgs = []; tv2.msgs = [];
 let t0 = Date.now();
 const a1 = await sk1.cmd({ type: 'SCORE', team: 'home', pts: 2 });
@@ -100,7 +102,7 @@ ok(a1.type === 'ack', `controller ack seq=${a1.seq}`);
 const u1 = await tv1.wait(stateWhere((g) => g.state.seq === a1.seq));
 ok(u1.game.state.home.score === base1.home.score + 2, `TV1 shows home ${u1.game.state.home.score} (latency ${Date.now() - t0} ms)`);
 await sleep(300);
-ok(!tv2.msgs.some((m) => m.type === 'state' && m.game?.state.home.score !== base2.home.score), 'TV2 unaffected by court-1 change');
+ok(!tv2.msgs.some((m) => m.type === 'state' && m.game?.state.home.score !== base2.home.score), 'TV2 unaffected by west change');
 const a2 = await sk2.cmd({ type: 'SCORE', team: 'away', pts: 3 });
 const u2 = await tv2.wait(stateWhere((g) => g.state.seq === a2.seq));
 ok(u2.game.state.away.score === base2.away.score + 3, `TV2 shows away ${u2.game.state.away.score} (two courts at once)`);
@@ -115,7 +117,7 @@ await sleep(1500);
 await tv1.close();
 await sleep(500); // TV "dropped" while the game goes on
 const ax = await sk1.cmd({ type: 'SCORE', team: 'away', pts: 1 });
-const tv1b = client('court-1', 'tv'); await tv1b.open;
+const tv1b = client('west', 'tv'); await tv1b.open;
 const snap = await tv1b.wait(stateWhere((g) => g.id === g1.id));
 const now = snap.serverNow;
 ok(snap.game.state.seq === ax.seq, `reconnected TV has latest seq ${snap.game.state.seq} (missed update included)`);
@@ -125,7 +127,7 @@ ok(snap.game.state.clock.running === true, 'clock still running after TV reconne
 
 console.log('5. Controller refresh restores state; retries are idempotent');
 await sk1.close();
-const sk1b = client('court-1', 'score'); await sk1b.open;
+const sk1b = client('west', 'score'); await sk1b.open;
 sk1b.send({ type: 'auth', pin: PIN1, device: DEV('c1') }); await sk1b.wait((m) => m.type === 'auth' && m.ok);
 const cs = await sk1b.wait(stateWhere((g) => g.id === g1.id));
 ok(cs.game.state.seq === ax.seq && cs.game.state.away.fouls >= 1, 'refreshed controller sees exact server state');
@@ -135,7 +137,7 @@ const d2 = await sk1b.cmd({ type: 'SCORE', team: 'home', pts: 3 }, dupId);
 ok(d2.dup === true && d2.seq === d1.seq, 'resent command with same id applied once');
 
 console.log('6. Undo / redo');
-const before = (await api('/api/public/court/court-1')).body.game.state.home.score;
+const before = (await api('/api/public/court/west')).body.game.state.home.score;
 const un = await (async () => { const id = 'u' + Date.now(); sk1b.send({ type: 'undo', id }); return sk1b.wait((m) => m.type === 'ack' && m.id === id); })();
 const afterUndo = await tv1b.wait(stateWhere((g) => g.state.seq === un.seq));
 ok(afterUndo.game.state.home.score === before - 3, `undo reverted +3 (${before} -> ${afterUndo.game.state.home.score}) on the TV`);
@@ -145,26 +147,26 @@ const afterRedo = await tv1b.wait(stateWhere((g) => g.state.seq === re.seq));
 ok(afterRedo.game.state.home.score === before, 'redo re-applied it');
 
 console.log('7. Two controllers on one game');
-const sk1c = client('court-1', 'score'); await sk1c.open;
+const sk1c = client('west', 'score'); await sk1c.open;
 sk1c.send({ type: 'auth', pin: PIN1, device: DEV('c1') }); await sk1c.wait((m) => m.type === 'auth' && m.ok);
 const pres = await tv1b.wait((m) => m.type === 'state' && m.presence?.controllers === 2);
 ok(!!pres, 'presence shows 2 scorekeepers connected');
-const pre = (await api('/api/public/court/court-1')).body.game.state.home.score;
+const pre = (await api('/api/public/court/west')).body.game.state.home.score;
 const [x, y] = await Promise.all([sk1b.cmd({ type: 'SCORE', team: 'home', pts: 1 }), sk1c.cmd({ type: 'SCORE', team: 'home', pts: 1 })]);
 ok(x.seq !== y.seq, `simultaneous taps serialized (seq ${x.seq}, ${y.seq})`);
-const fin = (await api('/api/public/court/court-1')).body.game.state;
+const fin = (await api('/api/public/court/west')).body.game.state;
 ok(fin.home.score === pre + 2, `both applied: ${pre} -> ${fin.home.score}`);
 await sk1b.cmd({ type: 'CLOCK_STOP' });
 
 console.log('8. CSV export / import');
 const tcsv = await fetch(BASE + '/api/export/teams.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-ok(tcsv.startsWith('name,short_name,primary_color,secondary_color,logo_url') && /Lions/.test(tcsv), 'teams.csv exported');
+ok(tcsv.startsWith('name,short_name,grade,logo_url') && /SmokeA-/.test(tcsv), 'teams.csv exported (name, short_name, grade, logo_url; no team colors)');
 const imp = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,primary_color,secondary_color,logo_url\r\nCru-${RUN},CRU,#003366,#ffd700,\r\n"${T.C.name}",SC2,#14532d,#a3e635,\r\n` });
 ok(imp.body.created === 1 && imp.body.updated === 1 && imp.body.errors.length === 0, `teams.csv imported (created ${imp.body.created}, updated ${imp.body.updated})`);
-const simp = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-10-24,09:30,court-2,3rd-4th Grade,Cru-${RUN},${T.B.name}\n2026-10-24,10:30,court-1,5th-6th Grade,Nobodies-${RUN},${T.A.name}\n` });
+const simp = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-10-24,09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}\n2026-10-24,10:30,west,5th-6th Grade,Nobodies-${RUN},${T.A.name}\n` });
 ok(simp.body.created === 1 && simp.body.errors.length === 1, `schedule.csv imported 1 row, bad row reported: "${simp.body.errors[0]}"`);
 const scsv = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-ok(/^id,date,time,court,division,home,away,home_score,away_score,status/.test(scsv) && new RegExp(`\\d+,2026-10-24,09:30,court-2,3rd-4th Grade,Cru-${RUN},${T.B.name}`).test(scsv), 'schedule.csv export (with id column) round-trips the import');
+ok(/^id,date,time,court,division,home,away,home_score,away_score,status/.test(scsv) && new RegExp(`\\d+,2026-10-24,09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}`).test(scsv), 'schedule.csv export (with id column) round-trips the import');
 
 const cimp = await api('/api/import/courts.csv', { method: 'POST', body: `slug,name,location\nsmk-${RUN},Smoke court ${RUN},Annex\n` });
 ok(cimp.body.created === 1 && cimp.body.errors.length === 0, 'courts.csv imported (upsert by slug)');
@@ -180,15 +182,15 @@ const exp = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).th
 const n0 = await countGames();
 const re1 = await api('/api/import/schedule.csv', { method: 'POST', body: exp });
 ok(re1.body.created === 0 && re1.body.updated === 0 && re1.body.skipped === n0 && (await countGames()) === n0, `re-importing the export changes nothing (${n0} games, skipped ${re1.body.skipped}${re1.body.errors.length ? " " + JSON.stringify(re1.body.errors) : ""})`);
-const dupFile = `date,time,court,division,home,away\n2026-11-07,09:00,court-1,Dup test,${T.A.name},${T.B.name}\n2026-11-07,09:00,court-1,Dup test,${T.A.name},${T.B.name}\n`;
+const dupFile = `date,time,court,division,home,away\n2026-11-07,09:00,west,Dup test,${T.A.name},${T.B.name}\n2026-11-07,09:00,west,Dup test,${T.A.name},${T.B.name}\n`;
 const d1i = await api('/api/import/schedule.csv', { method: 'POST', body: dupFile });
 ok(d1i.body.created === 1 && d1i.body.skipped === 1, `duplicate rows within one file: created ${d1i.body.created}, skipped ${d1i.body.skipped}`);
 const d2i = await api('/api/import/schedule.csv', { method: 'POST', body: dupFile });
 ok(d2i.body.created === 0 && d2i.body.skipped === 2 && (await countGames()) === n0 + 1, 'importing the same file twice does not duplicate');
-const upd = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-11-07,09:00,court-1,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
+const upd = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-11-07,09:00,west,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
 ok(upd.body.updated === 1 && upd.body.created === 0, 'natural-key match updates the division instead of adding a game');
 const gid = (await api('/api/games')).body.find((g) => g.division === `Renamed ${RUN}`).id;
-const byId = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,division,home,away\n${gid},2026-11-07,10:00,court-2,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
+const byId = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,division,home,away\n${gid},2026-11-07,10:00,east,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
 ok(byId.body.updated === 1 && (await countGames()) === n0 + 1, 'exported id column moves the game (time/court change) without duplicating');
 const nd = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n,,,TBD ${RUN},${T.C.name},${T.D.name}\n` });
 ok(nd.body.created === 1 && nd.body.errors.length === 0, 'r2-B: a game with no date/time/court imports (not scheduled yet)');
@@ -197,9 +199,9 @@ const ndLine = exp2.split(/\r?\n/).find((l) => l.includes(`TBD ${RUN}`));
 ok(/^\d+,,,,TBD /.test(ndLine || ''), `r2-B: exported with empty date/time/court: ${ndLine}`);
 const re2 = await api('/api/import/schedule.csv', { method: 'POST', body: exp2 });
 ok(re2.body.created === 0 && re2.body.updated === 0 && re2.body.errors.length === 0, `r2-B: full export incl. undated game re-imports cleanly (skipped ${re2.body.skipped} ${JSON.stringify(re2.body.errors).slice(0,300)} c${re2.body.created} u${re2.body.updated})`);
-const g1Live = (await api('/api/public/court/court-1')).body.game.state;
+const g1Live = (await api('/api/public/court/west')).body.game.state;
 const g1Line = exp2.split(/\r?\n/).find((l) => l.startsWith(g1.id + ','));
-ok(g1Line && g1Line.endsWith(`,${g1Live.home.score},${g1Live.away.score},live`), `#8: export carries the live score of an in-progress game (${g1Line})`);
+ok(g1Line && g1Line.includes(`,${g1Live.home.score},${g1Live.away.score},live,`), `#8: export carries the live score of an in-progress game (${g1Line})`);
 const tAgain = await api('/api/import/teams.csv', { method: 'POST', body: tcsv });
 ok(tAgain.body.created === 0 && tAgain.body.errors.length === 0, `teams re-import idempotent (created 0, skipped ${tAgain.body.skipped})`);
 const ccsv2 = await fetch(BASE + '/api/export/courts.csv', { headers: auth }).then((r) => r.text());
@@ -209,16 +211,16 @@ const dupGame = await api('/api/games', { method: 'POST', body: JSON.stringify({
 ok(dupGame.status === 409 && /already scheduled/.test(dupGame.body.error), `admin double-add -> 409 "${dupGame.body.error}"`);
 
 console.log('10. Explicit CSV errors (QA #8)');
-const badColor = await api('/api/import/teams.csv', { method: 'POST', body: 'name,short_name,primary_color,secondary_color,logo_url\nPurples,PUR,purple,#ffffff,\n' });
-ok(badColor.body.created === 0 && /primary_color "purple" is not a color/.test(badColor.body.errors[0]), `bad color -> row error: ${badColor.body.errors[0]}`);
+const badColor = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,primary_color,secondary_color,logo_url\nPurples-${RUN},PUR,purple,#ffffff,\n` });
+ok(badColor.body.created === 1 && badColor.body.errors.length === 0, 'old teams.csv with color columns still imports (team colors are ignored; season colors apply)');
 const badUrl = await api('/api/import/teams.csv', { method: 'POST', body: 'name,logo_url\nXSS,javascript:alert(1)\n' });
 ok(badUrl.body.created === 0 && /http/.test(badUrl.body.errors[0]), `javascript: logo URL rejected: ${badUrl.body.errors[0]}`);
-const missing = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,court,home,away\n2026-11-07,court-1,Lions,Eagles\n' });
+const missing = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,court,home,away\n2026-11-07,west,Lions,Eagles\n' });
 ok(missing.status === 400 && /missing required column\(s\): time/.test(missing.body.error), `missing column -> 400: ${missing.body.error}`);
 const courtsBefore = (await api('/api/courts')).body.length;
 const unk = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n2026-11-07,09:00,court-77,X,Lions,Eagles\n' });
 ok(unk.body.created === 0 && /unknown court "court-77"/.test(unk.body.errors[0]) && (await api('/api/courts')).body.length === courtsBefore, 'unknown court slug -> row error, no court auto-created');
-const badDate = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n10/24/2026,9am,court-1,X,Lions,Eagles\n' });
+const badDate = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,time,court,division,home,away\n10/24/2026,9am,west,X,Lions,Eagles\n' });
 ok(/must be YYYY-MM-DD/.test(badDate.body.errors[0]), 'bad date format -> row error');
 
 console.log('11. Logos and delete (QA #4, #9, #10)');
@@ -238,20 +240,20 @@ const del = await api(`/api/teams/${T.A.id}`, { method: 'DELETE' });
 ok(del.status === 409 && new RegExp(`${T.A.name}" is in \\d+ games?`).test(del.body.error), `delete team with games -> 409 "${del.body.error}"`);
 
 console.log('12. Brute-force protection (QA #3, r2-A/D): per court + device, sessions, displays never count');
-const brute = client('court-2', 'score'); await brute.open;
+const brute = client('east', 'score'); await brute.open;
 const closed = new Promise((r) => brute.ws.on('close', (code) => r(code)));
 let lastB;
 for (let i = 0; i < 5; i++) { brute.send({ type: 'auth', pin: String(9000 + i), device: DEV('brute') }); lastB = await brute.wait((m) => m.type === 'auth' && (m.locked || /Wrong PIN/.test(m.error))); }
 ok(lastB.locked === true && lastB.retryAfter > 0, `5 wrong PINs on one device -> locked with countdown ${lastB.retryAfter}s`);
 ok((await closed) === 4008, 'socket closed after 5 wrong PINs (code 4008)');
-const brute2 = client('court-2', 'score'); await brute2.open;
+const brute2 = client('east', 'score'); await brute2.open;
 brute2.send({ type: 'auth', pin: PIN2, device: DEV('brute') });
 const lockedOk = await brute2.wait((m) => m.type === 'auth');
 ok(lockedOk.ok === false && lockedOk.locked, 'that device is refused even with the correct PIN while locked');
-const other = client('court-2', 'score'); await other.open;
+const other = client('east', 'score'); await other.open;
 other.send({ type: 'auth', pin: PIN2, device: DEV('other') });
 ok((await other.wait((m) => m.type === 'auth')).ok === true, 'a different device on the same IP and court still signs in (no whole-gym lockout)');
-const tvA = client('court-1', 'tv'); await tvA.open;
+const tvA = client('west', 'tv'); await tvA.open;
 for (let i = 0; i < 20; i++) tvA.send({ type: 'auth', pin: String(i), device: DEV('tv') });
 tvA.send({ type: 'auth', pin: PIN1, device: DEV('tv') });
 await sleep(300);
@@ -263,18 +265,18 @@ ok(l429.status === 429 && Number(l429.headers.get('retry-after')) > 0, `admin lo
 const good = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: ADMIN }) });
 ok(good.status === 429, 'correct admin password also refused during lockout (next run waits it out)');
 
-console.log('13. QA r2-A scenario: court-1 signed in, court-2 guesses, court-1 blips, queued tap goes through');
-const ph = client('court-1', 'score'); await ph.open;
+console.log('13. QA r2-A scenario: west signed in, east guesses, west blips, queued tap goes through');
+const ph = client('west', 'score'); await ph.open;
 ph.send({ type: 'auth', pin: PIN1, device: DEV('phone1') });
 const sa0 = await ph.wait((m) => m.type === 'auth');
-ok(sa0.ok && typeof sa0.session === 'string', 'court-1 phone signs in with PIN and receives a court session token');
-for (let d = 0; d < 3; d++) { // 15 wrong PINs from 3 court-2 devices on the same IP (old code locked the whole IP after 10)
-  const k = client('court-2', 'score'); await k.open;
+ok(sa0.ok && typeof sa0.session === 'string', 'west phone signs in with PIN and receives a court session token');
+for (let d = 0; d < 3; d++) { // 15 wrong PINs from 3 east devices on the same IP (old code locked the whole IP after 10)
+  const k = client('east', 'score'); await k.open;
   for (let i = 0; i < 5; i++) { k.send({ type: 'auth', pin: String(7000 + d * 10 + i), device: DEV('kid' + d) }); await k.wait((m) => m.type === 'auth').catch(() => {}); }
 }
-const before13 = (await api('/api/public/court/court-1')).body.game.state.home.score;
+const before13 = (await api('/api/public/court/west')).body.game.state.home.score;
 ph.ws.terminate(); // Wi-Fi blip
-const ph2 = client('court-1', 'score'); await ph2.open;
+const ph2 = client('west', 'score'); await ph2.open;
 const qid = 'queued-' + RUN;
 ph2.send({ type: 'cmd', id: qid, gameId: g1.id, cmd: { type: 'SCORE', team: 'home', pts: 2 } }); // tap queued before re-auth
 const refused = await ph2.wait((m) => m.id === qid);
@@ -284,15 +286,105 @@ const sa2 = await ph2.wait((m) => m.type === 'auth');
 ok(sa2.ok && sa2.how === 'session', 'reconnect re-authenticates with the session token (no PIN, not affected by the lockout)');
 ph2.send({ type: 'cmd', id: qid, gameId: g1.id, cmd: { type: 'SCORE', team: 'home', pts: 2 } }); // client retry
 const acked = await ph2.wait((m) => m.type === 'ack' && m.id === qid);
-const after13 = (await api('/api/public/court/court-1')).body.game.state.home.score;
+const after13 = (await api('/api/public/court/west')).body.game.state.home.score;
 ok(acked && after13 === before13 + 2, `queued tap applied exactly once (${before13} -> ${after13})`);
-const ph3 = client('court-1', 'score'); await ph3.open;
+const ph3 = client('west', 'score'); await ph3.open;
 ph3.send({ type: 'auth', session: sa0.session.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')) });
 ok((await ph3.wait((m) => m.type === 'auth')).needPin === true, 'a tampered session token is refused (asks for the PIN)');
-const ph4 = client('court-2', 'score'); await ph4.open;
+const ph4 = client('east', 'score'); await ph4.open;
 ph4.send({ type: 'auth', session: sa0.session });
-ok((await ph4.wait((m) => m.type === 'auth')).ok === false, 'a court-1 session does not unlock court-2');
+ok((await ph4.wait((m) => m.type === 'auth')).ok === false, 'a west session does not unlock east');
 for (const c of [brute2, other, tvA, ph2, ph3, ph4]) c.ws.close();
+
+console.log('14. Shared floor: Full cannot overlap West or East; West and East can overlap');
+const local = (ms) => new Date(ms).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(0, 16).split(' '); // [date, HH:MM]
+const D = (() => { const d = new Date(); d.setUTCHours(21, 0, 0, 0); return d.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000; })(); // ~15:00-16:00 Chicago
+const iso = (ms) => new Date(ms).toISOString();
+const made = [];
+const post = async (court, h, a, ms, extra = {}) => { const r = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: court.id, home_team_id: h.id, away_team_id: a.id, scheduled_at: iso(ms), division: `Floor ${RUN}`, ...extra }) }); if (r.body.id) made.push(r.body.id); return r; };
+const w = await post(C1, T.A, T.B, D);
+const e = await post(C2, T.C, T.D, D);
+ok(w.status === 201 && e.status === 201, 'West and East games at the same time are allowed');
+const f1 = await post(CF, T.C, T.B, D + 30 * 60_000);
+ok(f1.status === 409 && new RegExp(`game #(${w.body.id}|${e.body.id}) on (West|East)`).test(f1.body.error), `admin create on Full overlapping West/East -> 409 "${f1.body.error}"`);
+const f2 = await post(CF, T.C, T.B, D + 60 * 60_000);
+ok(f2.status === 201, 'Full back-to-back right after West/East (start + 60 min) is allowed');
+const mv = await api(`/api/games/${f2.body.id}`, { method: 'PUT', body: JSON.stringify({ scheduled_at: iso(D + 15 * 60_000) }) });
+ok(mv.status === 409 && /Can't move: overlaps game #/.test(mv.body.error), `admin edit (move) into an overlap -> 409 "${mv.body.error}"`);
+const longW = await post(C1, T.D, T.A, D - 120 * 60_000, { duration_min: 190 });
+ok(longW.status === 409 && new RegExp(`game #${f2.body.id} on Full`).test(longW.body.error), `West game whose length (190 min) runs into a Full game is refused -> "${longW.body.error}"`);
+const [fd, ft] = local(D + 15 * 60_000), [wd, wt] = local(D + 60 * 60_000), [pd, pt] = local(D - 150 * 60_000);
+const ci = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n${fd},${ft},full,Floor ${RUN},${T.D.name},${T.A.name}\n${wd},${wt},west,Floor ${RUN},${T.D.name},${T.B.name}\n` });
+ok(ci.body.created === 0 && ci.body.errors.length === 2 && /row 2: overlaps game #\d+ on (West|East)/.test(ci.body.errors[0]) && new RegExp(`row 3: overlaps game #${f2.body.id} on Full`).test(ci.body.errors[1]),
+  `CSV import: overlap is a row error naming the other game (both directions): ${JSON.stringify(ci.body.errors)}`);
+const m1 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away,minutes\n${pd},${pt},full,Floor ${RUN},${T.A.name},${T.C.name},120\n` });
+ok(m1.body.created === 1 && m1.body.errors.length === 0, 'CSV minutes column: a 120-min Full game ending 30 min before West/East is accepted');
+const m2 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away,minutes\n${pd},${pt},full,Floor ${RUN},${T.A.name},${T.C.name},180\n` });
+ok(m2.body.updated === 0 && /overlaps game #/.test(m2.body.errors[0] || ''), `...and lengthening it to 180 min is refused: "${m2.body.errors[0]}"`);
+made.push(...(await api('/api/games')).body.filter((g) => g.division === `Floor ${RUN}` && !made.includes(g.id)).map((g) => g.id));
+const st1 = await api(`/api/games/${f2.body.id}/start`, { method: 'POST' });
+ok(st1.status === 409 && /(West|East) is live/.test(st1.body.error), `starting Full while West/East is live -> 409 "${st1.body.error}"`);
+const st2 = await api(`/api/games/${f2.body.id}/start`, { method: 'POST', body: JSON.stringify({ force: true }) });
+ok(st2.status === 200 && st2.body.court === 'full', 'admin can override ("Start anyway")');
+const st3 = await api(`/api/games/${w.body.id}/start`, { method: 'POST' });
+ok(st3.status === 409 && /Full is live/.test(st3.body.error), `and the reverse: starting West while Full is live -> 409 "${st3.body.error}"`);
+for (const id of made) await api(`/api/games/${id}`, { method: 'DELETE' }); // leave the floor as it was (repeatable)
+ok(!(await api('/api/courts')).body.find((c) => c.slug === 'full').current_game_id, 'floor-test games removed; Full is free again');
+
+console.log('15. Church branding, season colors, cheer squads, grades');
+const pubW = (await api('/api/public/court/west')).body;
+ok(pubW.church?.name === 'Lenexa Baptist Church' && /Lenexa Baptist Church/.test(pubW.league), `TV header branding: "${pubW.church?.name}" / "${pubW.league}"`);
+const seasonNow = (await api('/api/settings/season')).body;
+ok(/^#[0-9a-f]{6}$/.test(seasonNow.dark) && /^#[0-9a-f]{6}$/.test(seasonNow.light), `season colors: ${seasonNow.name} dark ${seasonNow.dark} light ${seasonNow.light}`);
+const gW = pubW.game;
+ok(gW.homeSide === 'light' && gW.home.color === seasonNow.light && gW.away.color === seasonNow.dark && gW.home.accent === seasonNow.dark, 'default: home wears light, away wears dark (season colors, not team colors)');
+const badSeason = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify({ dark: seasonNow.light, light: seasonNow.dark }) });
+ok(badSeason.status === 400 && /darker/.test(badSeason.body.error), `season with dark lighter than light -> 400 "${badSeason.body.error}"`);
+const putSeason = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify(seasonNow) });
+ok(putSeason.status === 200 && putSeason.body.dark === seasonNow.dark, 'season colors save (restored to the same values)');
+// cheer + swap via admin edit on the live west game
+const tvC = client('west', 'tv'), skC = client('west', 'score'); await Promise.all([tvC.open, skC.open]);
+skC.send({ type: 'auth', pin: PIN1, device: DEV('cheer') }); await skC.wait((m) => m.type === 'auth' && m.ok);
+tvC.msgs = []; skC.msgs = [];
+const ed1 = await api(`/api/games/${g1.id}`, { method: 'PUT', body: JSON.stringify({ swap_colors: true, home_cheer: `Cheer ${RUN}`, home_cheer_logo_url: 'https://example.org/c.png' }) });
+ok(ed1.status === 200, 'admin edit: swap colors + home cheer squad');
+const tvS = await tvC.wait((m) => m.type === 'state' && m.game?.home.cheer?.name === `Cheer ${RUN}`);
+ok(tvS.game.homeSide === 'dark' && tvS.game.swapped === true && tvS.game.home.color === seasonNow.dark && tvS.game.home.cheer.logo === 'https://example.org/c.png' && tvS.game.away.cheer === null, 'TV gets the swap (home dark) and the home cheer squad + logo; away has none');
+const skS = await skC.wait((m) => m.type === 'state' && m.game?.homeSide === 'dark');
+ok(!('cheer' in skS.game.home) && !('cheer' in skS.game.away) && !JSON.stringify(skS).includes(`Cheer ${RUN}`), 'scorekeeper never receives cheer squad data (but does get homeSide)');
+const badLogo = await api(`/api/games/${g1.id}`, { method: 'PUT', body: JSON.stringify({ away_cheer: 'X', away_cheer_logo_data_url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }) });
+ok(badLogo.status >= 400 && badLogo.status < 500 && (await api(`/api/games`)).body.find((g) => g.id === g1.id).away_cheer === null, `cheer logo uses team-logo validation (SVG refused, nothing saved): "${badLogo.body.error}"`);
+const exp3 = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
+const hdr = exp3.split(/\r?\n/)[0];
+const line3 = exp3.split(/\r?\n/).find((l) => l.startsWith(g1.id + ','));
+ok(hdr.endsWith('minutes,grade,swap_colors,home_cheer,home_cheer_logo,away_cheer,away_cheer_logo') && line3.endsWith(`,true,Cheer ${RUN},https://example.org/c.png,,`), `export carries swap + cheer columns (${line3})`);
+const old = await api('/api/import/schedule.csv', { method: 'POST', body: exp3.split(/\r?\n/).map((l) => l.split(',').slice(0, 7).join(',')).join('\n') });
+const g1After = (await api('/api/games')).body.find((g) => g.id === g1.id);
+ok(old.body.errors.length === 0 && old.body.created === 0 && g1After.home_cheer === `Cheer ${RUN}` && g1After.swap_colors === true, 'old-format schedule CSV (no new columns) still imports and keeps cheer/swap');
+const reX = await api('/api/import/schedule.csv', { method: 'POST', body: exp3 });
+ok(reX.body.created === 0 && reX.body.updated === 0 && reX.body.errors.length === 0, `full export with new columns re-imports unchanged (skipped ${reX.body.skipped})`);
+const clr = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,home,away,swap_colors,home_cheer\n${line3.split(',').slice(0, 4).join(',')},${T.A.name},${T.B.name},,\n` });
+const g1Clr = (await api('/api/games')).body.find((g) => g.id === g1.id);
+ok(clr.body.updated === 1 && g1Clr.home_cheer === null && g1Clr.swap_colors === false && g1Clr.home_cheer_logo_url === null, 'CSV with empty swap_colors/home_cheer clears them (and the cheer logo)');
+tvC.ws.close(); skC.ws.close();
+// grades
+const mk = async (name, grade) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name, grade }) })).body.id;
+const G5a = await mk(`G5a-${RUN}`, '5th'), G5b = await mk(`G5b-${RUN}`, '5th grade'), G2 = await mk(`G2-${RUN}`, '2nd Grade');
+const tl = (await api('/api/teams')).body;
+ok(tl.find((t) => t.id === G5a).grade === '5th Grade' && tl.find((t) => t.id === G5b).grade === '5th Grade', 'grade labels normalized ("5th", "5th grade" -> "5th Grade")');
+const ord = tl.filter((t) => [G5a, G5b, G2].includes(t.id)).map((t) => t.id);
+ok(ord[0] === G2 && ord[1] === G5a && ord[2] === G5b, 'teams list sorted by grade, then name');
+const gm = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: C2.id, home_team_id: G5a, away_team_id: G2 }) });
+ok(gm.status === 400 && /within one grade: G5a-\w+ is 5th Grade, G2-\w+ is 2nd Grade/.test(gm.body.error), `admin: cross-grade game -> 400 "${gm.body.error}"`);
+const gi = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away\n,,,,G5a-${RUN},G2-${RUN}\n,,,4th Grade,G5a-${RUN},G5b-${RUN}\n,,,5th Grade,G5a-${RUN},G5b-${RUN}\n` });
+ok(gi.body.created === 1 && /row 2: a game must be within one grade/.test(gi.body.errors[0]) && /row 3: grade "4th Grade" doesn't match the teams \(5th Grade\)/.test(gi.body.errors[1]), `CSV: grade mismatch rows rejected, matching row imported: ${JSON.stringify(gi.body.errors)}`);
+const gg = (await api('/api/games')).body.find((g) => g.home_team_id === G5a && g.away_team_id === G5b);
+ok(gg?.grade === '5th Grade', 'games list carries the grade');
+const tcsv2 = await fetch(BASE + '/api/export/teams.csv', { headers: auth }).then((r) => r.text());
+ok(new RegExp(`G5a-${RUN},G5A,5th Grade,`).test(tcsv2), 'teams.csv export includes grade');
+const oldT = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,logo_url\nG5a-${RUN},G5A,\n` });
+ok(oldT.body.errors.length === 0 && (await api('/api/teams')).body.find((t) => t.id === G5a).grade === '5th Grade', 'old teams.csv without a grade column keeps the grade');
+await api(`/api/games/${gg.id}`, { method: 'DELETE' });
 
 for (const c of [tv1b, tv2, sk1b, sk1c, sk2]) c.ws.close();
 console.log(`\nSmoke result: ${pass} passed, ${fail} failed`);

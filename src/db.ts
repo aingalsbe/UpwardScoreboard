@@ -55,6 +55,20 @@ DO $$ BEGIN
   CREATE UNIQUE INDEX IF NOT EXISTS games_natural_key ON games (court_id, scheduled_at, home_team_id, away_team_id) NULLS NOT DISTINCT;
 EXCEPTION WHEN unique_violation THEN RAISE WARNING 'games_natural_key not created: existing duplicate games; remove them and restart';
 END $$;
+-- Grades: teams are organized by grade, then name ("5th Grade" + order 5 for sorting).
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS grade TEXT, ADD COLUMN IF NOT EXISTS grade_order INT NOT NULL DEFAULT 100;
+-- Season colors (one dark + one light for every team) and other league settings.
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO settings(key, value) VALUES ('season_name', '2026–27 Upward'), ('season_dark', '#800000'), ('season_light', '#ffc72c') ON CONFLICT (key) DO NOTHING;
+-- Per game: which side wears dark (default home = light, away = dark), optional cheer squads per side.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS swap_colors BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE games ADD COLUMN IF NOT EXISTS home_cheer TEXT, ADD COLUMN IF NOT EXISTS away_cheer TEXT,
+  ADD COLUMN IF NOT EXISTS home_cheer_logo_url TEXT, ADD COLUMN IF NOT EXISTS away_cheer_logo_url TEXT,
+  ADD COLUMN IF NOT EXISTS home_cheer_logo_data BYTEA, ADD COLUMN IF NOT EXISTS away_cheer_logo_data BYTEA,
+  ADD COLUMN IF NOT EXISTS home_cheer_logo_mime TEXT, ADD COLUMN IF NOT EXISTS away_cheer_logo_mime TEXT;
+-- Shared gym floor (2026-10): courts a court can't overlap in time (slugs, symmetric), per-game length.
+ALTER TABLE courts ADD COLUMN IF NOT EXISTS conflicts_with TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE games ADD COLUMN IF NOT EXISTS duration_min INT CHECK (duration_min IS NULL OR duration_min BETWEEN 1 AND 600);
 DO $$ BEGIN
   ALTER TABLE courts ADD CONSTRAINT courts_current_game_fk FOREIGN KEY (current_game_id) REFERENCES games(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -62,33 +76,54 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 export async function migrate(): Promise<void> {
   await pool.query(SCHEMA);
+  await migrateFloorCourts();
 }
 
-const SEED_TEAMS = [
-  ['Lions', 'LIO', '#7a1020', '#f2b705'],
-  ['Eagles', 'EAG', '#0d2c6b', '#4fc3f7'],
-  ['Saints', 'SAI', '#14532d', '#a3e635'],
-  ['Warriors', 'WAR', '#4c1d95', '#f0abfc'],
-  ['Rams', 'RAM', '#7c2d12', '#fdba74'],
-  ['Knights', 'KNI', '#1f2937', '#e5e7eb'],
+/**
+ * One-time dev-data migration to the real gym (Full / West / East on one floor). Safe to run on every
+ * start and on a fresh database (no-op there). Only acts when old POC courts court-1/court-2 exist:
+ * court-1 -> west, court-2 -> east (keeping their games and history), then adds full with
+ * conflicts_with {west,east}. Courts created any other way are never touched.
+ */
+async function migrateFloorCourts(): Promise<void> {
+  const has = async (s: string) => (await pool.query('SELECT 1 FROM courts WHERE slug=$1', [s])).rowCount! > 0;
+  if (!(await has('court-1')) && !(await has('court-2'))) return;
+  for (const [from, to, name] of [['court-1', 'west', 'West'], ['court-2', 'east', 'East']]) {
+    if ((await has(from)) && !(await has(to))) await pool.query(`UPDATE courts SET slug=$2, name=$3, location='Main gym (half court)' WHERE slug=$1`, [from, to, name]);
+  }
+  if (!(await has('full'))) await pool.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES ('full','Full','Main gym (full court)','{west,east}')`);
+  console.log('Migrated dev courts court-1/court-2 to west/east and added full (one gym floor).');
+}
+
+const SEED_TEAMS: [string, string, string, number][] = [ // name, short, grade, grade order
+  ['Bears', 'BEA', '2nd Grade', 2], ['Dolphins', 'DOL', '2nd Grade', 2],
+  ['Hawks', 'HAW', '3rd Grade', 3], ['Tigers', 'TIG', '3rd Grade', 3],
+  ['Rams', 'RAM', '4th Grade', 4], ['Knights', 'KNI', '4th Grade', 4], ['Saints', 'SAI', '4th Grade', 4], ['Warriors', 'WAR', '4th Grade', 4],
+  ['Eagles', 'EAG', '5th Grade', 5], ['Lions', 'LIO', '5th Grade', 5],
 ];
 
 export async function seedIfEmpty(): Promise<boolean> {
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM teams');
   if (rows[0].n > 0) return false;
-  for (const [name, short, p, s] of SEED_TEAMS) {
-    await pool.query('INSERT INTO teams(name, short_name, primary_color, secondary_color) VALUES ($1,$2,$3,$4)', [name, short, p, s]);
+  for (const [name, short, grade, order] of SEED_TEAMS) {
+    await pool.query('INSERT INTO teams(name, short_name, grade, grade_order) VALUES ($1,$2,$3,$4)', [name, short, grade, order]);
   }
-  await pool.query(`INSERT INTO courts(slug, name, location) VALUES ('court-1','Court 1','Main gym'),('court-2','Court 2','Fellowship hall')`);
+  // One gym floor: Full is used on its own; West and East (half courts) run at the same time.
+  await pool.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
+    ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')
+    ON CONFLICT (slug) DO NOTHING`);
   const id = async (n: string) => (await pool.query('SELECT id FROM teams WHERE name=$1', [n])).rows[0].id;
   const day = new Date(); day.setHours(0, 0, 0, 0);
   const at = (h: number, m = 0) => new Date(day.getTime() + (h * 60 + m) * 60_000);
   const games: [string, string, string, Date, string][] = [
-    ['court-1', 'Lions', 'Eagles', at(10, 30), '5th-6th Grade'],
-    ['court-1', 'Saints', 'Warriors', at(11, 30), '5th-6th Grade'],
-    ['court-1', 'Rams', 'Knights', at(12, 30), '5th-6th Grade'],
-    ['court-2', 'Rams', 'Saints', at(10, 30), '3rd-4th Grade'],
-    ['court-2', 'Knights', 'Lions', at(11, 30), '3rd-4th Grade'],
+    // A realistic Saturday: West + East block (younger grades side by side), then a Full block. No overlaps.
+    ['west', 'Bears', 'Dolphins', at(9), '2nd Grade'],
+    ['east', 'Hawks', 'Tigers', at(9), '3rd Grade'],
+    ['west', 'Rams', 'Knights', at(10), '4th Grade'],
+    ['east', 'Saints', 'Warriors', at(10), '4th Grade'],
+    ['full', 'Eagles', 'Lions', at(11), '5th Grade'],
+    ['full', 'Knights', 'Saints', at(12), '4th Grade'],
+    ['full', 'Lions', 'Eagles', at(13), '5th Grade'],
   ];
   for (const [court, h, a, when, div] of games) {
     await pool.query(
@@ -96,5 +131,8 @@ export async function seedIfEmpty(): Promise<boolean> {
        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, $4, $5)`,
       [court, await id(h), await id(a), when, div]);
   }
+  // Some games have a cheer squad for a team, some don't.
+  await pool.query(`UPDATE games SET home_cheer='Eagles Cheer', away_cheer='Lions Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Eagles'), await id('Lions')]);
+  await pool.query(`UPDATE games SET home_cheer='Knights Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Knights'), await id('Saints')]);
   return true;
 }

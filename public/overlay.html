@@ -7,10 +7,13 @@
   <link rel="stylesheet" href="/overlay.css">
 </head>
 <body data-role="overlay">
+  <!-- Church branding sits outside the scorebug grid so it can't break the bug's layout (Sage positions it).
+       Cheer squads are intentionally not on the overlay: they don't fit the 3-column bug cleanly. -->
+  <div class="church"><img class="church-logo" data-bind="church-logo" alt="" hidden><span class="church-name" data-bind="church-name"></span></div>
   <div class="bug">
     <div class="side home"><span class="logo" data-logo="home"></span><span class="name" data-bind="home.short"></span><span class="score" data-bind="home.score"></span></div>
     <div class="side away"><span class="logo" data-logo="away"></span><span class="name" data-bind="away.short"></span><span class="score" data-bind="away.score"></span></div>
-    <div class="meta"><span class="period">Q<span data-bind="period"></span></span><span class="clock" data-clock>--:--</span></div>
+    <div class="meta"><span class="grade" data-bind="grade"></span><span class="period">Q<span data-bind="period"></span></span><span class="clock" data-clock>--:--</span></div>
     <div class="fouls"><span>F <b data-bind="home.fouls"></b><i class="bonus home-b">BONUS</i></span><span>F <b data-bind="away.fouls"></b><i class="bonus away-b">BONUS</i></span></div>
     <div class="banner" data-bind="banner"></div>
   </div>

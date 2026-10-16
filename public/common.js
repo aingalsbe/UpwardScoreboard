@@ -104,6 +104,7 @@ export function periodLabel(p, periods) {
 /** Set every [data-bind="a.b"] element's text from an object. */
 export function bindText(root, data) {
   root.querySelectorAll('[data-bind]').forEach((el) => {
+    if (el.tagName === 'IMG') return; // image binds are set as src by the page
     const v = el.dataset.bind.split('.').reduce((o, k) => (o == null ? o : o[k]), data);
     const s = v == null ? '' : String(v);
     if (el.textContent !== s) el.textContent = s;

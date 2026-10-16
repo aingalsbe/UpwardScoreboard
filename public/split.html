@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UpwardScoreboard · West + East</title>
+  <!-- Combined TV for the split floor. Each half is the normal TV board (/tv/<court>), so all display
+       logic, reconnects and offline freezing are reused. Layout lives in split.css (Sage). -->
+  <link rel="stylesheet" href="/split.css">
+</head>
+<body data-role="split">
+  <main class="split">
+    <section class="half"><iframe src="/tv/west" title="West court scoreboard"></iframe></section>
+    <section class="half"><iframe src="/tv/east" title="East court scoreboard"></iframe></section>
+  </main>
+  <script>
+    // Scale each 1920x1080 board to its half of the screen.
+    const fit = () => document.documentElement.style.setProperty('--vw', String(innerWidth));
+    addEventListener('resize', fit); fit();
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
-id,date,time,court,division,home,away
-,2026-10-24,09:00,court-1,5th-6th Grade,Lions,Eagles
-,2026-10-24,09:00,court-2,3rd-4th Grade,Saints,Warriors
-,2026-10-24,09:00,court-3,K-2nd Grade,Rams,Crusaders
-,2026-10-24,10:00,court-1,5th-6th Grade,Knights,Saints
-,2026-10-24,10:00,court-2,3rd-4th Grade,Eagles,Rams
+id,date,time,court,grade,division,home,away,minutes,swap_colors,home_cheer,home_cheer_logo,away_cheer,away_cheer_logo
+,2026-10-24,09:00,west,2nd Grade,2nd Grade,Bears,Dolphins,,,,,,
+,2026-10-24,09:00,east,3rd Grade,3rd Grade,Hawks,Tigers,,,,,,
+,2026-10-24,10:00,west,4th Grade,4th Grade,Rams,Knights,,,,,,
+,2026-10-24,10:00,east,4th Grade,4th Grade,Saints,Warriors,,true,,,,
+,2026-10-24,11:00,full,5th Grade,5th Grade,Eagles,Lions,,,Eagles Cheer,https://example.org/logos/eagles-cheer.png,Lions Cheer,
+,2026-10-24,12:00,full,4th Grade,4th Grade,Knights,Saints,,,Knights Cheer,,,

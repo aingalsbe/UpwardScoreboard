@@ -1,0 +1,6 @@
+/* Combined West + East TV (/tv/split). Owned by Sage. Developer placeholder: two 16:9 boards side by side. */
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+.split { display: flex; align-items: center; justify-content: center; gap: 0.5vw; height: 100vh; }
+.half { width: 49.75vw; aspect-ratio: 16 / 9; position: relative; overflow: hidden; }
+.half iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0;
+  transform-origin: 0 0; transform: scale(calc(49.75 / 100 * var(--vw, 1920) / 1920)); }

@@ -128,7 +128,8 @@ function render() {
   const p = $('#pending'); p.hidden = pending.size === 0; p.textContent = `${pending.size} tap${pending.size === 1 ? '' : 's'} sending…`;
   const view = {
     court: snap?.court?.name || court,
-    title: g ? `UpwardScoreboard · ${g.home.name} vs ${g.away.name} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
+    title: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
+    grade: g?.grade || '',
     connText: online ? '● Online' : '● Offline · reconnecting…',
     tvText: presence.displays ? `● TV connected${presence.controllers > 1 ? ` · ${presence.controllers} scorekeepers` : ''}` : '○ No TV connected',
   };
@@ -146,6 +147,7 @@ function render() {
       possText: s.possession ? (s.possession === 'home' ? `◀ ${g.home.name}` : `${g.away.name} ▶`) : 'not set',
       undoText: g.canUndo && s.lastLabel ? `last: ${s.lastLabel}` : '',
     });
+    root.dataset.homeSide = g.homeSide || 'light'; // for a small light/dark chip (no cheer data here)
     root.style.setProperty('--home-color', g.home.color); root.style.setProperty('--home-accent', g.home.accent);
     root.style.setProperty('--away-color', g.away.color); root.style.setProperty('--away-accent', g.away.accent);
     const t = $('#clock-toggle');

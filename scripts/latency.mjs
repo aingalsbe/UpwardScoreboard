@@ -1,8 +1,8 @@
 // Measure controller-tap -> TV-update latency over WebSocket (N samples).
 import WebSocket from 'ws';
 const BASE = (process.env.BASE_URL || 'http://localhost:3000').replace(/^http/, 'ws');
-const N = Number(process.env.N || 100), PIN = process.env.PIN1 || '1111';
-const open = (role) => new Promise((r) => { const w = new WebSocket(`${BASE}/ws?court=court-1&role=${role}`); w.on('open', () => r(w)); });
+const N = Number(process.env.N || 100), PIN = process.env.PIN1 || '2222';
+const open = (role) => new Promise((r) => { const w = new WebSocket(`${BASE}/ws?court=west&role=${role}`); w.on('open', () => r(w)); });
 const tv = await open('tv'), sk = await open('score');
 sk.send(JSON.stringify({ type: 'auth', pin: PIN }));
 await new Promise((r) => setTimeout(r, 300));

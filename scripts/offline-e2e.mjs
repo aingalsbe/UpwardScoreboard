@@ -7,19 +7,24 @@ import WebSocket from 'ws';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const ADMIN = process.env.ADMIN_PASSWORD || 'change-me-admin';
-const PIN1 = process.env.PIN1 || '1111';
+const PIN1 = process.env.PIN1 || '2222';
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  PASS', m); } else { fail++; console.log('  FAIL', m); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const token = (await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: ADMIN }) })).json()).token;
+let token; // waits out an admin-login lock left by a smoke run
+for (let i = 0; i < 3 && !token; i++) {
+  const r = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: ADMIN }) });
+  if (r.status === 429) { await sleep(Number(r.headers.get('retry-after') || 5) * 1000 + 300); continue; }
+  token = (await r.json()).token;
+}
 const H = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
 const games = await (await fetch(BASE + '/api/games', { headers: H })).json();
-const g = games.find((x) => x.court === 'Court 1' && x.status !== 'final');
+const g = games.find((x) => x.court === 'West' && x.status !== 'final');
 await fetch(`${BASE}/api/games/${g.id}/start`, { method: 'POST', headers: H });
 
 // Node-side scorekeeper (unaffected by the browser going offline)
-const sk = new WebSocket(`${BASE.replace(/^http/, 'ws')}/ws?court=court-1&role=score`);
+const sk = new WebSocket(`${BASE.replace(/^http/, 'ws')}/ws?court=west&role=score`);
 await new Promise((r) => sk.on('open', r));
 sk.send(JSON.stringify({ type: 'auth', pin: PIN1 }));
 const cmd = (c) => new Promise((res) => { const id = Math.random().toString(36).slice(2); const h = (d) => { const m = JSON.parse(String(d)); if (m.id === id) { sk.off('message', h); res(m); } }; sk.on('message', h); sk.send(JSON.stringify({ type: 'cmd', id, cmd: c })); });
@@ -31,10 +36,10 @@ await cmd({ type: 'CLOCK_START' });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
 const tv = await ctx.newPage();
-await tv.goto(BASE + '/tv/court-1');
+await tv.goto(BASE + '/tv/west');
 await tv.waitForSelector('html[data-conn="online"]', { timeout: 10000 });
 const ctl = await ctx.newPage();
-await ctl.goto(BASE + '/score/court-1');
+await ctl.goto(BASE + '/score/west');
 await ctl.fill('#pin', PIN1); await ctl.click('#pin-gate button');
 await ctl.waitForSelector('#app:not([hidden])');
 const clock = (p) => p.textContent('[data-clock]');
@@ -54,12 +59,13 @@ ok(/Offline/.test(pill), `controller pill says "${pill.trim()}"`);
 await cmd({ type: 'CLOCK_STOP' }); // the scorekeeper (still online elsewhere) stops the clock
 const c1 = await clock(tv); await sleep(2500); const c2 = await clock(tv);
 ok(c1 === c2, `TV clock frozen while offline (${c1} -> ${c2} after 2.5 s)`);
-const opacity = await tv.$eval('[data-clock]', (e) => getComputedStyle(e).opacity);
-ok(Number(opacity) < 1, `frozen clock is dimmed (opacity ${opacity})`);
+// Sage's offline style: dimmed (opacity) or marked (dashed border / muted color). Either counts.
+const look = await tv.$eval('[data-clock]', (e) => { const c = getComputedStyle(e); return { opacity: c.opacity, border: c.borderStyle, color: c.color }; });
+ok(Number(look.opacity) < 1 || /dashed/.test(look.border), `frozen clock is visibly marked offline (opacity ${look.opacity}, border ${look.border}, color ${look.color})`);
 
 console.log('B. back online');
 await cmd({ type: 'SCORE', team: 'home', pts: 3 }); // change made while TV was away
-const st = await (await fetch(BASE + '/api/public/court/court-1')).json();
+const st = await (await fetch(BASE + '/api/public/court/west')).json();
 const t1 = Date.now();
 await ctx.setOffline(false);
 await tv.waitForSelector('html[data-conn="online"]', { timeout: 10000 }).catch(() => {});
@@ -94,7 +100,7 @@ if (process.env.E2E_PAUSE_CMD) {
 console.log('C. server drops the half-open peer (presence)');
 await ctx.setOffline(true);
 await sleep(7000); // server heartbeat: ping every 2 s, reap after 3.5 s of silence
-const pres = await (async () => { const w = new WebSocket(`${BASE.replace(/^http/, 'ws')}/ws?court=court-1&role=viewer`); return new Promise((r) => w.on('message', (d) => { const m = JSON.parse(String(d)); if (m.type === 'state') { w.close(); r(m.presence); } })); })();
+const pres = await (async () => { const w = new WebSocket(`${BASE.replace(/^http/, 'ws')}/ws?court=west&role=viewer`); return new Promise((r) => w.on('message', (d) => { const m = JSON.parse(String(d)); if (m.type === 'state') { w.close(); r(m.presence); } })); })();
 ok(pres.displays === 0 && pres.controllers === 1, `server presence after drop: ${pres.displays} TV, ${pres.controllers} controller (browser sockets reaped)`);
 await ctx.setOffline(false);
 

@@ -1,8 +1,11 @@
-name,short_name,primary_color,secondary_color,logo_url
-Lions,LIO,#7a1020,#f2b705,
-Eagles,EAG,#0d2c6b,#4fc3f7,
-Saints,SAI,#14532d,#a3e635,
-Warriors,WAR,#4c1d95,#f0abfc,
-Rams,RAM,#7c2d12,#fdba74,
-Knights,KNI,#1f2937,#e5e7eb,
-Crusaders,CRU,#003366,#ffd700,https://example.org/logos/crusaders.png
+name,short_name,grade,logo_url
+Bears,BEA,2nd Grade,
+Dolphins,DOL,2nd Grade,
+Hawks,HAW,3rd Grade,
+Tigers,TIG,3rd Grade,
+Rams,RAM,4th Grade,
+Knights,KNI,4th Grade,
+Saints,SAI,4th Grade,
+Warriors,WAR,4th Grade,
+Eagles,EAG,5th Grade,https://example.org/logos/eagles.png
+Lions,LIO,5th Grade,

@@ -18,14 +18,29 @@ function dots(el, left, total) {
   el.innerHTML = Array.from({ length: total }, (_, i) => `<span class="${i < left ? 'on' : 'off'}"></span>`).join('');
 }
 
+/** Image binds (church-logo, home-cheer-logo, away-cheer-logo): set src, hidden when there's no value. */
+function img(key, src) {
+  document.querySelectorAll(`img[data-bind="${key}"]`).forEach((el) => {
+    if (src) { if (el.getAttribute('src') !== src) el.src = src; el.hidden = false; } else { el.removeAttribute('src'); el.hidden = true; }
+  });
+}
+
 function render() {
   if (!snap) return;
   const g = snap.game, s = g?.state;
+  if (snap.season) { root.style.setProperty('--season-dark', snap.season.dark); root.style.setProperty('--season-light', snap.season.light); }
+  img('church-logo', snap.church?.logo);
+  const hc = g?.home.cheer, ac = g?.away.cheer;
+  root.classList.toggle('has-home-cheer', !!hc); root.classList.toggle('has-away-cheer', !!ac);
+  img('home-cheer-logo', hc?.logo); img('away-cheer-logo', ac?.logo);
+  root.dataset.homeSide = g?.homeSide || 'light'; root.dataset.swapped = String(!!g?.swapped);
   root.classList.toggle('no-game', !g);
   const view = {
     league: snap.league, court: snap.court?.name,
-    gameInfo: g ? [snap.court?.name, g.division].filter(Boolean).join(' · ') : 'Waiting for the next game',
-    upNext: (snap.upNext || []).map((u) => `${u.time || ''}  ${u.home} vs ${u.away}`).join('   ·   ') || 'Thanks for coming!',
+    'church-name': snap.church?.name || '', 'home-cheer': hc?.name || '', 'away-cheer': ac?.name || '',
+    gameInfo: g ? [snap.court?.name, g.grade || g.division, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ') : 'Waiting for the next game',
+    grade: g?.grade || '', matchup: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
+    upNext: (snap.upNext || []).map((u) => `${u.time || ''}  ${u.grade ? u.grade + ' · ' : ''}${u.home} vs ${u.away}`).join('   ·   ') || 'Thanks for coming!',
   };
   if (g) {
     Object.assign(view, {

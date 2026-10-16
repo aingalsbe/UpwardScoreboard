@@ -1,4 +1,4 @@
-slug,name,location
-court-1,Court 1,Main gym
-court-2,Court 2,Fellowship hall
-court-3,Court 3,Gym B
+slug,name,location,conflicts_with
+full,Full,Main gym (full court),west east
+west,West,Main gym (half court),
+east,East,Main gym (half court),
