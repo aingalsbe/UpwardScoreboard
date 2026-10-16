@@ -137,3 +137,25 @@ button[data-reopen]::before { content: "↺ "; }
   .qr-url::after { font-size: 13pt; color: #111; }
 }
 [hidden] { display: none !important; }
+
+/* Gender (Boys/Girls) select on the team form: same field style, 44px, explicit chevron so it reads as a choice. */
+.form select[name="gender"] { min-height: 44px; appearance: none; -webkit-appearance: none; padding-right: 36px;
+  background: #171c2e url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23c9cee0' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 12px center; }
+
+/* Schedule warnings (not errors): amber panel with ⚠ heading text + left bar, never color alone. #ffe08a on #2a2210 = 12.6:1 */
+.schedule-warnings { margin: 14px 0; padding: 12px 14px 12px 16px; border-radius: 12px; background: #2a2210; color: #ffe08a;
+  border: 1px solid #8a6d1f; border-left: 6px solid #ffc72c; font-size: 14px; }
+.schedule-warnings b { display: block; font-size: 15px; margin-bottom: 4px; }
+.schedule-warnings ul { margin: 0; padding-left: 20px; max-height: 12em; overflow: auto; overflow-wrap: anywhere; }
+.schedule-warnings li { margin: 2px 0; color: #f4e6bf; }
+/* ⚠ N tag in the games table (text icon + count; title has details) */
+.tag.warn-tag { background: #2a2210; color: #ffe08a; border: 1px solid #ffc72c; font-weight: 800; cursor: help; }
+/* row with warnings: amber left border on the first cell + the tag above (icon + border, not tint alone) */
+tr.has-warning > td:first-child { box-shadow: inset 5px 0 0 #ffc72c; }
+tr.has-warning > td { background: rgba(255,199,44,.06); }
+
+/* single cheer squad fieldset: name wide, logo URL + upload side by side; 44px fields; file button sized as a target */
+.cheer-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.cheer-fields label:has(input[name="cheer"]) { grid-column: 1 / -1; }
+.cheer-fields input[type=file] { min-height: 44px; padding: 6px; }
+.cheer-fields input[type=file]::file-selector-button { min-height: 32px; padding: 6px 14px; margin-right: 10px; border-radius: 8px; border: 1px solid #4a5272; background: #262d45; color: #fff; font: inherit; cursor: pointer; }
