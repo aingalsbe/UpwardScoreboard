@@ -57,6 +57,10 @@ EXCEPTION WHEN unique_violation THEN RAISE WARNING 'games_natural_key not create
 END $$;
 -- Grades: teams are organized by grade, then name ("5th Grade" + order 5 for sorting).
 ALTER TABLE teams ADD COLUMN IF NOT EXISTS grade TEXT, ADD COLUMN IF NOT EXISTS grade_order INT NOT NULL DEFAULT 100;
+-- Team names are unique per grade (2nd Grade Eagles and 5th Grade Eagles can both exist), case-insensitive.
+-- Safe on old data: the old global unique already guarantees no duplicates; the old constraint is dropped after the new index exists.
+CREATE UNIQUE INDEX IF NOT EXISTS teams_grade_name_uk ON teams (COALESCE(grade, ''), lower(name));
+ALTER TABLE teams DROP CONSTRAINT IF EXISTS teams_name_key;
 -- Season colors (one dark + one light for every team) and other league settings.
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT INTO settings(key, value) VALUES ('season_name', '2026–27 Upward'), ('season_dark', '#800000'), ('season_light', '#ffc72c') ON CONFLICT (key) DO NOTHING;

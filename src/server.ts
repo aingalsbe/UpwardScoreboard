@@ -404,7 +404,19 @@ function teamValues(b: any) {
   return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), opt(b.primary_color),
     opt(b.secondary_color), safeLogoUrl(b.logo_url), gradeOf(b.grade)] as const;
 }
+/** Resolve a team by name (+ optional grade). Without a grade the name must be unambiguous. */
+async function findTeam(name: string, grade: string | null): Promise<{ id: number; grade: string | null } | { error: string } | null> {
+  const { rows } = await pool.query('SELECT id, grade FROM teams WHERE lower(name)=lower($1) ORDER BY grade_order, grade', [name]);
+  if (grade) return rows.find((t) => (t.grade ?? null) === grade) ?? (rows.length === 1 ? rows[0] : null); // single team in another grade: the grade check explains the mismatch
+  if (rows.length > 1) return { error: `"${name}" exists in ${rows.map((t) => t.grade || 'no grade').join(' and ')}; fill the grade column` };
+  return rows[0] ?? null;
+}
+const dupTeam = (e: any, b: any) => /teams_grade_name_uk|teams_name_key/.test(e.message)
+  ? new HttpError(409, `A team named "${String(b.name || '').trim()}" already exists${gradeOf(b.grade) ? ' in ' + gradeOf(b.grade) : ''}. Team names must be unique within a grade.`) : e;
 async function upsertTeam(b: any, id?: number) {
+  try { return await upsertTeamRaw(b, id); } catch (e: any) { throw dupTeam(e, b); }
+}
+async function upsertTeamRaw(b: any, id?: number) {
   const vals = teamValues(b);
   const logo = decodeLogo(b.logo_data_url);
   if (id) {
@@ -414,8 +426,7 @@ async function upsertTeam(b: any, id?: number) {
     if (b.remove_logo) await pool.query('UPDATE teams SET logo_data=NULL, logo_mime=NULL WHERE id=$1', [id]);
     return id;
   }
-  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null]);
-  await pool.query('UPDATE teams SET grade=$2, grade_order=$3 WHERE id=$1', [r.rows[0].id, vals[5], gradeOrder(vals[5])]);
+  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7,$8,$9) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5])]);
   return r.rows[0].id as number;
 }
 
@@ -556,11 +567,18 @@ async function importTeams(text: string): Promise<ImportResult> {
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
     try {
-      const v = teamValues(r); const key = v[0].toLowerCase();
+      const v = teamValues(r); const hasGrade = headers.includes('grade'); const key = `${hasGrade ? v[5] ?? '' : '*'}|${v[0].toLowerCase()}`;
       if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (skipped)`); continue; }
       seen.set(key, line);
-      const ex = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows[0];
-      if (!headers.includes('grade')) delete (r as any).grade; // old files without a grade column keep the team's grade
+      // Match on grade + name. Old files without a grade column match by name (must be unambiguous).
+      // A team that has no grade yet is adopted by a row naming it with a grade (instead of creating a twin).
+      const sameName = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
+      let ex;
+      if (hasGrade) ex = sameName.find((t) => (t.grade ?? null) === v[5]) ?? (v[5] ? sameName.find((t) => t.grade == null && sameName.length === 1) : undefined);
+      else {
+        if (sameName.length > 1) throw new HttpError(400, `"${v[0]}" exists in ${sameName.map((t) => t.grade || 'no grade').join(' and ')}; add a grade column`);
+        ex = sameName[0]; delete (r as any).grade; // keep the team's grade
+      }
       if (!ex) { await upsertTeam(r); out.created++; continue; }
       const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]); // color columns are ignored (season colors)
       if (same) { out.skipped++; continue; }
@@ -600,9 +618,18 @@ async function importSchedule(text: string): Promise<ImportResult> {
   const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
   const team = async (n: string, col: string) => {
     if (!n) throw new HttpError(400, `${col} team is empty`);
-    const q = await pool.query('SELECT id FROM teams WHERE lower(name)=lower($1)', [n]);
-    if (!q.rows.length) throw new HttpError(400, `unknown ${col} team "${n}" (import teams.csv first)`);
-    return q.rows[0].id as number;
+    return n.trim();
+  };
+  /** Resolve home + away by grade + name: stated grade, else unambiguous name, else the other team's grade. */
+  const resolvePair = async (hn: string, an: string, stated: string | null) => {
+    let h = await findTeam(hn, stated), a = await findTeam(an, stated);
+    if (h && 'error' in h && a && !('error' in a)) h = await findTeam(hn, a.grade);
+    if (a && 'error' in a && h && !('error' in h)) a = await findTeam(an, h.grade);
+    for (const [t, n, col] of [[h, hn, 'home'], [a, an, 'away']] as const) {
+      if (!t) throw new HttpError(400, `unknown ${col} team "${n}"${stated ? ' in ' + stated : ''} (import teams.csv first)`);
+      if ('error' in t) throw new HttpError(400, `${col} team ${t.error}`);
+    }
+    return [(h as any).id as number, (a as any).id as number];
   };
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
@@ -615,9 +642,10 @@ async function importSchedule(text: string): Promise<ImportResult> {
       const slug = (r.court || '').trim();
       const court = slug ? (await pool.query('SELECT id FROM courts WHERE slug=lower($1)', [slug])).rows[0] : { id: null };
       if (!court) throw new HttpError(400, `unknown court "${r.court}" (use a slug from courts.csv, e.g. west)`);
-      const home = await team(r.home, 'home'), away = await team(r.away, 'away');
+      const stated = headers.includes('grade') ? gradeOf(r.grade) : null;
+      const [home, away] = await resolvePair(await team(r.home, 'home'), await team(r.away, 'away'), stated);
       if (home === away) throw new HttpError(400, 'home and away are the same team');
-      const gm = await gradeCheck(home, away, headers.includes('grade') ? gradeOf(r.grade) : null);
+      const gm = await gradeCheck(home, away, stated);
       if (gm) throw new HttpError(400, gm);
       const when = date ? `${date} ${time}` : null; const division = (r.division || '').trim() || null;
       const hasMin = headers.includes('minutes'); const minutes = hasMin ? parseMinutes(r.minutes) : null;
@@ -640,6 +668,13 @@ async function importSchedule(text: string): Promise<ImportResult> {
         if (!ex) throw new HttpError(400, `unknown game id ${id} (leave id blank to add a new game)`);
       } else {
         ex = (await pool.query('SELECT * FROM games WHERE court_id IS NOT DISTINCT FROM $1 AND scheduled_at IS NOT DISTINCT FROM $2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
+      }
+      // An exported uploaded cheer logo comes back as this game's own served URL: keep the upload as is.
+      for (const side of ['home', 'away']) {
+        const k = `${side}_cheer_logo_url`;
+        if (ex && typeof extra[k] === 'string' && new RegExp(`/logos/cheer/${ex.id}/${side}$`).test(extra[k])) {
+          if (ex[`${side}_cheer_logo_data`]) delete extra[k]; else extra[k] = null;
+        }
       }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
       if (!ex) {
@@ -848,9 +883,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       h.name AS home, a.name AS away,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int) END AS home_score,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int) END AS away_score, g.status, g.duration_min AS minutes, COALESCE(h.grade, a.grade) AS grade,
-      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.home_cheer, g.home_cheer_logo_url AS home_cheer_logo, g.away_cheer, g.away_cheer_logo_url AS away_cheer_logo
+      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.home_cheer,
+      CASE WHEN g.home_cheer_logo_data IS NOT NULL THEN $1 || '/logos/cheer/' || g.id || '/home' ELSE g.home_cheer_logo_url END AS home_cheer_logo, g.away_cheer,
+      CASE WHEN g.away_cheer_logo_data IS NOT NULL THEN $1 || '/logos/cheer/' || g.id || '/away' ELSE g.away_cheer_logo_url END AS away_cheer_logo
       FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
-      ORDER BY g.scheduled_at NULLS LAST, g.id`);
+      ORDER BY g.scheduled_at NULLS LAST, g.id`, [baseUrl(req)]);
     return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'swap_colors', 'home_cheer', 'home_cheer_logo', 'away_cheer', 'away_cheer_logo'], rows));
   }
   if (p === '/api/import/teams.csv' && m === 'POST') { const r = await importTeams(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
