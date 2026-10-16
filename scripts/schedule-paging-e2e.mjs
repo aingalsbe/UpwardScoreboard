@@ -33,6 +33,13 @@ for (const g of (await api('/api/games')).filter((g) => g.status === 'active' &&
 const sat = await api('/api/public/schedule?day=sat');
 const games0 = (await api('/api/games')).filter((g) => g.scheduled_at && localDay(g.scheduled_at) === sat.date);
 const rows = games0.map((g) => [DATE, new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(11, 16), g.court.toLowerCase(), g.grade, g.gender, g.home, g.away, g.cheer || ''].join(','));
+// One long-named team (30 chars, the maximum; short name LWT) replaces the 3:00 West home team (a half-width compact
+// final at end of day): its name must fall back to the short name.
+const LONG = 'Lenexa Westside Thunder Strike', LONG_SHORT = 'LWT';
+const G15 = games0.find((g) => g.court === 'West' && new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(11, 16) === '15:00');
+if (!(await api('/api/teams')).some((t) => t.name === LONG && t.grade === G15.grade && t.gender === G15.gender)) await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: LONG, short_name: LONG_SHORT, grade: G15.grade, gender: G15.gender }) });
+const i15 = rows.findIndex((r) => r.split(',')[1] === '15:00' && r.split(',')[2] === 'west');
+if (i15 >= 0) { const c = rows[i15].split(','); c[5] = LONG; rows[i15] = c.join(','); }
 const imp = await csv('date,time,court,grade,gender,home,away,cheer\n' + rows.join('\n') + '\n');
 ok(imp.created === games0.length && games0.length >= 12, `scene day ${DATE}: ${imp.created} games copied from the demo Saturday (${sat.date})`);
 const mine = (await api('/api/games')).filter((g) => g.scheduled_at && localDay(g.scheduled_at) === DATE);
@@ -80,7 +87,8 @@ const inspect = () => page.evaluate(() => {
       const same = Object.values(byT).every((a) => a.every((y) => Math.abs(y - a[0]) <= 1));
       const tops = Object.values(byT).map((a) => a[0]); const distinct = new Set(tops).size === tops.length;
       return { same, distinct, times: Object.keys(byT), empty: sl.filter((x) => x.empty).length, splitCells: sl.filter((x) => !x.full).length }; })(),
-    titlesOk: [...document.querySelectorAll('.chip[data-bind$="-name"]')].every((c) => c.title && c.title === c.textContent),
+    names: [...document.querySelectorAll('.game[data-compact] .chip[data-full]')].map((c) => ({ text: c.textContent, full: c.dataset.full, short: c.dataset.short === 'true', fits: c.scrollWidth <= c.clientWidth + 1, title: c.title })),
+    titlesOk: [...document.querySelectorAll('.chip[data-bind$="-name"]')].every((c) => c.title && c.title === c.dataset.full && (c.textContent === c.dataset.full || c.dataset.short === 'true')),
     earlier: document.querySelector('.earlier').textContent,
     earlierBeforeFinals: (() => { const e = document.querySelector('.earlier'), f = document.querySelector('.sched-track .game[data-state="complete"]'); return !f || !!(e.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING); })(),
     times: trackGames.filter((g) => g.dataset.state === 'complete').map((g) => g.querySelector('[data-bind=time]').textContent),
@@ -129,6 +137,13 @@ await finish(open.map((g, i) => [g, 10 + (i * 7) % 15, 12 + (i * 5) % 11]));
 const end = await scene('end', 'end', mine.length);
 ok(end.keyCount === 0 && end.finalsShown > 0 && Number(end.earlier.match(/\d+/)?.[0] || 0) > 0, 'end: nothing pinned, most recent finals fill the screen, the rest collapse');
 ok(end.times.at(-1) === '6:30', `end: the last game of the day (6:30) is among the finals shown (${end.times.join(' ')})`);
+const lng = end.names.find((x) => x.full === LONG);
+ok(lng && lng.short && lng.text === LONG_SHORT && lng.title === LONG && lng.fits, `end: long name in a compact final falls back to its short name (${lng?.text}, data-short, title = full name)`);
+ok(end.names.filter((x) => !x.short).every((x) => x.fits && x.text === x.full) && end.names.filter((x) => x.short).every((x) => x.fits), `end: other compact names stay full when they fit (${end.names.filter((x) => x.short).length} short of ${end.names.length})`);
+await page.setViewportSize({ width: 1280, height: 720 }); await sleep(800);
+const small = await inspect(); ok(small.names.every((x) => x.fits), `resize to 1280x720: names re-measured, all fit (${small.names.filter((x) => x.short).length} short)`);
+await page.setViewportSize({ width: 1920, height: 1080 }); await sleep(800);
+const back = await inspect(); ok(JSON.stringify(back.names.map((x) => x.short)) === JSON.stringify(end.names.map((x) => x.short)), 'resize back to 1920x1080: same names full/short as before');
 await browser.close();
 console.log(`\nSchedule paging e2e: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

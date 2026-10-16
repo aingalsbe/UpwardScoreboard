@@ -37,7 +37,10 @@ function gameEl(g, isNext, compact) {
   setText(el, 'grade-label', g.label || g.grade || '');
   setText(el, 'home-name', g.home.name); setText(el, 'away-name', g.away.name);
   // Full name on hover/inspection (compact finals can cut long names off with an ellipsis).
-  el.querySelector('[data-bind="home-name"]').title = g.home.name || ''; el.querySelector('[data-bind="away-name"]').title = g.away.name || '';
+  for (const side of ['home', 'away']) { // full name kept for the title and for fitNames(); short = the team's short_name
+    const n = el.querySelector(`[data-bind="${side}-name"]`); n.title = g[side].name || '';
+    n.dataset.full = g[side].name || ''; n.dataset.shortName = g[side].short || '';
+  }
   if (state === 'upcoming') { const sc = el.querySelector('.score'); sc.className = 'score vs'; sc.textContent = 'vs'; }
   else { setText(el, 'home-score', hs); setText(el, 'away-score', as); }
   // Cheer squads: omit the .cheer div when there's none.
@@ -127,6 +130,18 @@ function layout() {
     rows--;
   }
   page();
+  fitNames();
+}
+
+/**
+ * Compact finals: full team name when it fits, else the team's existing short name (teams.short_name, the same `short`
+ * the TV/overlay get; server falls back to the first 3 letters). data-short="true" marks a swapped bind.
+ */
+function fitNames() {
+  for (const n of document.querySelectorAll('.game[data-compact] .chip[data-full]')) {
+    n.textContent = n.dataset.full; delete n.dataset.short;
+    if (n.scrollWidth > n.clientWidth + 0.5 && n.dataset.shortName) { n.textContent = n.dataset.shortName; n.dataset.short = 'true'; }
+  }
 }
 
 /**
