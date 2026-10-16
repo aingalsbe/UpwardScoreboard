@@ -29,7 +29,7 @@
       <h2>Today's courts</h2>
       <div id="court-cards" class="cards"></div>
       <h2>Games</h2>
-      <table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="today-games"></tbody></table>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="today-games"></tbody></table></div>
     </section>
 
     <section id="teams" class="view">
@@ -54,7 +54,7 @@
         <div class="actions"><button class="primary" id="team-save">Add team</button><button type="reset" class="link">Clear</button></div>
       </form>
       <label class="grade-filter">Grade <select id="team-grade-filter" data-grade-filter="teams"><option value="">All grades</option></select></label>
-      <table class="tbl"><thead><tr><th></th><th>Grade</th><th>Name</th><th>Short</th><th></th></tr></thead><tbody id="team-rows"></tbody></table>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Grade</th><th>Name</th><th>Short</th><th></th></tr></thead><tbody id="team-rows"></tbody></table></div>
     </section>
 
     <section id="courts" class="view">
@@ -65,7 +65,7 @@
         <div class="actions"><button class="primary">Add court</button></div>
       </form>
       <p class="muted">Scorekeeper PINs come from the <code>COURT_PINS</code> env var (e.g. <code>full:1111,west:2222,east:3333</code>). Restart after changing it.</p>
-      <table class="tbl"><thead><tr><th>Name</th><th>Slug</th><th>PIN set?</th><th>Links</th><th></th></tr></thead><tbody id="court-rows"></tbody></table>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Slug</th><th>PIN set?</th><th>Links</th><th></th></tr></thead><tbody id="court-rows"></tbody></table></div>
       <h2>Weekly scorekeeper QR codes</h2>
       <p class="muted">One code per court, good until Sunday 11:59 PM. Print them each week. "New code" or "Revoke" stops older printed codes. The PIN always works as a fallback.</p>
       <p><button class="primary" id="qr-show" type="button">Show this week's QR codes</button> <button id="qr-print" type="button">Print</button></p>
@@ -105,7 +105,7 @@
       </form>
       <h2>All games</h2>
       <label class="grade-filter">Grade <select id="game-grade-filter" data-grade-filter="games"><option value="">All grades</option></select></label>
-      <table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Grade</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="game-rows"></tbody></table>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Grade</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="game-rows"></tbody></table></div>
     </section>
 
     <section id="data" class="view">

@@ -146,9 +146,12 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 #confirm-dialog:is([data-conn="offline"], [data-conn="connecting"]) form::after { margin-top: -8px; }
 #app:is([data-conn="offline"], [data-conn="connecting"]) .hdr { border-bottom: 2px dashed #6b7080; padding-bottom: 8px; }
 /* PIN causes, layered on the kind styles */
-.pin-gate .err[data-cause="qr"]::before { content: "🔒 QR"; font-size: 13px; letter-spacing: .5px; background: #ffd9d6; color: #3a1518; border-radius: 6px; padding: 2px 6px; line-height: 1.4; }
-.pin-gate .err[data-cause="revoked"] { border-left-style: dashed; }
-.pin-gate .err[data-cause="revoked"]::before { content: "↺ New QR"; font-size: 13px; letter-spacing: .5px; background: #dcecff; color: #13294a; border-radius: 6px; padding: 2px 6px; line-height: 1.4; white-space: nowrap; }
+.pin-gate .err[data-cause][data-cause="qr"]::before { content: "🔒 QR"; font-size: 13px; letter-spacing: .5px; background: #ffd9d6; color: #3a1518; border-radius: 6px; padding: 2px 6px; line-height: 1.4; }
+.pin-gate .err[data-cause][data-cause="revoked"] { border-left-style: dashed; }
+.pin-gate .err[data-cause][data-cause="revoked"]::before { content: "↺ New QR"; font-size: 13px; letter-spacing: .5px; background: #dcecff; color: #13294a; border-radius: 6px; padding: 2px 6px; line-height: 1.4; white-space: nowrap; }
+
+/* TV presence unknown while this phone is offline (html.presence-stale, .pill.tv[data-stale]): grey, dashed, neutral. */
+.presence-stale .pill.tv, .pill.tv[data-stale="true"] { background: #262d45; color: #d5d9e6; border: 2px dashed #6b7290; font-weight: 600; }
 
 /* Tablet landscape: team | clock | team */
 @media (min-width: 900px) {

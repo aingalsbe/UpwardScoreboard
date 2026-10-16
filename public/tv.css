@@ -120,9 +120,10 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 
 /* Offline / reconnecting: frozen clock, desaturated (still ~9:1 on black), dashed frame + text label (not color-only). */
 [data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; text-shadow: none; border-style: dashed; border-color: #6b7080; }
-[data-conn="offline"] [data-clock]::after, [data-conn="connecting"] [data-clock]::after {
-  content: "⟳ Reconnecting…"; position: absolute; left: 50%; top: -3.2rem; transform: translateX(-50%); white-space: nowrap;
-  font: 700 1.5rem/1 "DejaVu Sans", Arial, sans-serif; letter-spacing: .05rem; color: #e8eaf2; background: #262d45; padding: .45rem 1rem; border-radius: 2rem; }
+/* Cue sits in the center column's flow (above the grade chip), so it never overlaps grade, clock or team cards. */
+[data-conn="offline"] .center::before, [data-conn="connecting"] .center::before {
+  content: "⟳ Reconnecting…"; white-space: nowrap; order: -1;
+  font: 700 1.5rem/1 "DejaVu Sans", Arial, sans-serif; letter-spacing: .05rem; color: #e8eaf2; background: #262d45; border: .2rem dashed #6b7080; padding: .45rem 1rem; border-radius: 2rem; }
 
 /* ---------- compact portrait-ish frame (used by /tv/split halves, ~960x1000) ---------- */
 @media (max-aspect-ratio: 5/4) {
@@ -147,6 +148,12 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 
 /* ---- Round 4: idle screen offline (data-conn on #idle / #next-up). Idle never depends on the per-game side
    classes/vars (it uses --season-* with fixed fallbacks in html), so clearing them is safe. */
-#idle:is([data-conn="offline"], [data-conn="connecting"])::after { content: "⟳ Reconnecting…"; font-size: 1.9rem; font-weight: 700;
+#idle:is([data-conn="offline"], [data-conn="connecting"]) { gap: 1.4rem; }
+#idle:is([data-conn="offline"], [data-conn="connecting"]) .idle-brand .church-name { font-size: 4.2rem; }
+#idle:is([data-conn="offline"], [data-conn="connecting"])::before { content: "⟳ Reconnecting…"; order: -1; font-size: 1.9rem; font-weight: 700;
   color: #e8eaf2; background: #262d45; border: .25rem dashed #6b7080; padding: .6rem 1.6rem; border-radius: 3rem; }
 #next-up:is([data-conn="offline"], [data-conn="connecting"]) { filter: saturate(.75); box-shadow: 0 0 0 .4rem #6b7080, 0 2rem 5rem rgba(0,0,0,.5); outline: .3rem dashed #8a90a6; outline-offset: .8rem; }
+/* Idle content never shrinks/clips (F1); offline trims sizes slightly so the chip + frame fit at 1080p. */
+#idle > * { flex-shrink: 0; }
+#idle:is([data-conn="offline"], [data-conn="connecting"]) .next-matchup { font-size: 5.6rem; }
+#idle:is([data-conn="offline"], [data-conn="connecting"]) .idle-brand .church-logo { height: 7rem; }

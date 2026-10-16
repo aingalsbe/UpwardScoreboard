@@ -48,6 +48,9 @@ code { background: #222840; padding: 1px 5px; border-radius: 4px; }
 .msg.ok { background: #13301f; color: #a6f4bb; border: 1px solid #2c6b3c; }
 .msg.bad { background: #3a1518; color: #ffc4c4; border: 1px solid #7a2c33; border-left-width: 5px; }
 .msg.ok::before { content: "✓"; font-weight: 900; } .msg.bad::before { content: "⚠"; font-weight: 900; }
+/* Wide tables scroll inside their own box, never the page. */
+.tbl-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; }
+.tbl-wrap .tbl { min-width: 560px; }
 /* Comfortable touch targets */
 button, .button, input, select { min-height: 44px; }
 input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
