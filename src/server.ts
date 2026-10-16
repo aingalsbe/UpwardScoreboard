@@ -51,26 +51,40 @@ function tokenFrom(req: http.IncomingMessage): string | undefined {
 }
 // Brute-force protection (QA r2-A: never lock out a whole gym).
 // - PIN failures are counted per court + device (client-generated id) and per socket: 5 -> lock/close.
-// - Only a much higher per-IP backstop (50) applies across devices, so one kid guessing on court-2
-//   can't lock court-1. Devices holding a valid court session token skip the PIN check and all limits.
+// - Only a much higher per-IP backstop (100 wrong PINs) applies across devices (gym phones share one NAT IP),
+//   so one kid guessing on East can't lock West. Devices holding a valid court session token skip all limits.
+// - Bad QR codes count per device only, never toward the IP backstop: a signed QR can't be guessed, so a
+//   spare phone scanning junk can lock only itself. A valid QR token is accepted even while the IP is backstopped.
 // - Admin login: 5 failures per IP. Lockouts double (30s, 60s, ... max 15 min).
 const LOCK_BASE_MS = Number(process.env.RATE_LIMIT_BASE_MS || 30_000);
 const pinDeviceLimiter = new Limiter(5, LOCK_BASE_MS);
-const pinIpBackstop = new Limiter(50, LOCK_BASE_MS);
+const pinIpBackstop = new Limiter(Number(process.env.PIN_IP_BACKSTOP || 100), LOCK_BASE_MS);
 const loginLimiter = new Limiter(5, LOCK_BASE_MS);
 const SOCKET_MAX_PIN_FAILS = 5;
+const REVOKED_MSG = "This phone was signed in with a court QR code that has been replaced. Scan the new code or enter the court PIN.";
 setInterval(() => { pinDeviceLimiter.prune(); pinIpBackstop.prune(); loginLimiter.prune(); }, 600_000).unref();
 
 // Court session tokens: HMAC-signed "court.expiry.sig", 12 h, scoped to one court. Issued after a
 // correct PIN, kept in the device's localStorage, used on every reconnect instead of the PIN.
 const SESSION_MS = 12 * 3600_000;
-function makeCourtSession(court: string): string { const exp = String(Date.now() + SESSION_MS); return `${court}.${exp}.${sign(`court:${court}:${exp}`)}`; }
-function validCourtSession(t: unknown, court: string): boolean {
-  if (typeof t !== 'string' || t.length > 200) return false;
-  const i = t.lastIndexOf('.'), j = t.lastIndexOf('.', i - 1);
-  if (i < 0 || j < 0) return false;
-  const c = t.slice(0, j), exp = t.slice(j + 1, i), sig = t.slice(i + 1);
-  return c === court && Number(exp) > Date.now() && safeEq(sig, sign(`court:${c}:${exp}`));
+// Sessions from a QR sign-in carry the court's qr_version ("court.exp.q<ver>.sig"): Regenerate/Revoke bumps the
+// version, which ends those sessions. PIN sessions ("court.exp.p.sig", or the older "court.exp.sig") stay valid.
+function makeCourtSession(court: string, qrVer: number | null = null): string {
+  const exp = String(Date.now() + SESSION_MS), how = qrVer == null ? 'p' : `q${qrVer}`;
+  return `${court}.${exp}.${how}.${sign(`court:${court}:${exp}:${how}`)}`;
+}
+/** Parsed, signature-checked court session, or null. qrVer is null for PIN sessions. */
+function parseCourtSession(t: unknown, court: string): { qrVer: number | null } | null {
+  if (typeof t !== 'string' || t.length > 200 || !t.startsWith(court + '.')) return null;
+  const parts = t.slice(court.length + 1).split('.');
+  if (parts.length === 2) { // pre-QR format: court.exp.sig (PIN)
+    const [exp, sig] = parts;
+    return Number(exp) > Date.now() && safeEq(sig, sign(`court:${court}:${exp}`)) ? { qrVer: null } : null;
+  }
+  if (parts.length !== 3) return null;
+  const [exp, how, sig] = parts;
+  if (!(Number(exp) > Date.now()) || !/^(p|q\d+)$/.test(how) || !safeEq(sig, sign(`court:${court}:${exp}:${how}`))) return null;
+  return { qrVer: how === 'p' ? null : Number(how.slice(1)) };
 }
 function clientIp(req: http.IncomingMessage): string {
   if (process.env.TRUST_PROXY === 'true') {
@@ -205,7 +219,8 @@ async function courtSnapshot(slug: string) {
   // Scorekeeper game picker: today's games on this court that aren't complete.
   const today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = now()::date ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
   const upNext = (await pool.query(
-    `SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade
+    `SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
+       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade
      FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
      WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
      ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
@@ -230,7 +245,7 @@ async function gameViewNorm(gameId: number) {
 }
 
 // -------------------------------------------------------------- websockets
-interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer'; authed: boolean; }
+interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer'; authed: boolean; qrVer?: number | null; }
 const clients = new Set<Client>();
 
 /** Scorekeepers never get cheer squad data (TV/overlay only). */
@@ -289,40 +304,53 @@ function attachWs(server: http.Server) {
         if (msg.type === 'auth') {
           // Displays are read-only: an auth attempt there is refused but never counted.
           if (role !== 'score') return send(client, { type: 'auth', ok: false, error: 'This is a read-only display link.' });
-          const welcome = (session: string | null, how: string) => {
-            client.authed = true; pinFails = 0;
+          const welcome = (session: string | null, how: string, qrVer: number | null = null) => {
+            client.authed = true; client.qrVer = qrVer; pinFails = 0;
             send(client, { type: 'auth', ok: true, how, ...(session ? { session } : {}) });
             return void broadcastCourt(court);
           };
           // 1) Session token or admin token: no PIN, no limiter, never locked out.
-          if (validCourtSession(msg.session, court)) return welcome(null, 'session');
+          const sess = parseCourtSession(msg.session, court);
+          let sessionRevoked = false;
+          if (sess) {
+            if (sess.qrVer == null) return welcome(null, 'session');
+            const cur = (await pool.query('SELECT qr_version FROM courts WHERE slug=$1', [court])).rows[0]?.qr_version;
+            if (cur === sess.qrVer) return welcome(null, 'session', sess.qrVer);
+            sessionRevoked = true;
+          }
           if (validToken(msg.token)) return welcome(null, 'admin');
-          if (msg.pin == null && msg.qr == null) return send(client, { type: 'auth', ok: false, needPin: true, error: msg.session ? 'Session expired. Enter the PIN.' : 'Enter the PIN.' });
+          if (msg.pin == null && msg.qr == null) return send(client, { type: 'auth', ok: false, needPin: true, sessionRevoked,
+            error: sessionRevoked ? REVOKED_MSG : msg.session ? 'Session expired. Enter the PIN.' : 'Enter the PIN.' });
           // 2) Weekly QR token or PIN: limited per court + device and per socket, with a high per-IP backstop.
           const dev = typeof msg.device === 'string' && /^[\w-]{8,64}$/.test(msg.device) ? msg.device : `sock-${ip}-${court}`;
           const devKey = `pin:${court}:${dev}`, ipKey = `pinip:${ip}`;
-          const locked = (ms: number) => send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(ms / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(ms / 1000)} s.` });
-          const wait = Math.max(pinDeviceLimiter.retryAfter(devKey), pinIpBackstop.retryAfter(ipKey));
+          const isQr = msg.qr != null;
+          const lockText = (ms: number) => isQr
+            ? `Too many invalid QR codes on this phone. Try again in ${Math.ceil(ms / 1000)} s, or enter the court PIN after that.`
+            : `Too many wrong PINs. Try again in ${Math.ceil(ms / 1000)} s.`;
+          const locked = (ms: number) => send(client, { type: 'auth', ok: false, locked: true, cause: isQr ? 'qr' : 'pin', retryAfter: Math.ceil(ms / 1000), error: lockText(ms) });
+          // The IP backstop only gates PIN guesses; a valid signed QR token is never blocked by it.
+          const wait = Math.max(pinDeviceLimiter.retryAfter(devKey), isQr ? 0 : pinIpBackstop.retryAfter(ipKey));
           if (wait) return locked(wait);
           let qrError: string | null = null, qrReason: string | null = null;
           if (msg.qr != null) {
             const ver = (await pool.query('SELECT qr_version FROM courts WHERE slug=$1', [court])).rows[0]?.qr_version ?? -1;
             const chk = verifyQrToken(SESSION_SECRET, msg.qr, court, Date.now(), ver);
-            if (chk.ok) { pinDeviceLimiter.succeed(devKey); pinIpBackstop.succeed(ipKey); return welcome(makeCourtSession(court), 'qr'); }
+            if (chk.ok) { pinDeviceLimiter.succeed(devKey); return welcome(makeCourtSession(court, ver), 'qr', ver); }
             qrReason = chk.reason;
             qrError = chk.reason === 'expired' ? "This court's QR code has expired (codes are good until Sunday night). Scan this week's code or enter the PIN."
               : chk.reason === 'revoked' ? 'This QR code was replaced by a newer one. Scan the new code or enter the PIN.'
               : "This QR code isn't valid for this court. Scan the court's code or enter the PIN.";
           } else if (pinOk(court, msg.pin)) { pinDeviceLimiter.succeed(devKey); pinIpBackstop.succeed(ipKey); return welcome(makeCourtSession(court), 'pin'); }
-          const lockMs = Math.max(pinDeviceLimiter.fail(devKey), pinIpBackstop.fail(ipKey));
+          const lockMs = Math.max(pinDeviceLimiter.fail(devKey), isQr ? 0 : pinIpBackstop.fail(ipKey));
           pinFails++;
           if (lockMs) locked(lockMs);
           else if (qrError) send(client, { type: 'auth', ok: false, qrInvalid: true, reason: qrReason, needPin: true, error: qrError });
           else send(client, { type: 'auth', ok: false, error: `Wrong PIN (${SOCKET_MAX_PIN_FAILS - pinFails} ${SOCKET_MAX_PIN_FAILS - pinFails === 1 ? 'try' : 'tries'} left)` });
           if (pinFails >= SOCKET_MAX_PIN_FAILS) {
             const ms = Math.max(pinDeviceLimiter.retryAfter(devKey), LOCK_BASE_MS);
-            send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(ms / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(ms / 1000)} s.` });
-            ws.close(4008, 'too many PIN attempts');
+            send(client, { type: 'auth', ok: false, locked: true, cause: isQr ? 'qr' : 'pin', retryAfter: Math.ceil(ms / 1000), error: lockText(ms) });
+            ws.close(4008, isQr ? 'too many QR attempts' : 'too many PIN attempts');
           }
           return;
         }
@@ -614,7 +642,9 @@ async function importCourts(text: string): Promise<ImportResult> {
 /** Idempotent schedule import: match by exported id, else by court+start+home+away (unique index). */
 async function importSchedule(text: string): Promise<ImportResult> {
   const { headers, rows } = parseCsvTable(text);
-  requireColumns(headers, ['date', 'time', 'court', 'home', 'away'], 'schedule.csv');
+  const FULL = ['date', 'time', 'court', 'home', 'away'];
+  // With an id column, rows can be partial (e.g. id + status); rows without an id still need the full set.
+  requireColumns(headers, headers.includes('id') ? ['id'] : FULL, 'schedule.csv');
   const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
   const team = async (n: string, col: string) => {
     if (!n) throw new HttpError(400, `${col} team is empty`);
@@ -631,9 +661,35 @@ async function importSchedule(text: string): Promise<ImportResult> {
     }
     return [(h as any).id as number, (a as any).id as number];
   };
+  /** Optional status column (scheduled / active / complete; old exports say live / final). */
+  const applyStatus = async (ex: any, r: Record<string, string>): Promise<'updated' | 'same'> => {
+    if (!headers.includes('status') || !(r.status || '').trim()) return 'same';
+    const st = ({ live: 'active', final: 'complete' } as any)[(r.status || '').trim().toLowerCase()] || (r.status || '').trim().toLowerCase();
+    if (!['scheduled', 'active', 'complete'].includes(st)) throw new HttpError(400, `status "${r.status}" must be scheduled, active or complete`);
+    if (st === ex.status) return 'same';
+    // Results played elsewhere can be recorded for a game that never started; started games change status in Admin.
+    if (ex.history || st === 'active') throw new HttpError(400, `status ${ex.status} -> ${st}: change a started game's status in Admin (Complete / Reopen); games become active from the scorekeeper or Admin`);
+    const hs = (r.home_score || '').trim(), as = (r.away_score || '').trim();
+    if (st === 'complete' && !(/^\d+$/.test(hs) && /^\d+$/.test(as))) throw new HttpError(400, 'status complete needs home_score and away_score');
+    await pool.query('UPDATE games SET status=$2, final_home=$3, final_away=$4 WHERE id=$1', [ex.id, st, st === 'complete' ? Number(hs) : null, st === 'complete' ? Number(as) : null]);
+    runtimes.delete(ex.id); return 'updated';
+  };
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
     try {
+      const rid = (r.id || '').trim();
+      // Partial row (id + status, everything else blank or absent): update only the status.
+      if (rid && FULL.every((c) => !(r[c] || '').trim())) {
+        if (!/^\d+$/.test(rid)) throw new HttpError(400, `id "${rid}" must be a number from an export (or leave it blank)`);
+        if (seen.has('id:' + rid)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get('id:' + rid)} (skipped)`); continue; }
+        seen.set('id:' + rid, line);
+        const ex = (await pool.query('SELECT * FROM games WHERE id=$1', [Number(rid)])).rows[0];
+        if (!ex) throw new HttpError(400, `unknown game id ${rid}`);
+        if ((await applyStatus(ex, r)) === 'updated') out.updated++; else out.skipped++;
+        continue;
+      }
+      const missing = FULL.filter((c) => !headers.includes(c));
+      if (missing.length) throw new HttpError(400, `a row without an id needs the columns ${missing.join(', ')}`);
       const date = (r.date || '').trim(), time = (r.time || '').trim();
       if (date || time) { // both empty = "not scheduled yet" (allowed; exports write it that way)
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, `date "${r.date}" must be YYYY-MM-DD (or leave date and time both empty)`);
@@ -669,12 +725,17 @@ async function importSchedule(text: string): Promise<ImportResult> {
       } else {
         ex = (await pool.query('SELECT * FROM games WHERE court_id IS NOT DISTINCT FROM $1 AND scheduled_at IS NOT DISTINCT FROM $2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
       }
-      // An exported uploaded cheer logo comes back as this game's own served URL: keep the upload as is.
+      // Cheer logo cells: this game's own exported upload URL keeps the upload; a URL to ANOTHER game's upload
+      // (copied row) is not carried over (warning, no logo); a cleared cell removes an uploaded logo.
+      const clearLogo: string[] = [];
       for (const side of ['home', 'away']) {
         const k = `${side}_cheer_logo_url`;
-        if (ex && typeof extra[k] === 'string' && new RegExp(`/logos/cheer/${ex.id}/${side}$`).test(extra[k])) {
-          if (ex[`${side}_cheer_logo_data`]) delete extra[k]; else extra[k] = null;
+        const mm = typeof extra[k] === 'string' ? /\/logos\/cheer\/(\d+)\/(home|away)$/.exec(extra[k]) : null;
+        if (mm) {
+          if (ex && Number(mm[1]) === ex.id && mm[2] === side) { if (ex[`${side}_cheer_logo_data`]) delete extra[k]; else extra[k] = null; }
+          else { extra[k] = null; out.errors.push(`row ${line}: warning: ${side}_cheer_logo points to the uploaded logo of game #${mm[1]}; it was not copied (row imported without that logo; upload it for this game in Admin)`); }
         }
+        if (ex && k in extra && extra[k] === null && ex[`${side}_cheer_logo_data`]) clearLogo.push(side);
       }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
       if (!ex) {
@@ -684,26 +745,16 @@ async function importSchedule(text: string): Promise<ImportResult> {
         await setGameExtras(nid, extra);
         out.created++; continue;
       }
-      // Optional status column (scheduled / active / complete; old exports say live / final).
-      if (headers.includes('status') && (r.status || '').trim()) {
-        const st = ({ live: 'active', final: 'complete' } as any)[(r.status || '').trim().toLowerCase()] || (r.status || '').trim().toLowerCase();
-        if (!['scheduled', 'active', 'complete'].includes(st)) throw new HttpError(400, `status "${r.status}" must be scheduled, active or complete`);
-        if (st !== ex.status) {
-          // Results played elsewhere can be recorded for a game that never started; started games change status in Admin.
-          if (ex.history || st === 'active') throw new HttpError(400, `status ${ex.status} -> ${st}: change a started game's status in Admin (Complete / Reopen); games become active from the scorekeeper or Admin`);
-          const hs = (r.home_score || '').trim(), as = (r.away_score || '').trim();
-          if (st === 'complete' && !(/^\d+$/.test(hs) && /^\d+$/.test(as))) throw new HttpError(400, 'status complete needs home_score and away_score');
-          await pool.query('UPDATE games SET status=$2, final_home=$3, final_away=$4 WHERE id=$1', [ex.id, st, st === 'complete' ? Number(hs) : null, st === 'complete' ? Number(as) : null]);
-          runtimes.delete(ex.id); out.updated++; continue;
-        }
-      }
+      const st = await applyStatus(ex, r);
+      if (st === 'updated') { out.updated++; continue; }
       const extrasSame = Object.entries(extra).every(([k, v]) => (ex[k] ?? null) === v);
-      const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division && (ex.duration_min ?? null) === dur && extrasSame;
+      const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division && (ex.duration_min ?? null) === dur && extrasSame && !clearLogo.length;
       if (same) { out.skipped++; continue; }
       const clash = await floorConflict(court.id, ts, dur, ex.id);
       if (clash) throw new HttpError(409, clash);
       await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, home_team_id=$4, away_team_id=$5, division=$6, duration_min=$7 WHERE id=$1', [ex.id, court.id, ts, home, away, division, dur]);
       await setGameExtras(ex.id, extra);
+      for (const side of clearLogo) await pool.query(`UPDATE games SET ${side}_cheer_logo_data=NULL, ${side}_cheer_logo_mime=NULL WHERE id=$1`, [ex.id]);
       out.updated++;
     } catch (e: any) {
       out.errors.push(`row ${line}: ${/duplicate key/.test(e.message) ? 'another game already has this court, time and teams' : e.message}`);
@@ -762,6 +813,12 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       if (m === 'POST' && (seg[4] === 'regenerate' || seg[4] === 'revoke')) await pool.query('UPDATE courts SET qr_version = qr_version + 1 WHERE id=$1', [id]);
       const c = (await pool.query('SELECT * FROM courts WHERE id=$1', [id])).rows[0];
       if (!c) throw new HttpError(404, 'court not found');
+      if (m === 'POST') { // sign out phones that signed in with an older QR code of this court (PIN sessions stay)
+        for (const cl of clients) if (cl.court === c.slug && cl.role === 'score' && cl.authed && cl.qrVer != null && cl.qrVer !== c.qr_version) {
+          cl.authed = false; cl.qrVer = null; send(cl, { type: 'auth', ok: false, needPin: true, sessionRevoked: true, error: REVOKED_MSG });
+        }
+        void broadcastCourt(c.slug);
+      }
       if (seg[4] === 'revoke') return json(res, 200, { ok: true, version: c.qr_version });
       return json(res, 200, await courtQr(c, req));
     }

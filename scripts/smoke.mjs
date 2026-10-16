@@ -398,7 +398,7 @@ ok(q1 && q1.svg.startsWith('<svg') && new URL(q1.url).pathname === `/score/${fc.
 ok(new Date(q1.expires).toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' }).startsWith('Sun') && /23:59/.test(new Date(q1.expires).toLocaleString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23' })), 'QR expires Sunday 23:59 America/Chicago');
 const fk = client(fc.slug, 'score'); await fk.open;
 fk.send({ type: 'auth', qr: tok1, device: DEV('qr1') });
-const qa = await fk.wait((m) => m.type === 'auth');
+let qa = await fk.wait((m) => m.type === 'auth');
 ok(qa.ok && qa.how === 'qr' && typeof qa.session === 'string', 'scanning the QR signs in and returns the 12 h device session');
 const fk0 = client('west', 'score'); await fk0.open;
 fk0.send({ type: 'auth', qr: tok1, device: DEV('qrx') });
@@ -417,7 +417,45 @@ const fkB = client(fc.slug, 'score'); await fkB.open;
 const fkBClosed = new Promise((r) => fkB.ws.on('close', (c) => r(c)));
 let lastQ; for (let i = 0; i < 5; i++) { fkB.send({ type: 'auth', qr: tok1 + 'x', device: DEV('qrbad') }); lastQ = await fkB.wait((m) => m.type === 'auth'); }
 ok(lastQ.locked === true && (await fkBClosed) === 4008, 'invalid QR tokens count toward the per-device lockout (5 -> locked)');
+ok(/Too many invalid QR codes/.test(lastQ.error) && lastQ.cause === 'qr' && !/wrong PINs/.test(lastQ.error), `QR lockout wording: "${lastQ.error}"`);
 fkR.ws.close();
+// r4 #1: Regenerate/Revoke ends sessions created from the older QR version (connected phones are told at once).
+const kick = await fk.wait((m) => m.type === 'auth' && m.sessionRevoked);
+ok(kick.ok === false && /QR code that has been replaced/.test(kick.error), `signed-in QR phone is signed out on Regenerate ("${kick.error}")`);
+const fkS = client(fc.slug, 'score'); await fkS.open;
+fkS.send({ type: 'auth', session: qa.session, device: DEV('qr1') });
+const sr = await fkS.wait((m) => m.type === 'auth');
+ok(sr.ok === false && sr.sessionRevoked === true && sr.needPin, 'reconnecting with an old-QR session is refused with a clear message');
+fkS.ws.close();
+const tok3 = new URL((await api(`/api/courts/${fc.id}/qr/regenerate`, { method: 'POST' })).body.url).searchParams.get('t');
+fk.send({ type: 'auth', qr: tok3, device: DEV('qr1') });
+qa = await fk.wait((m) => m.type === 'auth' && m.ok);
+ok(qa.how === 'qr' && qa.session, 'the new QR code signs the phone in again');
+// PIN sessions survive a QR regenerate
+const pw = client('west', 'score'); await pw.open;
+pw.send({ type: 'auth', pin: PIN1, device: DEV('pinsess') }); const pws = await pw.wait((m) => m.type === 'auth' && m.ok); pw.ws.close();
+const westId = courtsNow.find((c) => c.slug === 'west').id;
+const westTok = new URL((await api(`/api/courts/${westId}/qr/regenerate`, { method: 'POST' })).body.url).searchParams.get('t');
+const pw2 = client('west', 'score'); await pw2.open;
+pw2.send({ type: 'auth', session: pws.session, device: DEV('pinsess') });
+ok((await pw2.wait((m) => m.type === 'auth')).ok === true, 'a PIN session stays valid after Regenerate');
+// Shared gym IP: a spare phone spamming bad QR codes (105 tries over 21 device ids) locks only itself.
+for (let d = 0; d < 21; d++) {
+  const sp = client('west', 'score'); await sp.open;
+  for (let i = 0; i < 5; i++) { sp.send({ type: 'auth', qr: westTok + 'bad', device: DEV('spare' + d) }); await sp.wait((m) => m.type === 'auth').catch(() => {}); }
+  sp.ws.close();
+}
+const spX = client('west', 'score'); await spX.open;
+spX.send({ type: 'auth', qr: westTok + 'bad', device: DEV('spare0') });
+const spL = await spX.wait((m) => m.type === 'auth'); spX.ws.close();
+const g1c = client('west', 'score'); await g1c.open;
+g1c.send({ type: 'auth', qr: westTok, device: DEV('goodqr') }); const g1a = await g1c.wait((m) => m.type === 'auth'); g1c.ws.close();
+const g2c = client('west', 'score'); await g2c.open;
+g2c.send({ type: 'auth', pin: PIN1, device: DEV('goodpin') }); const g2a = await g2c.wait((m) => m.type === 'auth'); g2c.ws.close();
+const g3c = client('west', 'score'); await g3c.open;
+g3c.send({ type: 'auth', session: pws.session, device: DEV('pinsess') }); const g3a = await g3c.wait((m) => m.type === 'auth'); g3c.ws.close();
+ok(spL.locked === true && g1a.ok && g2a.ok && g3a.ok, `spare phone on the shared IP: itself locked; valid QR, PIN and session on other devices still sign in (${[g1a, g2a, g3a].map((a) => a.ok).join(',')})`);
+pw2.ws.close();
 // games today on the flow court
 const nowMin = Math.floor(Date.now() / 60_000) * 60_000;
 const mkToday = async (h, a, plus) => (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: h, away_team_id: a, scheduled_at: new Date(nowMin + plus * 60_000).toISOString() }) })).body.id;
@@ -503,6 +541,24 @@ ok(cg.status === 201 && logoUrl && lr.status === 200, `uploaded cheer logo expor
 const re17 = await api('/api/import/schedule.csv', { method: 'POST', body: hdr17 + '\n' + line17 + '\n' });
 const lr2 = await fetch(logoUrl);
 ok(re17.body.skipped === 1 && !re17.body.errors.length && lr2.status === 200, `re-importing the export keeps the uploaded cheer logo (${JSON.stringify(re17.body)})`);
+console.log('18. Round 4 CSV + ticker fixes');
+const [dX, tX] = local(nowMin + 6 * 86400_000);
+const copyR4 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away,home_cheer,home_cheer_logo\n${dX},${tX},${fc.slug},5th Grade,Mate-${RUN},Dup-${RUN},Copy Cheer,${logoUrl}\n` });
+const copiedR4 = (await all17()).find((g) => g.home_team_id === M5.body.id);
+ok(copyR4.body.created === 1 && /warning: home_cheer_logo points to the uploaded logo of game #\d+; it was not copied/.test(copyR4.body.errors[0] || '') && copiedR4 && !copiedR4.home_cheer_logo_url && !copiedR4.home_cheer_has_logo, `copiedR4 row: another game's uploaded logo is not carried over (${copyR4.body.errors[0]})`);
+const blankR4 = line17.split(',');
+const hiR4 = hdr17.split(',').indexOf('home_cheer_logo'); blankR4[hiR4] = '';
+const clrR4 = await api('/api/import/schedule.csv', { method: 'POST', body: hdr17 + '\n' + blankR4.join(',') + '\n' });
+const lr3R4 = await fetch(logoUrl);
+ok(clrR4.body.updated === 1 && lr3R4.status === 404, `clearing the cheer logo cell removes the uploaded logo (${JSON.stringify(clrR4.body)}, logo ${lr3R4.status})`);
+const before18 = (await all17()).find((g) => g.id === CG);
+const soR4 = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,home,away,home_score,away_score,status\n${CG},,,,,,11,9,complete\n` });
+const after18 = (await all17()).find((g) => g.id === CG);
+ok(soR4.body.updated === 1 && !soR4.body.errors.length && after18.status === 'complete' && after18.home_score === 11 && after18.scheduled_at === before18.scheduled_at && after18.court_id === before18.court_id && after18.home_team_id === before18.home_team_id, `id + status row updates only the status (${JSON.stringify(soR4.body)})`);
+const so2R4 = await api('/api/import/schedule.csv', { method: 'POST', body: `id,status\n${CG},complete\n` });
+ok(so2R4.body.skipped === 1 && !so2R4.body.errors.length, 'status-only file without the other columns: unchanged row is skipped');
+const tick18 = (await api(`/api/public/court/${fc.slug}`)).body.upNext.find((u) => u.home === `Mate-${RUN}`);
+ok(tick18 && tick18.is_today === false && /^\w{3} \w{3} \d+$/.test(tick18.day), `Up next carries the date for a later game (${tick18?.day} ${tick18?.time})`);
 for (const g of (await all17()).filter((g) => [D2, D5, W2, W5, M5].some((t) => t.body.id === g.home_team_id))) await api(`/api/games/${g.id}`, { method: 'DELETE' });
 for (const t of [D2, D5, W2, W5, M5]) await api(`/api/teams/${t.body.id}`, { method: 'DELETE' });
 fk.ws.close(); tvF.ws.close();

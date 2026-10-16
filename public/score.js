@@ -15,7 +15,8 @@ let snap = null, presence = {}, authed = false, lockUntil = 0, lockTimer = null;
 let qrToken = new URLSearchParams(location.search).get('t');
 if (qrToken) history.replaceState(null, '', location.pathname);
 /** #pin-err text + data-kind (lockout | wrong | info | busy | readonly) for Sage's styles. */
-function setErr(text, kind = 'info') { const el = $('#pin-err'); el.textContent = text; el.dataset.kind = text ? kind : ''; }
+// data-kind: lockout | wrong | info | busy | readonly. data-cause (optional): qr (QR lockout) | revoked (QR replaced).
+function setErr(text, kind = 'info', cause = '') { const el = $('#pin-err'); el.textContent = text; el.dataset.kind = text ? kind : ''; if (cause && text) el.dataset.cause = cause; else delete el.dataset.cause; }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 const device = localStorage.getItem(DEVICE_KEY) || (localStorage.setItem(DEVICE_KEY, uid()), localStorage.getItem(DEVICE_KEY));
 
@@ -27,6 +28,8 @@ const conn = connect({
   court, role: 'score',
   onStatus: (st) => {
     root.dataset.conn = st;
+    // Also on each screen root (picker, resume, confirm dialog in the top layer, PIN gate), so CSS can dim them offline.
+    for (const id of ['picker', 'resume', 'confirm-dialog', 'pin-gate', 'app']) { const el = document.getElementById(id); if (el) el.dataset.conn = st; }
     if (st !== 'online') authed = false; // each new socket must re-authenticate before we send
     if (st === 'online') authenticate();
     render();
@@ -42,11 +45,11 @@ const conn = connect({
         flush(true);
       } else {
         authed = false;
-        if (m.locked) startLock(m.retryAfter, m.error);
+        if (m.locked) startLock(m.retryAfter, m.cause);
         else {
           if (m.needPin) localStorage.removeItem(SESSION_KEY);
           const kind = /read-only/.test(m.error || '') ? 'readonly' : (m.qrInvalid || /Wrong PIN/.test(m.error || '')) ? 'wrong' : 'info';
-          showGate(m.error || 'Wrong PIN', kind);
+          showGate(m.error || 'Wrong PIN', kind, m.sessionRevoked ? 'revoked' : '');
         }
       }
     }
@@ -67,14 +70,16 @@ function authenticate() {
   if (session) conn.send({ type: 'auth', session, device });
   else showGate();
 }
-function showGate(err = '', kind = 'info') {
+function showGate(err = '', kind = 'info', cause = '') {
   $('#app').hidden = true; $('#pin-gate').hidden = false;
-  if (!lockUntil) setErr(err, kind);
+  if (!lockUntil) setErr(err, kind, cause);
   bindText(document, { court: snap?.court?.name || court });
   render();
 }
 // Lockout countdown (QA r2-D): visible, ticking, Unlock disabled until it ends.
-function startLock(sec, text) {
+let lockCause = 'pin';
+function startLock(sec, cause) {
+  lockCause = cause === 'qr' ? 'qr' : 'pin';
   lockUntil = Date.now() + (sec || 30) * 1000;
   showGate();
   const btn = $('#pin-gate button');
@@ -82,10 +87,9 @@ function startLock(sec, text) {
     const left = Math.ceil((lockUntil - Date.now()) / 1000);
     if (left <= 0) { clearLock(); setErr('You can try the PIN again now.', 'info'); authenticate(); return; }
     btn.disabled = true;
-    setErr(`Too many wrong PINs. Try again in ${left} s.`, 'lockout');
+    setErr(lockCause === 'qr' ? `Too many invalid QR codes on this phone. Try again in ${left} s, then scan this week's code or enter the court PIN.` : `Too many wrong PINs. Try again in ${left} s.`, 'lockout', lockCause === 'qr' ? 'qr' : '');
   };
   clearInterval(lockTimer); tick(); lockTimer = setInterval(tick, 250);
-  void text;
 }
 function clearLock() { lockUntil = 0; clearInterval(lockTimer); $('#pin-gate button').disabled = false; }
 

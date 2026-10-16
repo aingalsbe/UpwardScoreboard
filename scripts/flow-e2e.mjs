@@ -89,6 +89,20 @@ await ph3.goto(qr.url);
 await ph3.waitForFunction(() => /replaced by a newer one/.test(document.querySelector('#pin-err').textContent), null, { timeout: 6000 }).catch(() => {});
 ok(await ph3.$eval('#pin-err', (e) => /replaced by a newer one/.test(e.textContent) && e.dataset.kind === 'wrong') && await ph3.$eval('#pin-gate', (e) => !e.hidden), 'old QR: clear message (data-kind="wrong") and the PIN gate as fallback');
 
+await ph.waitForFunction(() => !document.querySelector('#pin-gate').hidden, null, { timeout: 6000 }).catch(() => {});
+ok(await ph.$eval('#pin-err', (e) => /QR code that has been replaced/.test(e.textContent) && e.dataset.cause === 'revoked'), `phone signed in with the old QR is signed out on Regenerate ("${await ph.textContent('#pin-err')}")`);
+
+console.log('6. QR lockout wording, idle TV cleanup, data-conn on new screens');
+const ph4 = await (await browser.newContext({ viewport: { width: 400, height: 860 } })).newPage();
+for (let i = 0; i < 5; i++) { await ph4.goto(`${BASE}/score/east?t=qr1.east.1.1.bad${i}`); await sleep(700); }
+await ph4.waitForFunction(() => document.querySelector('#pin-err').dataset.kind === 'lockout', null, { timeout: 6000 }).catch(() => {});
+ok(await ph4.$eval('#pin-err', (e) => /Too many invalid QR codes/.test(e.textContent) && e.dataset.kind === 'lockout' && e.dataset.cause === 'qr'), `QR lockout: "${await ph4.textContent('#pin-err')}"`);
+await api(`/api/games/${g2}/complete`, { method: 'POST' });
+await tv.waitForFunction(() => document.documentElement.dataset.status === 'idle', null, { timeout: 6000 }).catch(() => {});
+const idle = await tv.evaluate(() => { const r = document.documentElement; return { cls: [...r.classList].filter((c) => /-(light|accent-fixed)$|^poss-|bonus/.test(c)), color: r.style.getPropertyValue('--home-color'), conn: document.getElementById('idle')?.dataset.conn }; });
+ok(!idle.cls.length && !idle.color && idle.conn === 'online', `idle TV: no leftover side classes/colors, #idle has data-conn (${JSON.stringify(idle)})`);
+ok(await ph.evaluate(() => document.getElementById('pin-gate').dataset.conn === 'online' && document.getElementById('picker').dataset.conn === 'online'), 'scorekeeper screens carry data-conn');
+
 await browser.close();
 await api(`/api/games/${g2}/complete`, { method: 'POST' });
 console.log(`\nFlow e2e result: ${pass} passed, ${fail} failed`);
