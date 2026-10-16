@@ -81,6 +81,7 @@ Courts are now full, west and east (Full shares the floor with West and East; GA
 
 - ✅ Lobby schedule screen: /upwardbasketballscores/schedule (alias /schedule), all courts for one day, live, fits one 1920x1080 screen (moves/pages to keep live + next in view, reduced-motion aware, offline like the TV).
 - ✅ Gender (Boys/Girls) on teams, CSVs, Admin and every display ("3rd Grade Girls · Eagles vs Lions"); names unique per grade + gender + name.
+- ✅ Schedule paging rule: live + UP NEXT pinned (never paged), later upcoming paged only when they overflow, most recent finals as compact rows in the leftover space, the rest "▲ N earlier finals"; root data-phase early|midday|end. Logic in public/schedule-view.js (unit-tested); browser e2e scripts/schedule-paging-e2e.mjs.
 - ✅ One cheer squad per game (was per side); shown on the TV and schedule, never on the scorekeeper.
 - ✅ Schedule warnings in import and Admin (team twice in a weekend, cheer rules, split-court hours).
 - ✅ Home team always listed first, home on the left.

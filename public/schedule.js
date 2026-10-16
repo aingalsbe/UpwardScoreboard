@@ -1,28 +1,28 @@
 // Lobby schedule screen logic (no styling): fills the markup from server snapshots, sets state attributes,
 // season colors and the paging offset. CSS (schedule.css, Sage) owns the look and the scroll animation.
 import { connect, displayNow, clockMs, fmtClock, periodLabel } from './common.js';
-import { t12, winnerOf, statusTag, emptyText } from './schedule-view.js';
+import { t12, winnerOf, statusTag, emptyText, planSchedule, blocksOf, collapseFinals, earlierText, pageOffsets, rowCount } from './schedule-view.js';
 
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search);
 const query = new URLSearchParams();
 for (const k of ['day', 'date']) if (qs.get(k)) query.set(k, qs.get(k));
 const $ = (s) => document.querySelector(s);
-const track = $('.sched-track'), view = $('.sched-view'), tpl = $('#tpl-game'), foot = $('.foot');
+const track = $('.sched-track'), view = $('.sched-view'), pinned = $('.sched-pinned'), earlierEl = $('.earlier'), tpl = $('#tpl-game'), foot = $('.foot');
 let snap = null;
 
 const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-/** "16:30" -> "4:30" (lobby style, like the mockup). */
 const SPLIT = ['west', 'east'];
 
 function setText(el, key, v) { const n = el.querySelector(`[data-bind="${key}"]`); if (n) n.textContent = v ?? ''; }
 
-function gameEl(g, isNext) {
+function gameEl(g, isNext, compact) {
   const el = tpl.content.firstElementChild.cloneNode(true);
   const state = g.status === 'complete' ? 'complete' : g.status === 'active' ? 'active' : 'upcoming';
   el.dataset.state = state; el.dataset.gameId = g.id; el.dataset.court = g.court || '';
   if (g.court === 'full') el.dataset.span = 'full';
   if (isNext) el.dataset.next = 'true';
+  if (compact) el.dataset.compact = 'true'; // a final shown in the leftover space
   el.dataset.swapped = String(!!g.swapped);
   for (const side of ['home', 'away']) { // season colors respecting swap: the chip wears its side's color
     const chip = el.querySelector(`.chip.${side}`), t = g[side];
@@ -54,6 +54,27 @@ function gameEl(g, isNext) {
 }
 function slot(time, child) { const s = document.createElement('div'); s.className = 'slot'; s.dataset.time = time; if (child) s.appendChild(child); else s.dataset.empty = 'true'; return s; }
 
+/** Blocks -> DOM: West/East runs share one .split (two .court-col, one aligned .slot per time); Full rows span both. */
+function buildBlocks(games, nextIds, compact = false, pinnedMode = false) {
+  const frag = document.createDocumentFragment();
+  for (const b of blocksOf(games)) {
+    if (b.type === 'full') {
+      const row = document.createElement('div'); row.className = 'full-row';
+      row.appendChild(slot(b.game.time, gameEl(b.game, nextIds.has(b.game.id), compact))); frag.appendChild(row); continue;
+    }
+    const wrap = document.createElement('div'); wrap.className = 'split';
+    for (const c of SPLIT) {
+      const col = document.createElement('section'); col.className = 'court-col'; col.dataset.court = c;
+      // Pinned: only real games (no data-empty placeholders); each court lists its live + next top-aligned.
+      for (const r of b.rows) if (r[c] || !pinnedMode) col.appendChild(slot(r.time, r[c] ? gameEl(r[c], nextIds.has(r[c].id), compact) : null));
+      wrap.appendChild(col);
+    }
+    frag.appendChild(wrap);
+  }
+  return frag;
+}
+
+let plan = null;
 function render() {
   if (!snap) return;
   root.style.setProperty('--season-dark', snap.season.dark); root.style.setProperty('--season-light', snap.season.light);
@@ -62,30 +83,12 @@ function render() {
   $('[data-bind="brand"]').textContent = snap.title || 'LBC Upward';
   $('[data-bind="church-name"]').textContent = snap.church?.name || '';
   $('[data-bind="day"]').textContent = snap.dayLabel;
-  // "Up next": the first upcoming game per court (split courts and Full each).
-  const nextIds = new Set();
-  for (const c of new Set(snap.games.map((g) => g.court))) { const n = snap.games.find((g) => g.court === c && g.status === 'scheduled'); if (n) nextIds.add(n.id); }
-  // Blocks in time order: runs of West/East games share one two-column block; Full Court games are full rows.
-  const blocks = [];
-  for (const g of snap.games) {
-    const split = SPLIT.includes(g.court);
-    const last = blocks[blocks.length - 1];
-    if (split && last?.type === 'split') last.games.push(g); else blocks.push({ type: split ? 'split' : 'full', games: [g] });
-  }
-  track.textContent = '';
-  for (const b of blocks) {
-    if (b.type === 'full') {
-      const row = document.createElement('div'); row.className = 'full-row';
-      for (const g of b.games) row.appendChild(slot(g.time, gameEl(g, nextIds.has(g.id))));
-      track.appendChild(row); continue;
-    }
-    const wrap = document.createElement('div'); wrap.className = 'split';
-    const cols = Object.fromEntries(SPLIT.map((c) => { const s = document.createElement('section'); s.className = 'court-col'; s.dataset.court = c; wrap.appendChild(s); return [c, s]; }));
-    for (const time of [...new Set(b.games.map((g) => g.time))]) { // one slot per time in both columns (empty keeps rows aligned)
-      for (const c of SPLIT) { const g = b.games.find((x) => x.time === time && x.court === c); cols[c].appendChild(slot(time, g ? gameEl(g, nextIds.has(g.id)) : null)); }
-    }
-    track.appendChild(wrap);
-  }
+  // Paging rule (schedule-view.js): live + UP NEXT pinned (never moved), later upcoming in the track (paged if they
+  // overflow), finals last and only in the leftover space (most recent first to stay, the rest "▲ N earlier finals").
+  plan = planSchedule(snap.games);
+  if (plan.phase) root.dataset.phase = plan.phase; else delete root.dataset.phase;
+  pinned.replaceChildren(buildBlocks(plan.pinned, plan.nextIds, false, true));
+  pinned.hidden = !plan.pinned.length;
   $('.heads').hidden = !snap.games.some((g) => SPLIT.includes(g.court)); // omitted on Fridays (Full only)
   // Empty day: hide the court heads, show .empty (outside the track, so paging can't move it).
   const empty = $('.empty'), none = !snap.games.length;
@@ -93,37 +96,52 @@ function render() {
   if (none) $('.heads').hidden = true;
   root.classList.toggle('no-games', none);
   root.classList.toggle('has-active', snap.games.some((g) => g.status === 'active'));
-  requestAnimationFrame(page);
+  requestAnimationFrame(layout);
 }
 
 /**
- * Fit one screen (schedule-structure.md): offset = top of the slot before the first non-complete game, clamped to
- * the track end. If the live + next games still don't fit, page through them every ~12 s. JS only sets --offset and
- * data-page (root + track); the CSS transition animates it (none under prefers-reduced-motion).
+ * Fill the track: later upcoming first, then the most recent finals (data-compact) in the leftover space, i.e. what
+ * remains of the frame after pinned + upcoming; when the upcoming games page, that's the room left on their last
+ * page, so finals never add a page and never push an upcoming game. The rest collapse into "▲ N earlier finals".
+ */
+function layout() {
+  if (!plan) return;
+  const viewH = view.clientHeight;
+  const fill = (rows) => {
+    const r = collapseFinals(plan.finals, rows);
+    track.replaceChildren(buildBlocks(plan.later, plan.nextIds));
+    earlierEl.textContent = earlierText(r.earlier);
+    track.appendChild(earlierEl); // the "▲ N earlier finals" line sits just above the finals that are shown
+    if (r.shown.length) track.appendChild(buildBlocks(r.shown, plan.nextIds, true));
+    return r;
+  };
+  fill(0);
+  const base = computePages(viewH), lastEnd = base[base.length - 1] + viewH; // pages of the upcoming games alone
+  const units = rowCount(plan.finals);
+  let rows = units, r;
+  for (;;) { // largest number of final rows that fits on the last page without changing the upcoming pages
+    r = fill(rows);
+    if (!rows || (track.scrollHeight <= lastEnd + 0.5 && computePages(viewH).length === base.length)) break;
+    rows--;
+  }
+  page();
+}
+
+/**
+ * Rotation applies only to .sched-track (later upcoming slots). Pages break at row tops; with no overflow there's
+ * one page (data-pages=1, no dots). JS only sets --offset and data-page (root + track); CSS animates it.
  */
 const PAGE_MS = 12_000;
 let pages = [0], pageIdx = 0, pageTimer = null;
 const top = (el) => el.getBoundingClientRect().top - track.getBoundingClientRect().top; // independent of the current transform
+function computePages(viewH) {
+  const rowEls = [...track.querySelectorAll('.full-row, .court-col[data-court="west"] > .slot, .earlier')].filter((e) => e.offsetHeight);
+  rowEls.sort((a, b) => top(a) - top(b));
+  return pageOffsets(rowEls.map(top), rowEls.map((e) => top(e) + e.offsetHeight), viewH);
+}
 function page() {
-  const viewH = view.clientHeight, trackH = track.scrollHeight, maxOff = Math.max(0, trackH - viewH);
-  pages = [0];
-  if (maxOff > 0) {
-    const games = [...track.querySelectorAll('.game')];
-    const firstOpen = games.find((g) => g.dataset.state !== 'complete');
-    let base = maxOff; // all final: show the end of the day
-    if (firstOpen) {
-      const s = firstOpen.closest('.slot'), allSlots = [...track.querySelectorAll('.slot')].filter((x) => top(x) < top(s) - 1);
-      const prev = allSlots.sort((a, b) => top(b) - top(a))[0];
-      base = Math.min(maxOff, Math.max(0, prev ? top(prev) : top(s)));
-    }
-    // Live + next games must be in view; if they reach past one screen, add pages until they're covered.
-    const focus = games.filter((g) => g.dataset.state === 'active' || g.dataset.next === 'true');
-    const bottom = Math.max(0, ...focus.map((g) => top(g) + g.offsetHeight));
-    pages = [base];
-    while (bottom > pages[pages.length - 1] + viewH && pages[pages.length - 1] < maxOff) pages.push(Math.min(maxOff, pages[pages.length - 1] + viewH));
-    const earlier = games.filter((g) => g.dataset.state === 'complete' && top(g) + g.offsetHeight <= base).length;
-    $('[data-bind="earlier"]').textContent = earlier ? `▲ ${earlier} earlier final${earlier === 1 ? '' : 's'}` : '';
-  } else $('[data-bind="earlier"]').textContent = '';
+  pages = computePages(view.clientHeight);
+  track.dataset.offsets = pages.join(','); // page tops in px (for tests; CSS uses --offset)
   if (pageIdx >= pages.length) pageIdx = 0;
   applyPage();
   clearInterval(pageTimer); pageTimer = pages.length > 1 ? setInterval(() => { pageIdx = (pageIdx + 1) % pages.length; applyPage(); }, PAGE_MS) : null;
@@ -132,10 +150,10 @@ function applyPage() {
   const off = pages[pageIdx] || 0;
   for (const el of [root, track]) { el.style.setProperty('--offset', `${-off}px`); el.dataset.page = String(pageIdx); }
   root.style.setProperty('--page', `${-off}px`); root.dataset.pages = String(pages.length);
-  root.classList.toggle('overflows', track.scrollHeight > view.clientHeight);
+  root.classList.toggle('overflows', track.scrollHeight > view.clientHeight + 0.5);
   foot.innerHTML = pages.length > 1 ? pages.map((_, i) => `<i class="${i === pageIdx ? 'on' : ''}"></i>`).join('') : '';
 }
-addEventListener('resize', () => requestAnimationFrame(page));
+addEventListener('resize', () => requestAnimationFrame(layout));
 
 const CONN_TEXT = { online: '● Live', connecting: 'Connecting…', offline: 'Offline · reconnecting' };
 const conn = connect({

@@ -15,9 +15,11 @@
     <span class="conn" data-bind="connText"></span>
   </header>
   <div class="split heads"><h2 class="court-head">West Court</h2><h2 class="court-head">East Court</h2></div>
-  <div class="earlier" data-bind="earlier"></div>
+  <!-- Live + UP NEXT games: always shown, never translated (outside the paged frame). -->
+  <div class="sched-pinned"></div>
   <main class="sched-view">
-    <div class="sched-track" data-page="0" style="--offset: 0px"></div>
+    <!-- Later upcoming, then recent finals (data-compact). Only this track pages (--offset, data-page). -->
+    <div class="sched-track" data-page="0" style="--offset: 0px"><div class="earlier" data-bind="earlier"></div></div>
     <p class="empty" hidden></p>
   </main>
   <footer class="foot"></footer>
