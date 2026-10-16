@@ -1,4 +1,27 @@
+# Dependencies and build output
 node_modules/
 dist/
+# Secrets: never commit real env files. The two committed env files hold dev-only values.
 .env
+.env.*
+!.env.example
+!.env.demo
+# Database data, dumps and volumes
+pgdata/
+volumes/
+*.sql
+*.sql.gz
+*.dump
+*.bundle
+# Logs
 *.log
+logs/
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+# Local uploads and test output
+uploads/
+test-results/
+playwright-report/
+coverage/
