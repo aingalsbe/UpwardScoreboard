@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-conn="online" data-day="sat">
+<head><meta charset="utf-8"><title>UpwardScoreboard · Lobby schedule (mockup)</title>
+<style>
+/* Static mockup (Sage). Same language as public/tv.css: dark TV bg, season Gold/Maroon, rem = min(1vw,1.78vh). */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { --season-light: #ffc72c; --season-dark: #800000; --bg: #0d1018; --ink: #f4f1ea; --muted: #c5c8d4; --offset: 0px; font-size: min(1vw, 1.78vh); }
+body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direction: column; color: var(--ink); cursor: none;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, #1b2340, var(--bg) 75%); font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; }
+.top { height: 9.5vh; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: 0 2.6rem; border-bottom: .25rem solid var(--season-light); background: rgba(255,255,255,.03); }
+.brand { font-size: 2.6rem; font-weight: 900; } .brand small { font-size: 1.6rem; font-weight: 700; color: var(--muted); margin-left: 1rem; }
+.day { font-size: 2.6rem; font-weight: 800; }
+.conn { font-size: 1.4rem; font-weight: 800; padding: .5rem 1.2rem; border-radius: 2rem; background: #173d22; color: #5be37d; border: .2rem solid #2c6b3c; }
+.heads { padding: 1.2rem 2rem 0; flex: none; }
+.sched-view { flex: 1; overflow: hidden; position: relative; padding: 0 2rem; }
+.earlier { font-size: 1.4rem; font-weight: 700; color: var(--muted); text-align: center; padding: .2rem; }
+.sched-track { transform: translateY(var(--offset)); transition: transform .8s ease; }
+@media (prefers-reduced-motion: reduce) { .sched-track { transition: none; } }
+.split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 1.6rem; }
+.court-head { font-size: 1.5rem; font-weight: 900; letter-spacing: .4rem; text-transform: uppercase; text-align: center; padding: .3rem; margin-bottom: .4rem; border-radius: 1rem; background: #262d45; }
+.slot { margin-bottom: .5rem; }
+.game { display: grid; grid-template-columns: 6.4rem minmax(0,1fr) auto; align-items: center; gap: 1rem; padding: .45rem 1.2rem; min-height: 5.2rem; border-radius: 1.4rem; background: #171c2e; border: .2rem solid #2a3150; }
+.time { font-size: 2.3rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.body { min-width: 0; }
+.grade-label { font-size: 1.2rem; line-height: 1.25; letter-spacing: 0 !important; font-weight: 800; color: #9fd0ff; text-transform: uppercase; letter-spacing: .1rem; }
+.teams { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+.chip { font-size: 1.7rem; font-weight: 900; padding: .05rem .9rem; flex: none; border-radius: .8rem; white-space: nowrap; border: .2rem solid transparent; }
+.chip.home { background: var(--season-light); color: #111; } .chip.away { background: var(--season-dark); color: #fff; border-color: rgba(255,255,255,.75); }
+.score { font-size: 2.3rem; font-weight: 900; font-variant-numeric: tabular-nums; display: flex; gap: .5rem; } .score i { font-style: normal; color: var(--muted); }
+.score.vs { font-size: 1.6rem; color: var(--muted); }
+.cheer { font-size: 1.25rem; font-weight: 700; color: var(--muted); margin-top: .1rem; }
+.side { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.status-tag { font-size: 1.3rem; font-weight: 900; letter-spacing: .1rem; padding: .25rem .9rem; border-radius: 2rem; white-space: nowrap; background: #262d45; color: #e8eaf2; border: .2rem solid #4a5272; }
+.pc { font-size: 1.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff8a80; }
+/* complete: muted card, dashed tag, winner chip stays solid + ★, loser chip becomes outline */
+.game[data-state="complete"] { background: #12162a; border-style: dashed; border-color: #3a4262; }
+.game[data-state="complete"] .time { color: var(--muted); }
+.game[data-state="complete"] .status-tag { background: transparent; border-style: dashed; color: #d5d9e6; }
+.game[data-winner="home"] .chip.away, .game[data-winner="away"] .chip.home { background: transparent; color: #c5c8d4; border-color: #4a5272; font-weight: 700; }
+.game[data-winner="home"] .chip.home::after, .game[data-winner="away"] .chip.away::after { content: " ★"; }
+/* active: lifted white frame, red LIVE tag */
+.game[data-state="active"] { background: #1b2340; border: .3rem solid #fff; box-shadow: 0 1rem 3rem rgba(0,0,0,.5); }
+.game[data-state="active"] .status-tag { background: #c0392b; color: #fff; border-color: #c0392b; }
+.game[data-state="active"] .score { font-size: 2.5rem; }
+/* Full Court rows span both columns */
+.full-row { margin-top: .4rem; }
+.game[data-span="full"] { grid-template-columns: 6.4rem minmax(0,1fr) auto; border-color: var(--season-light); }
+.game[data-span="full"] .grade-label::before { content: "FULL COURT · "; color: var(--season-light); }
+.foot { height: 4.4vh; flex: none; display: flex; align-items: center; justify-content: center; gap: 1rem; font-size: 1.4rem; color: var(--muted); }
+.foot i { width: 1rem; height: 1rem; border-radius: 50%; border: .2rem solid var(--muted); } .foot i.on { background: var(--ink); border-color: var(--ink); }
+/* offline: same language as the TV */
+[data-conn="offline"] .conn, [data-conn="connecting"] .conn { background: #262d45; color: #e8eaf2; border-style: dashed; border-color: #6b7080; }
+[data-conn="offline"] .sched-view, [data-conn="connecting"] .sched-view { filter: saturate(.75); outline: .3rem dashed #6b7080; outline-offset: -.6rem; }
+</style></head>
+<body>
+<header class="top">
+  <div class="brand"><span data-bind="brand">LBC Upward</span><small data-bind="church-name">Lenexa Baptist Church</small></div>
+  <div class="day" data-bind="day">Saturday, Oct 24</div>
+  <span class="conn" data-bind="connText">● Live</span>
+</header>
+<div class="split heads"><h2 class="court-head">West Court</h2><h2 class="court-head">East Court</h2></div>
+<div class="earlier" data-bind="earlier">▲ 6 earlier finals (3 per court)</div>
+<main class="sched-view"><div class="sched-track" data-page="1" style="--offset: -17.60rem">
+<div class="split"><section class="court-col" data-court="west"><div class="slot" data-time="8:00"><article class="game" data-state="complete" data-winner="home">
+  <span class="time" data-bind="time">8:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">1st Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Bears</span><span class="score"><b data-bind="home-score">18</b><i>–</i><b data-bind="away-score">12</b></span><span class="chip away" data-bind="away-name">Dolphins</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">✓ FINAL</span></div>
+</article></div><div class="slot" data-time="9:00"><article class="game" data-state="complete" data-winner="away">
+  <span class="time" data-bind="time">9:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">2nd Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Hawks</span><span class="score"><b data-bind="home-score">10</b><i>–</i><b data-bind="away-score">14</b></span><span class="chip away" data-bind="away-name">Tigers</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">✓ FINAL</span></div>
+</article></div><div class="slot" data-time="10:00"><article class="game" data-state="complete" data-winner="home">
+  <span class="time" data-bind="time">10:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">3rd Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Rams</span><span class="score"><b data-bind="home-score">22</b><i>–</i><b data-bind="away-score">20</b></span><span class="chip away" data-bind="away-name">Knights</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">✓ FINAL</span></div>
+</article></div><div class="slot" data-time="11:00"><article class="game" data-state="active">
+  <span class="time" data-bind="time">11:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">3rd Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Lions</span><span class="score"><b data-bind="home-score">16</b><i>–</i><b data-bind="away-score">11</b></span><span class="chip away" data-bind="away-name">Eagles</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">● LIVE</span><span class="pc"><span data-bind="period">Q3</span> <span data-bind="clock">04:12</span></span></div>
+</article></div><div class="slot" data-time="12:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">12:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">4th Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Saints</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Warriors</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 UP NEXT</span></div>
+</article></div><div class="slot" data-time="1:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">1:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">4th Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Panthers</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Comets</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 1:00</span></div>
+</article></div><div class="slot" data-time="2:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">2:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">5th Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Wolves</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Falcons</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 2:00</span></div>
+</article></div><div class="slot" data-time="3:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">3:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">5th Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Stars</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Rockets</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 3:00</span></div>
+</article></div><div class="slot" data-time="4:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">4:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">6th Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Titans</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Chargers</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 4:00</span></div>
+</article></div></section><section class="court-col" data-court="east"><div class="slot" data-time="8:00"><article class="game" data-state="complete" data-winner="tie">
+  <span class="time" data-bind="time">8:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">K–1st Coed</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Cubs</span><span class="score"><b data-bind="home-score">8</b><i>–</i><b data-bind="away-score">8</b></span><span class="chip away" data-bind="away-name">Ducks</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">✓ FINAL</span></div>
+</article></div><div class="slot" data-time="9:00"><article class="game" data-state="complete" data-winner="away">
+  <span class="time" data-bind="time">9:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">2nd Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Bulldogs</span><span class="score"><b data-bind="home-score">15</b><i>–</i><b data-bind="away-score">19</b></span><span class="chip away" data-bind="away-name">Owls</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">✓ FINAL</span></div>
+</article></div><div class="slot" data-time="10:00"><article class="game" data-state="complete" data-winner="home">
+  <span class="time" data-bind="time">10:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">3rd Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Jaguars</span><span class="score"><b data-bind="home-score">12</b><i>–</i><b data-bind="away-score">6</b></span><span class="chip away" data-bind="away-name">Hornets</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">✓ FINAL</span></div>
+</article></div><div class="slot" data-time="11:00"><article class="game" data-state="active">
+  <span class="time" data-bind="time">11:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">4th Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Mustangs</span><span class="score"><b data-bind="home-score">9</b><i>–</i><b data-bind="away-score">13</b></span><span class="chip away" data-bind="away-name">Colts</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">● LIVE</span><span class="pc"><span data-bind="period">Q2</span> <span data-bind="clock">01:47</span></span></div>
+</article></div><div class="slot" data-time="12:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">12:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">4th Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Sparks</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Flames</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 UP NEXT</span></div>
+</article></div><div class="slot" data-time="1:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">1:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">5th Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Blazers</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Storm</span></div><div class="cheer"><span data-bind="home-cheer">📣 Blazers Cheer</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 1:00</span></div>
+</article></div><div class="slot" data-time="2:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">2:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">6th Grade Girls</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Thunder</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Lightning</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 2:00</span></div>
+</article></div><div class="slot" data-time="3:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">3:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">5th Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Vikings</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Pirates</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 3:00</span></div>
+</article></div><div class="slot" data-time="4:00"><article class="game" data-state="upcoming">
+  <span class="time" data-bind="time">4:00</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">6th Grade Boys</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Bears</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Hawks</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 4:00</span></div>
+</article></div></section></div>
+<div class="full-row"><div class="slot" data-time="4:30"><article class="game" data-state="upcoming" data-span="full">
+  <span class="time" data-bind="time">4:30</span>
+  <div class="body"><div class="grade-label" data-bind="grade-label">Upward All-Stars Exhibition</div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Gold Team</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Maroon Team</span></div></div>
+  <div class="side"><span class="status-tag" data-bind="status-tag">🕒 4:30</span></div>
+</article></div></div>
+</div></main>
+<footer class="foot"><span>Page</span><i></i><i class="on"></i><span>· keeps the live and next games in view</span></footer>
+</body></html>
