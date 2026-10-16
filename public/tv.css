@@ -144,3 +144,9 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
   .next-up { min-width: 0; width: 90%; }
   .next-matchup { font-size: 5rem; }
 }
+
+/* ---- Round 4: idle screen offline (data-conn on #idle / #next-up). Idle never depends on the per-game side
+   classes/vars (it uses --season-* with fixed fallbacks in html), so clearing them is safe. */
+#idle:is([data-conn="offline"], [data-conn="connecting"])::after { content: "⟳ Reconnecting…"; font-size: 1.9rem; font-weight: 700;
+  color: #e8eaf2; background: #262d45; border: .25rem dashed #6b7080; padding: .6rem 1.6rem; border-radius: 3rem; }
+#next-up:is([data-conn="offline"], [data-conn="connecting"]) { filter: saturate(.75); box-shadow: 0 0 0 .4rem #6b7080, 0 2rem 5rem rgba(0,0,0,.5); outline: .3rem dashed #8a90a6; outline-offset: .8rem; }

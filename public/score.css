@@ -133,6 +133,23 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 /* Frozen clock while offline: desaturated but readable (~9:1), dashed frame = non-color cue. */
 [data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; border-style: dashed; border-color: #6b7080; }
 
+/* ---- Round 4: offline / connecting on every screen (data-conn on #picker, #resume, #confirm-dialog, #pin-gate, #app).
+   Same language as the clock + pill: dashed frame, slight desaturation, a small text cue. No pointer-events changes. */
+:is(#picker, #resume, #pin-gate)[data-conn="offline"], :is(#picker, #resume, #pin-gate)[data-conn="connecting"] {
+  outline: 2px dashed #6b7080; outline-offset: 6px; border-radius: 16px; filter: saturate(.75); }
+:is(#picker, #resume, #pin-gate)[data-conn="offline"]::after, :is(#picker, #resume, #pin-gate)[data-conn="connecting"]::after,
+#confirm-dialog[data-conn="offline"] form::after, #confirm-dialog[data-conn="connecting"] form::after {
+  content: "⟳ Reconnecting…"; display: block; margin-top: 12px; padding: 8px 12px; border-radius: 10px;
+  background: #262d45; color: #e8eaf2; border: 2px dashed #6b7080; font-size: 14px; font-weight: 700; text-align: center; }
+#pin-gate[data-conn]:is([data-conn="offline"], [data-conn="connecting"])::after { content: "⟳ Reconnecting…"; margin-top: 0; }
+#confirm-dialog:is([data-conn="offline"], [data-conn="connecting"]) { box-shadow: 0 0 0 2px #6b7080, 0 24px 60px rgba(0,0,0,.6); outline: 2px dashed #8a90a6; outline-offset: -8px; }
+#confirm-dialog:is([data-conn="offline"], [data-conn="connecting"]) form::after { margin-top: -8px; }
+#app:is([data-conn="offline"], [data-conn="connecting"]) .hdr { border-bottom: 2px dashed #6b7080; padding-bottom: 8px; }
+/* PIN causes, layered on the kind styles */
+.pin-gate .err[data-cause="qr"]::before { content: "🔒 QR"; font-size: 13px; letter-spacing: .5px; background: #ffd9d6; color: #3a1518; border-radius: 6px; padding: 2px 6px; line-height: 1.4; }
+.pin-gate .err[data-cause="revoked"] { border-left-style: dashed; }
+.pin-gate .err[data-cause="revoked"]::before { content: "↺ New QR"; font-size: 13px; letter-spacing: .5px; background: #dcecff; color: #13294a; border-radius: 6px; padding: 2px 6px; line-height: 1.4; white-space: nowrap; }
+
 /* Tablet landscape: team | clock | team */
 @media (min-width: 900px) {
   .grid { grid-template-columns: 1fr 330px 1fr; }
