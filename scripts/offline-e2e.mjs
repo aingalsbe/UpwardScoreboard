@@ -64,6 +64,8 @@ ok(tvOff === 'offline' && Date.now() - t0 <= 5000, `TV shows offline after ${Dat
 await ctl.waitForFunction(() => /Offline/.test(document.querySelector('.pill.conn').textContent), null, { timeout: 5000 }).catch(() => {});
 const pill = await ctl.textContent('.pill.conn');
 ok(/Offline/.test(pill), `controller pill says "${pill.trim()}"`);
+const tvPill = await ctl.evaluate(() => ({ t: document.querySelector('.pill.tv').textContent, stale: document.querySelector('.pill.tv').dataset.stale, cls: document.documentElement.classList.contains('presence-stale') }));
+ok(!/TV connected/.test(tvPill.t) && tvPill.stale === 'true' && tvPill.cls, `TV pill is not left green while offline ("${tvPill.t.trim()}")`);
 await cmd({ type: 'CLOCK_STOP' }); // the scorekeeper (still online elsewhere) stops the clock
 const c1 = await clock(tv); await sleep(2500); const c2 = await clock(tv);
 ok(c1 === c2, `TV clock frozen while offline (${c1} -> ${c2} after 2.5 s)`);

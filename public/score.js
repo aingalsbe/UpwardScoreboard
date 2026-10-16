@@ -48,8 +48,10 @@ const conn = connect({
         if (m.locked) startLock(m.retryAfter, m.cause);
         else {
           if (m.needPin) localStorage.removeItem(SESSION_KEY);
-          const kind = /read-only/.test(m.error || '') ? 'readonly' : (m.qrInvalid || /Wrong PIN/.test(m.error || '')) ? 'wrong' : 'info';
-          showGate(m.error || 'Wrong PIN', kind, m.sessionRevoked ? 'revoked' : '');
+          // A replaced QR (old printout scanned, or a signed-in phone after Regenerate) gets the same "revoked" treatment.
+          const revoked = m.sessionRevoked || (m.qrInvalid && m.reason === 'revoked');
+          const kind = /read-only/.test(m.error || '') ? 'readonly' : revoked ? 'info' : (m.qrInvalid || /Wrong PIN/.test(m.error || '')) ? 'wrong' : 'info';
+          showGate(m.error || 'Wrong PIN', kind, revoked ? 'revoked' : '');
         }
       }
     }
@@ -189,10 +191,14 @@ function render() {
     title: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
     grade: g?.grade || '',
     connText: online ? '● Online' : '● Offline · reconnecting…',
-    tvText: presence.displays ? `● TV connected${presence.controllers > 1 ? ` · ${presence.controllers} scorekeepers` : ''}` : '○ No TV connected',
+    // Presence is stale while this phone is offline: don't show a green "TV connected" from before the drop.
+    tvText: !online ? '○ TV status unknown (reconnecting)' : presence.displays ? `● TV connected${presence.controllers > 1 ? ` · ${presence.controllers} scorekeepers` : ''}` : '○ No TV connected',
   };
-  root.classList.toggle('tv-off', !presence.displays);
-  root.classList.toggle('two-controllers', presence.controllers > 1);
+  const stale = !online;
+  root.classList.toggle('presence-stale', stale); // hook for Sage: grey the TV pill
+  const tvPill = document.querySelector('.pill.tv'); if (tvPill) { if (stale) tvPill.dataset.stale = 'true'; else delete tvPill.dataset.stale; }
+  root.classList.toggle('tv-off', !stale && !presence.displays);
+  root.classList.toggle('two-controllers', !stale && presence.controllers > 1);
   if (g) {
     const side = (k) => ({
       ...g[k], ...s[k],

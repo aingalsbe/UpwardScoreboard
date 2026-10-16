@@ -87,7 +87,7 @@ await api(`/api/courts/${east.id}/qr/regenerate`, { method: 'POST' });
 const ph3 = await (await browser.newContext({ viewport: { width: 400, height: 860 } })).newPage();
 await ph3.goto(qr.url);
 await ph3.waitForFunction(() => /replaced by a newer one/.test(document.querySelector('#pin-err').textContent), null, { timeout: 6000 }).catch(() => {});
-ok(await ph3.$eval('#pin-err', (e) => /replaced by a newer one/.test(e.textContent) && e.dataset.kind === 'wrong') && await ph3.$eval('#pin-gate', (e) => !e.hidden), 'old QR: clear message (data-kind="wrong") and the PIN gate as fallback');
+ok(await ph3.$eval('#pin-err', (e) => /replaced by a newer one/.test(e.textContent) && e.dataset.cause === 'revoked') && await ph3.$eval('#pin-gate', (e) => !e.hidden), 'old QR: clear message (data-cause="revoked") and the PIN gate as fallback');
 
 await ph.waitForFunction(() => !document.querySelector('#pin-gate').hidden, null, { timeout: 6000 }).catch(() => {});
 ok(await ph.$eval('#pin-err', (e) => /QR code that has been replaced/.test(e.textContent) && e.dataset.cause === 'revoked'), `phone signed in with the old QR is signed out on Regenerate ("${await ph.textContent('#pin-err')}")`);
