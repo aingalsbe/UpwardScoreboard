@@ -142,3 +142,8 @@ html { --row-compact: 3.75rem; }                                     /* 72px at 
 .game[data-compact] .score { font-size: 1.9rem; }                     /* score stays the largest thing in the row */
 .game[data-compact] .status-tag { font-size: 1.15rem; padding: .15rem .7rem; }
 [data-conn="offline"] .sched-pinned, [data-conn="connecting"] .sched-pinned { filter: saturate(.75); outline: .3rem dashed #6b7080; outline-offset: -.4rem; }
+/* Pinned empty cell (30a407d): a court with no live/next game at that time. Keeps the full row height so West/East
+   pinned rows line up by time; drawn quieter than the track's empties (thin dashes, inset) so focus stays on the games. */
+.sched-pinned .slot[data-empty="true"], .sched-pinned .slot[data-empty=""] { border: .15rem dashed #262c44; border-radius: 1.4rem;
+  background: transparent; }
+.sched-pinned .court-col > .slot:last-child { margin-bottom: 0; }
