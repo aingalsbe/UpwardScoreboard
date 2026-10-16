@@ -2,6 +2,17 @@
 
 Windows laptop, Docker Desktop, repo in C:\UpwardScoreboard. All values are demo-only.
 
+## Logins (dev only)
+
+| Login | Value |
+|---|---|
+| Full court PIN | 1111 |
+| West court PIN | 2222 |
+| East court PIN | 3333 |
+| Admin password (http://localhost:3000/admin) | change-me-admin |
+
+Demo values only; the printed QR cards never show a PIN (they say "enter the court PIN" as the fallback).
+
 ## Start and stop
 
 Start (PowerShell, in C:\UpwardScoreboard):
