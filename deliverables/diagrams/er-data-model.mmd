@@ -4,12 +4,15 @@ erDiagram
   COURTS ||--o{ GAMES : "hosts"
   COURTS |o--o| GAMES : "current game"
   GAMES ||--o{ GAME_EVENTS : "logs"
+  COURTS }o--o{ COURTS : "conflicts_with"
   TEAMS {
     int id PK
-    text name UK
+    text name "UK with grade (case-insensitive)"
+    text grade "e.g. 5th Grade"
+    int grade_order
     text short_name
-    text primary_color
-    text secondary_color
+    text primary_color "unused (season colors)"
+    text secondary_color "unused (season colors)"
     text logo_url
     bytea logo_data
     text logo_mime
@@ -19,6 +22,8 @@ erDiagram
     text slug UK
     text name
     text location
+    text_array conflicts_with "courts sharing the floor"
+    int qr_version "weekly QR token version"
     int current_game_id FK
   }
   GAMES {
@@ -28,7 +33,17 @@ erDiagram
     int away_team_id FK
     timestamptz scheduled_at
     text division
-    text status
+    text status "scheduled, active, complete"
+    int duration_min "null = GAME_MINUTES"
+    bool swap_colors
+    text home_cheer
+    text home_cheer_logo_url
+    bytea home_cheer_logo_data
+    text home_cheer_logo_mime
+    text away_cheer
+    text away_cheer_logo_url
+    bytea away_cheer_logo_data
+    text away_cheer_logo_mime
     jsonb theme
     jsonb rules
     jsonb history
@@ -43,4 +58,8 @@ erDiagram
     text actor
     jsonb command
     timestamptz created_at
+  }
+  SETTINGS {
+    text key PK "season_name, season_dark, season_light"
+    text value
   }
