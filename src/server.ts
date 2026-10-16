@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { pool, migrate, seedIfEmpty, seedDemo } from './db.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, dayLabel, LEAGUE_TZ, WarnGame } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, dayLabel, localDate, LEAGUE_TZ, WarnGame } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
@@ -594,7 +594,7 @@ async function scheduleSnapshot(date: string) {
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
     });
   }
-  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, dayLabel: dayLabel(date), title: 'LBC Upward', church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, games };
+  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, isToday: date === localDate(Date.now()), dayLabel: dayLabel(date), title: 'LBC Upward', church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, games };
 }
 
 /**

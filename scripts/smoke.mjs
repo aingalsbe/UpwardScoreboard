@@ -631,6 +631,20 @@ console.log('19. Gender / division, schedule warnings, schedule screen (route + 
   ok(other.games.every((g) => g.id !== satW.id) && other.dayLabel === 'Sunday, Jan 5', 'a schedule screen only gets its own day');
   sc2.send({ type: 'cmd', id: 'x', cmd: { type: 'SCORE', team: 'home', pts: 2 } });
   ok(/read-only/.test((await sc2.wait((m) => m.type === 'error')).error), 'schedule screen is read-only');
+  // Tie: a complete game with equal scores (client shows data-winner=tie + '✓ FINAL · TIE', via schedule-view.js).
+  const tieG = games19.find((g) => g.court === 'East' && g.cheer === 'Fri Cheer'); // the Friday 18:00 game (not live yet)
+  await api(`/api/games/${tieG.id}/start`, { method: 'POST', body: JSON.stringify({ force: true }) });
+  await api(`/api/games/${tieG.id}/complete`, { method: 'POST' }); // 0–0 final = tie
+  const tie = (await api(`/api/public/schedule?date=${FRI}`)).body;
+  const tg = tie.games.find((g) => g.id === tieG.id);
+  const view = await fetch(BASE + '/schedule-view.js').then((r) => r.text());
+  ok(tg && tg.status === 'complete' && tg.home.score === tg.away.score && view.includes("'tie'") && view.includes('✓ FINAL · TIE'), `tie: complete ${tg?.home.score}–${tg?.away.score} reaches the schedule; view module marks it FINAL · TIE`);
+  // Empty day: no games -> empty list, isToday flag, and the page has the .empty element.
+  const emp = (await api('/api/public/schedule?date=2031-01-06')).body;
+  const page19 = await fetch(BASE + '/schedule').then((r) => r.text());
+  ok(emp.games.length === 0 && emp.isToday === false && emp.dayLabel === 'Monday, Jan 6' && /class="empty"/.test(page19) && view.includes('No games scheduled today'), 'empty day: no games, isToday=false, .empty element + text');
+  ok((await api('/api/public/schedule')).body.isToday === true, 'default day is today (isToday=true)');
+  ok(/<script src="\/contrast.js"><\/script>/.test(page19), 'schedule page loads contrast.js (chip --team-fg)');
   sc.ws.close(); sc2.ws.close(); sk19.ws.close();
   for (const g of (await api('/api/games')).body.filter((g) => [gb.body.id, gg.body.id, b2.body.id].includes(g.home_team_id))) await api(`/api/games/${g.id}`, { method: 'DELETE' });
   for (const t of (await api('/api/teams')).body.filter((t) => t.name.endsWith(`x-${RUN}`))) await api(`/api/teams/${t.id}`, { method: 'DELETE' });

@@ -1,6 +1,7 @@
 // Lobby schedule screen logic (no styling): fills the markup from server snapshots, sets state attributes,
 // season colors and the paging offset. CSS (schedule.css, Sage) owns the look and the scroll animation.
 import { connect, displayNow, clockMs, fmtClock, periodLabel } from './common.js';
+import { t12, winnerOf, statusTag, emptyText } from './schedule-view.js';
 
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search);
@@ -12,7 +13,6 @@ let snap = null;
 
 const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 /** "16:30" -> "4:30" (lobby style, like the mockup). */
-const t12 = (hm) => { const [h, m] = hm.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`; };
 const SPLIT = ['west', 'east'];
 
 function setText(el, key, v) { const n = el.querySelector(`[data-bind="${key}"]`); if (n) n.textContent = v ?? ''; }
@@ -27,9 +27,12 @@ function gameEl(g, isNext) {
   for (const side of ['home', 'away']) { // season colors respecting swap: the chip wears its side's color
     const chip = el.querySelector(`.chip.${side}`), t = g[side];
     chip.dataset.wear = t.side; chip.style.setProperty('--team-color', t.color); chip.style.setProperty('--team-accent', t.accent);
+    // Readable text on the chip, computed like the TV (Sage's contrast.js): --team-fg = #fff or #111.
+    if (window.Contrast) chip.style.setProperty('--team-fg', window.Contrast.bestText(t.color));
   }
   const hs = g.home.score ?? 0, as = g.away.score ?? 0;
-  if (state === 'complete') el.dataset.winner = hs > as ? 'home' : as > hs ? 'away' : 'tie';
+  const winner = winnerOf(g.status, hs, as);
+  if (winner) el.dataset.winner = winner;
   setText(el, 'time', t12(g.time));
   setText(el, 'grade-label', g.label || g.grade || '');
   setText(el, 'home-name', g.home.name); setText(el, 'away-name', g.away.name);
@@ -44,7 +47,7 @@ function gameEl(g, isNext) {
     const im = el.querySelector('img[data-bind="cheer-logo"]');
     if (g.cheer.logo) { im.src = g.cheer.logo; im.hidden = false; }
   }
-  setText(el, 'status-tag', state === 'complete' ? '✓ FINAL' : state === 'active' ? '● LIVE' : isNext ? '🕒 UP NEXT' : `🕒 ${t12(g.time)}`);
+  setText(el, 'status-tag', statusTag(state, winner, isNext, g.time));
   setText(el, 'period', state === 'active' && g.period ? `Q${periodLabel(g.period, g.periods || 4)}`.replace('QOT', 'OT') : '');
   if (state !== 'active') el.querySelector('.pc').remove(); // period/clock only for active
   return el;
@@ -84,7 +87,11 @@ function render() {
     track.appendChild(wrap);
   }
   $('.heads').hidden = !snap.games.some((g) => SPLIT.includes(g.court)); // omitted on Fridays (Full only)
-  if (!snap.games.length) track.innerHTML = '<p class="empty">No games scheduled for this day.</p>';
+  // Empty day: hide the court heads, show .empty (outside the track, so paging can't move it).
+  const empty = $('.empty'), none = !snap.games.length;
+  empty.hidden = !none; empty.textContent = none ? emptyText(!!snap.isToday, snap.dayLabel) : '';
+  if (none) $('.heads').hidden = true;
+  root.classList.toggle('no-games', none);
   root.classList.toggle('has-active', snap.games.some((g) => g.status === 'active'));
   requestAnimationFrame(page);
 }
