@@ -28,7 +28,9 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 .chip.home { background: var(--season-light); color: #111; } .chip.away { background: var(--season-dark); color: #fff; border-color: rgba(255,255,255,.75); }
 .score { font-size: 2.3rem; font-weight: 900; font-variant-numeric: tabular-nums; display: flex; gap: .5rem; } .score i { font-style: normal; color: var(--muted); }
 .score.vs { font-size: 1.6rem; color: var(--muted); }
-.cheer { font-size: 1.25rem; font-weight: 700; color: var(--muted); margin-top: .1rem; }
+.cheer { display: none; align-items: center; gap: .4em; height: 1.3em; font-size: 1.25rem; font-weight: 700; color: var(--muted); margin-top: .1rem; }
+.game.has-cheer .cheer { display: flex; }
+.cheer-logo { flex: none; width: 1em; height: 1em; border-radius: 50%; background: #fff; }
 .side { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
 .status-tag { font-size: 1.3rem; font-weight: 900; letter-spacing: .1rem; padding: .25rem .9rem; border-radius: 2rem; white-space: nowrap; background: #262d45; color: #e8eaf2; border: .2rem solid #4a5272; }
 .pc { font-size: 1.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff8a80; }
@@ -131,10 +133,10 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
   <div class="body"><div class="grade-label" data-bind="grade-label">4th Grade Girls</div>
     <div class="teams"><span class="chip home" data-bind="home-name">Sparks</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Flames</span></div></div>
   <div class="side"><span class="status-tag" data-bind="status-tag">🕒 UP NEXT</span></div>
-</article></div><div class="slot" data-time="1:00"><article class="game" data-state="upcoming">
+</article></div><div class="slot" data-time="1:00"><article class="game has-cheer" data-state="upcoming">
   <span class="time" data-bind="time">1:00</span>
   <div class="body"><div class="grade-label" data-bind="grade-label">5th Grade Girls</div>
-    <div class="teams"><span class="chip home" data-bind="home-name">Blazers</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Storm</span></div><div class="cheer"><span data-bind="home-cheer">📣 Blazers Cheer</span></div></div>
+    <div class="teams"><span class="chip home" data-bind="home-name">Blazers</span><span class="score vs">vs</span><span class="chip away" data-bind="away-name">Storm</span></div><div class="cheer"><span class="cheer-logo" data-bind="cheer-logo"></span><span data-bind="cheer">Lenexa Lions Cheer</span></div></div>
   <div class="side"><span class="status-tag" data-bind="status-tag">🕒 1:00</span></div>
 </article></div><div class="slot" data-time="2:00"><article class="game" data-state="upcoming">
   <span class="time" data-bind="time">2:00</span>

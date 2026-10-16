@@ -1,5 +1,4 @@
 # Lobby schedule TV: proposed markup (Sage → Devon)
-
 Route `/upwardbasketballscores/schedule`, 1920x1080. Mockup: `schedule-mockup.html` / `.png`. Styles come from a future `public/schedule.css` (Sage).
 
 ```html
@@ -17,7 +16,7 @@ Route `/upwardbasketballscores/schedule`, 1920x1080. Mockup: `schedule-mockup.ht
       <div class="split">                                         <!-- omitted on Fridays (Full only) -->
         <section class="court-col" data-court="west">
           <div class="slot" data-time="11:00">
-            <article class="game" data-state="active" data-winner="">   <!-- see attributes below -->
+            <article class="game" data-state="active" data-winner="">   <!-- + .has-cheer if squad -->
               <span class="time" data-bind="time"></span>
               <div class="body">
                 <div class="grade-label" data-bind="grade-label">3rd Grade Girls</div>
@@ -26,7 +25,7 @@ Route `/upwardbasketballscores/schedule`, 1920x1080. Mockup: `schedule-mockup.ht
                   <span class="score"><b data-bind="home-score"></b><i>–</i><b data-bind="away-score"></b></span>
                   <span class="chip away" data-bind="away-name"></span>
                 </div>
-                <div class="cheer"><span data-bind="home-cheer"></span> <span data-bind="away-cheer"></span></div>
+                <div class="cheer"><img class="cheer-logo" data-bind="cheer-logo" alt="" hidden><span data-bind="cheer"></span></div>
               </div>
               <div class="side"><span class="status-tag" data-bind="status-tag"></span>
                 <span class="pc"><span data-bind="period"></span> <span data-bind="clock"></span></span></div>
@@ -49,7 +48,7 @@ Route `/upwardbasketballscores/schedule`, 1920x1080. Mockup: `schedule-mockup.ht
 - `.game[data-winner]`: `home | away | tie` on complete games (winner chip stays solid + ★, loser chip goes outline).
 - `.score` only for active/complete; for upcoming render `<span class="score vs">vs</span>`.
 - `status-tag` text: `✓ FINAL`, `● LIVE`, `🕒 UP NEXT` (first upcoming), else `🕒 <time>`. Icon + word, never color alone.
-- `period`/`clock` only for active; omit the `.cheer` div when there's no squad.
+- `period`/`clock` only for active. Cheer = ONE squad per game: add `.has-cheer` to the article; logo optional (1em).
 - Season colors: root `--season-light` / `--season-dark` (same as TV). Swap changes colors only, never order.
 
 ## Paging / auto-scroll

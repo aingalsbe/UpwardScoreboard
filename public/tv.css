@@ -4,7 +4,7 @@
    Text on a panel uses --*-fg from contrast.js (#111 on gold 11.6:1, #fff on maroon 10.9:1).
    Maroon never sits as text on the dark background except the small side tag, which uses
    contrast.js's lightened --*-on-dark (>= 4.5:1).
-   Root hooks: no-game, has-next-up, has-last-final, has-home-cheer, has-away-cheer, home-bonus,
+   Root hooks: no-game, has-next-up, has-last-final, has-cheer, home-bonus,
    away-bonus, poss-home, poss-away, has-banner, final, clock-running, data-conn, data-home-side,
    data-swapped, data-status. */
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -47,16 +47,20 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score { font-size: 17rem; font-weight: 900; line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.3rem; }
 
-/* cheer squad badge: space is always reserved so both panels stay balanced when only one side has a squad */
-.cheer { visibility: hidden; display: inline-flex; align-items: center; gap: .8rem; min-height: 3.6rem; padding: .3rem 1.4rem .3rem .4rem;
-  border-radius: 3rem; font-size: 1.7rem; font-weight: 800; max-width: 90%; }
-.home .cheer { background: var(--home-fg, #111); color: var(--home-color); }
-.away .cheer { background: var(--away-fg, #fff); color: var(--away-color); }
-.cheer-logo { width: 3rem; height: 3rem; border-radius: 50%; object-fit: cover; background: #fff; }
-.cheer-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cheer-name::before { content: "📣 "; }
-.has-home-cheer .home-cheer, .has-away-cheer .away-cheer { visibility: visible; }
-.cheer:has(.cheer-logo:not([hidden])) .cheer-name::before { content: ""; }
+/* Cheer: ONE squad per game (not per side). Single line in .center: optional logo (data-bind="cheer-logo")
+   + name (data-bind="cheer"). Shown only with root/game class .has-cheer; its height is always reserved
+   (visibility, not display) so the center column never jumps. Logo box is a fixed 1em; with no logo
+   a 📣 of the same 1em width takes its place, so a missing logo never shifts anything. Neutral colors
+   (white on dark, 15.8:1): the squad belongs to neither team. */
+.cheer { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+  height: 1.6em; line-height: 1; font-size: 1.9rem; font-weight: 800; color: var(--ink); max-width: 100%; margin-top: .4rem; }
+.has-cheer .cheer { visibility: visible; }
+.cheer-logo { flex: none; width: 1em; height: 1em; border-radius: 50%; object-fit: cover; background: #fff; }
+.cheer-logo[hidden] { display: none; }
+.cheer-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cheer-name::before { content: "📣"; display: inline-block; width: 1em; margin-right: .5em; text-align: center; }
+.cheer:has(.cheer-logo:not([hidden])) .cheer-name::before { content: none; }
+.cheer:not(:has(.cheer-name:not(:empty))) { visibility: hidden; }
 
 /* fouls / timeouts / bonus on the panel, in the panel's own text color */
 .stats { display: flex; gap: 3rem; align-items: center; min-height: 5rem; margin-top: .4rem; }
