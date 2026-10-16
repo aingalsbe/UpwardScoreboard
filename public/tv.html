@@ -15,6 +15,7 @@
 
   <main class="board">
     <section class="team home">
+      <div class="side-tag" aria-hidden="true">HOME</div>
       <div class="bar"></div>
       <div class="logo" data-logo="home"></div>
       <div class="name" data-bind="home.name"></div>
@@ -36,6 +37,7 @@
     </section>
 
     <section class="team away">
+      <div class="side-tag" aria-hidden="true">AWAY</div>
       <div class="bar"></div>
       <div class="logo" data-logo="away"></div>
       <div class="name" data-bind="away.name"></div>
@@ -53,7 +55,7 @@
     <div class="waiting idle" id="idle">
       <div class="idle-brand"><img class="church-logo" data-bind="church-logo" alt="" hidden><div class="church-name" data-bind="church-name"></div></div>
       <div data-bind="court"></div>
-      <div class="next-up" id="next-up"><span class="next-up-label">Next up</span> <span class="next-time" data-bind="next.time"></span> <span class="next-grade" data-bind="next.grade"></span> <span class="next-matchup" data-bind="next.matchup"></span></div>
+      <div class="next-up" id="next-up"><span class="next-up-label">Next up</span> <span class="next-meta"><span class="next-time" data-bind="next.time"></span> <span class="next-grade" data-bind="next.grade"></span></span> <span class="next-matchup" data-bind="next.matchup"></span></div>
       <div class="last-final" data-bind="lastFinal"></div>
       <small>Waiting for the next game</small>
     </div>

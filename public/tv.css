@@ -1,65 +1,146 @@
-/* TV scoreboard look (owned by Sage). Layout follows tv-scoreboard-mockup.png.
-   Logic sets: --home-color/--home-accent/--away-color/--away-accent on :root and
-   classes on <html>: no-game, home-bonus, away-bonus, poss-home, poss-away,
-   has-banner, final, clock-running, and data-conn="online|offline|connecting". */
+/* TV scoreboard (owned by Sage). Lenexa Baptist Church · Upward Basketball 2026–27.
+   Two-tone season look: each team sits on a big panel in its season tone (--home-color /
+   --away-color = season light or dark, set by display.js; swaps follow automatically).
+   Text on a panel uses --*-fg from contrast.js (#111 on gold 11.6:1, #fff on maroon 10.9:1).
+   Maroon never sits as text on the dark background except the small side tag, which uses
+   contrast.js's lightened --*-on-dark (>= 4.5:1).
+   Root hooks: no-game, has-next-up, has-last-final, has-home-cheer, has-away-cheer, home-bonus,
+   away-bonus, poss-home, poss-away, has-banner, final, clock-running, data-conn, data-home-side,
+   data-swapped, data-status. */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { --home-color: #7a1020; --home-accent: #f2b705; --away-color: #0d2c6b; --away-accent: #4fc3f7; font-size: min(1vw, 1.78vh); }
-body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; color: #fff;
-  background: radial-gradient(ellipse at top, #1b2340, #05070f 70%);
-  font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; cursor: none; }
-.top { height: 10.2vh; display: flex; align-items: center; justify-content: space-between; padding: 0 3rem;
-  background: rgba(255,255,255,.04); border-bottom: 2px solid rgba(255,255,255,.08); }
-.league { font-size: 1.8rem; letter-spacing: .15rem; font-weight: 700; text-transform: uppercase; }
-.game-info { font-size: 1.45rem; opacity: .7; }
-.board { flex: 1; display: grid; grid-template-columns: 1fr 27rem 1fr; position: relative; }
-.team { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-.team .bar { position: absolute; inset: 0 0 auto 0; height: .8rem; }
-.home .bar { background: var(--home-accent); } .away .bar { background: var(--away-accent); }
-.logo { width: 9.4rem; height: 9.4rem; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 4.4rem; font-weight: 900; border: .4rem solid #fff; box-shadow: 0 10px 40px rgba(0,0,0,.5); overflow: hidden; }
+html { --home-color: #ffc72c; --home-accent: #800000; --away-color: #800000; --away-accent: #ffc72c;
+  --season-light: #ffc72c; --season-dark: #800000; --bg: #0d1018; --ink: #f4f1ea; --muted: #c5c8d4;
+  font-size: min(1vw, 1.78vh); }
+body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; color: var(--ink); cursor: none;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, #1b2340, var(--bg) 75%);
+  font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; }
+
+/* ---------- header ---------- */
+.top { height: 9.5vh; display: flex; justify-content: space-between; align-items: center; gap: 2rem; padding: 0 2.6rem;
+  border-bottom: .25rem solid var(--season-light); background: rgba(255,255,255,.03); }
+.church { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+.church-logo { height: 5.6rem; width: auto; border-radius: .8rem; background: #fff; padding: .3rem; }
+.church-name { font-size: 2.3rem; font-weight: 900; letter-spacing: .05rem; white-space: nowrap; }
+.league { display: none; font-size: 1.5rem; color: var(--muted); text-transform: uppercase; letter-spacing: .2rem; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.game-info { font-size: 1.8rem; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70rem; }
+
+/* ---------- board ---------- */
+.board { flex: 1; display: grid; grid-template-columns: 1fr 30rem 1fr; gap: 1.6rem; padding: 1.6rem 2rem; position: relative; min-height: 0; }
+.team { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem;
+  border-radius: 2.4rem; padding: 2.2rem 1.5rem 1.8rem; overflow: hidden;
+  box-shadow: 0 0 0 .3rem rgba(255,255,255,.9), 0 1.6rem 4rem rgba(0,0,0,.55); }
+.home { background: var(--home-color); color: var(--home-fg, #111); }
+.away { background: var(--away-color); color: var(--away-fg, #fff); }
+.team .bar { display: none; }
+.side-tag { position: absolute; top: 1.2rem; left: 1.6rem; font-size: 1.5rem; font-weight: 900; letter-spacing: .3rem;
+  padding: .3rem 1rem; border-radius: 2rem; background: var(--bg); }
+.home .side-tag { color: var(--home-on-dark, #ffc72c); }
+.away .side-tag { color: var(--away-on-dark, #d98c8c); left: auto; right: 1.6rem; }
+.logo { width: 8.6rem; height: 8.6rem; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 4.4rem; font-weight: 900; overflow: hidden; }
+.home .logo { background: var(--home-fg, #111); color: var(--home-color); }
+.away .logo { background: var(--away-fg, #fff); color: var(--away-color); }
 .logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
-/* contrast.js derives --*-logo-fg (accent if >=4.5:1 on the team color, else #fff/#111) and
-   --*-on-dark (accent lightened to >=4.5:1 on the dark chrome). Fallbacks keep the old look. */
-.home .logo { background: var(--home-color); color: var(--home-logo-fg, var(--home-accent)); }
-.away .logo { background: var(--away-color); color: var(--away-logo-fg, var(--away-accent)); }
-.name { font-size: 3.75rem; font-weight: 900; margin-top: 1.3rem; letter-spacing: .2rem; text-transform: uppercase; }
-.home .name { color: var(--home-on-dark, var(--home-accent)); } .away .name { color: var(--away-on-dark, var(--away-accent)); }
-.name { text-shadow: 0 0 .2rem #000, 0 .15rem .4rem rgba(0,0,0,.8); }
-.score { font-size: 15.6rem; font-weight: 900; line-height: 1; margin-top: .5rem; font-variant-numeric: tabular-nums; text-shadow: 0 8px 30px rgba(0,0,0,.6); }
-.stats { display: flex; gap: 2.6rem; margin-top: 1rem; align-items: center; min-height: 4.5rem; }
-.lbl { opacity: .6; font-size: 1.15rem; letter-spacing: .1rem; display: block; text-align: center; }
-.val { font-size: 2.3rem; font-weight: 800; display: block; text-align: center; }
+.name { font-size: 4.6rem; font-weight: 900; letter-spacing: .15rem; text-transform: uppercase; line-height: 1.05; text-align: center;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score { font-size: 17rem; font-weight: 900; line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.3rem; }
+
+/* cheer squad badge: space is always reserved so both panels stay balanced when only one side has a squad */
+.cheer { visibility: hidden; display: inline-flex; align-items: center; gap: .8rem; min-height: 3.6rem; padding: .3rem 1.4rem .3rem .4rem;
+  border-radius: 3rem; font-size: 1.7rem; font-weight: 800; max-width: 90%; }
+.home .cheer { background: var(--home-fg, #111); color: var(--home-color); }
+.away .cheer { background: var(--away-fg, #fff); color: var(--away-color); }
+.cheer-logo { width: 3rem; height: 3rem; border-radius: 50%; object-fit: cover; background: #fff; }
+.cheer-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cheer-name::before { content: "📣 "; }
+.has-home-cheer .home-cheer, .has-away-cheer .away-cheer { visibility: visible; }
+.cheer:has(.cheer-logo:not([hidden])) .cheer-name::before { content: ""; }
+
+/* fouls / timeouts / bonus on the panel, in the panel's own text color */
+.stats { display: flex; gap: 3rem; align-items: center; min-height: 5rem; margin-top: .4rem; }
+.lbl { font-size: 1.3rem; font-weight: 800; letter-spacing: .15rem; display: block; text-align: center; }
+.val { font-size: 3rem; font-weight: 900; display: block; text-align: center; line-height: 1.1; }
 .dots { display: block; text-align: center; padding-top: .5rem; }
-.dots span { display: inline-block; width: 1.15rem; height: 1.15rem; border-radius: 50%; margin: 0 .2rem; background: #fff; }
-.dots span.off { background: rgba(255,255,255,.18); }
-.bonus { visibility: hidden; background: #ffcc00; color: #111; font-weight: 900; padding: .3rem .8rem; border-radius: .4rem; font-size: 1.35rem; }
+.dots span { display: inline-block; width: 1.4rem; height: 1.4rem; border-radius: 50%; margin: 0 .25rem; border: .25rem solid currentColor; }
+.dots span.on { background: currentColor; }
+.bonus { visibility: hidden; font-weight: 900; padding: .5rem 1.1rem; border-radius: .8rem; font-size: 1.6rem; letter-spacing: .15rem; }
+.home .bonus { background: var(--home-fg, #111); color: var(--home-color); }
+.away .bonus { background: var(--away-fg, #fff); color: var(--away-color); }
+.bonus::before { content: "★ "; }
 .home-bonus .home .bonus, .away-bonus .away .bonus { visibility: visible; }
-.center { display: flex; flex-direction: column; align-items: center; justify-content: center;
-  border-left: 2px solid rgba(255,255,255,.08); border-right: 2px solid rgba(255,255,255,.08); }
-.clock { font-size: 9.9rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff3b30; background: #000;
-  padding: .5rem 2rem; border-radius: 1rem; border: 3px solid #333; text-shadow: 0 0 25px rgba(255,59,48,.7); font-variant-numeric: tabular-nums; }
-.period-lbl { margin-top: 2rem; font-size: 2.1rem; letter-spacing: .3rem; opacity: .7; }
-.period { font-size: 5.7rem; font-weight: 900; }
-.poss { margin-top: 1.5rem; font-size: 3.1rem; color: #ffcc00; visibility: hidden; }
-.poss span { visibility: hidden; }
+
+/* ---------- center ---------- */
+.center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; }
+.grade { font-size: 2.1rem; font-weight: 800; padding: .5rem 1.6rem; border-radius: 3rem; background: #262d45; color: #fff; letter-spacing: .05rem; }
+.grade:empty { display: none; }
+.clock { position: relative; font-size: 8.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff4d42; background: #000;
+  padding: .6rem 1.8rem; border-radius: 1.4rem; border: .3rem solid #3a4058; text-shadow: 0 0 2rem rgba(255,77,66,.55); font-variant-numeric: tabular-nums; margin-top: .8rem; }
+.period-lbl { margin-top: 1.6rem; font-size: 1.8rem; letter-spacing: .4rem; color: var(--muted); font-weight: 700; }
+.period { font-size: 6rem; font-weight: 900; line-height: 1; }
+.poss { margin-top: 1.2rem; font-size: 1.7rem; font-weight: 800; letter-spacing: .2rem; color: var(--ink); visibility: hidden; display: flex; align-items: center; gap: .8rem; }
+.poss span { visibility: hidden; font-size: 3.2rem; color: #ffd75e; }
 .poss-home .poss, .poss-away .poss { visibility: visible; }
 .poss-home .poss .arrow-home, .poss-away .poss .arrow-away { visibility: visible; }
-.banner { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #ffcc00; color: #111;
-  font-size: 6rem; font-weight: 900; padding: 1rem 4rem; border-radius: 1rem; letter-spacing: .4rem; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+
+.banner { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #fff; color: #111;
+  font-size: 6rem; font-weight: 900; padding: 1rem 4rem; border-radius: 1.6rem; letter-spacing: .4rem; box-shadow: 0 0 0 .5rem var(--season-dark), 0 2rem 6rem rgba(0,0,0,.6); z-index: 3; }
 .has-banner .banner { display: block; }
-.waiting { display: none; position: absolute; inset: 0; background: #05070f; align-items: center; justify-content: center; flex-direction: column; font-size: 6rem; font-weight: 900; }
-.waiting small { font-size: 2.5rem; opacity: .6; font-weight: 400; margin-top: 1rem; }
+.final .clock::after { content: "FINAL"; position: absolute; left: 50%; bottom: -2.4rem; transform: translateX(-50%); font: 900 1.6rem/1 "DejaVu Sans", Arial, sans-serif;
+  letter-spacing: .3rem; color: #111; background: #fff; padding: .4rem 1rem; border-radius: 2rem; text-shadow: none; }
+
+/* ---------- idle / Next up ---------- */
+.waiting { display: none; position: absolute; inset: 0; z-index: 4; flex-direction: column; align-items: center; justify-content: center; gap: 2.4rem; text-align: center;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, #1b2340, var(--bg) 80%); padding: 2rem; }
 .no-game .waiting { display: flex; }
-.ticker { height: 17.6vh; display: flex; align-items: center; padding: 0 3rem; gap: 2rem; background: linear-gradient(90deg, #7a1020, #a3172d); font-size: 2.1rem; white-space: pre; overflow: hidden; }
-.ticker b { background: #fff; color: #7a1020; padding: .4rem 1rem; border-radius: .4rem; font-size: 1.6rem; letter-spacing: .1rem; }
+.idle-brand { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+.idle-brand .church-logo { height: 10rem; }
+.idle-brand .church-name { font-size: 5rem; font-weight: 900; }
+.waiting > [data-bind="court"] { font-size: 2.6rem; font-weight: 800; letter-spacing: .3rem; text-transform: uppercase; padding: .5rem 2rem; border-radius: 3rem;
+  border: .25rem solid var(--season-light); color: var(--ink); }
+.waiting > [data-bind="court"]::after { content: " COURT"; }
+.next-up { display: none; flex-direction: column; align-items: center; gap: 1rem; min-width: 70rem; max-width: 90%; border-radius: 2.4rem; overflow: hidden;
+  background: #fff; color: #111; box-shadow: 0 0 0 .4rem var(--season-light), 0 2rem 5rem rgba(0,0,0,.5); padding-bottom: 2.2rem; }
+.has-next-up .next-up { display: flex; }
+.next-up-label { align-self: stretch; background: var(--season-dark); color: #fff; font-size: 2.6rem; font-weight: 900; letter-spacing: .5rem; text-transform: uppercase; padding: .9rem 2rem; }
+.next-meta { font-size: 3rem; font-weight: 800; margin-top: 1rem; }
+.next-time:not(:empty) + .next-grade:not(:empty)::before { content: "· "; }
+.next-matchup { font-size: 6.4rem; font-weight: 900; line-height: 1.1; padding: 0 2rem; }
+.last-final { display: none; font-size: 2.8rem; font-weight: 700; padding: 1rem 2.4rem; border-radius: 1.4rem; background: #262d45; color: #fff; }
+.has-last-final .last-final { display: block; }
+.waiting small { font-size: 2.2rem; color: var(--muted); }
+.has-next-up .waiting small { display: none; }
+
+/* ---------- ticker ---------- */
+.ticker { height: 10vh; display: flex; align-items: center; padding: 0 2.6rem; gap: 2rem; background: var(--season-dark); color: #fff; font-size: 2.3rem; font-weight: 700; white-space: pre; overflow: hidden;
+  border-top: .3rem solid var(--season-light); }
+.ticker b { background: var(--season-light); color: #111; padding: .5rem 1.2rem; border-radius: .6rem; font-size: 1.7rem; letter-spacing: .15rem; }
 .conn-dot { position: fixed; right: .8rem; bottom: .8rem; width: .9rem; height: .9rem; border-radius: 50%; background: #2ecc71; opacity: .5; }
 [data-conn="offline"] .conn-dot, [data-conn="connecting"] .conn-dot { background: #ff3b30; opacity: 1; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .2; } }
 
-/* Offline / reconnecting: the clock is frozen at the last confirmed value. Calm, not alarming:
-   desaturated (still ~9:1 on black), dashed frame, and a small text label so it isn't color-only. */
-.clock { position: relative; }
+/* Offline / reconnecting: frozen clock, desaturated (still ~9:1 on black), dashed frame + text label (not color-only). */
 [data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; text-shadow: none; border-style: dashed; border-color: #6b7080; }
 [data-conn="offline"] [data-clock]::after, [data-conn="connecting"] [data-clock]::after {
   content: "⟳ Reconnecting…"; position: absolute; left: 50%; top: -3.2rem; transform: translateX(-50%); white-space: nowrap;
   font: 700 1.5rem/1 "DejaVu Sans", Arial, sans-serif; letter-spacing: .05rem; color: #e8eaf2; background: #262d45; padding: .45rem 1rem; border-radius: 2rem; }
+
+/* ---------- compact portrait-ish frame (used by /tv/split halves, ~960x1000) ---------- */
+@media (max-aspect-ratio: 5/4) {
+  html { font-size: min(1.7vw, 1.15vh); }
+  .top { grid-template-columns: 1fr auto; height: 8vh; padding: 0 1.6rem; }
+  .league { display: none; }
+  .church-name { font-size: 2.2rem; }
+  .game-info { font-size: 2rem; max-width: none; }
+  .board { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr auto; padding: 1.2rem; gap: 1.2rem; }
+  .home { grid-column: 1; grid-row: 1; } .away { grid-column: 2; grid-row: 1; }
+  .center { grid-column: 1 / 3; grid-row: 2; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 1.2rem 2.4rem; }
+  .clock { font-size: 9rem; margin-top: 0; }
+  .period-lbl { margin-top: 0; }
+  .score { font-size: 15rem; }
+  .name { font-size: 3.8rem; }
+  .logo { width: 7rem; height: 7rem; font-size: 3.6rem; }
+  .stats { gap: 2rem; }
+  .ticker { height: 8vh; font-size: 2rem; }
+  .next-up { min-width: 0; width: 90%; }
+  .next-matchup { font-size: 5rem; }
+}

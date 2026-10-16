@@ -1,29 +1,39 @@
-/* OBS browser-source scorebug (owned by Sage). Transparent page background. */
+/* OBS lower-third scorebug (owned by Sage). Transparent page. Two-tone season panels:
+   --home-color/--away-color are the season tones (display.js), text uses contrast.js --*-fg.
+   The church tag sits outside .bug (markup), stacked directly above it. No cheer squads here. */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: transparent !important; }
-html { --home-color: #7a1020; --home-accent: #f2b705; --away-color: #0d2c6b; --away-accent: #4fc3f7; }
-body { font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; color: #fff; }
-.bug { position: absolute; left: 48px; bottom: 48px; display: grid; grid-template-columns: 260px 260px 200px; grid-template-rows: 64px auto;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5); border-radius: 10px; overflow: hidden; }
+html { --home-color: #ffc72c; --home-accent: #800000; --away-color: #800000; --away-accent: #ffc72c; --season-light: #ffc72c; --season-dark: #800000; }
+body { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 8px; padding: 48px;
+  font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; color: #fff; }
+.church { display: inline-flex; align-items: center; gap: 8px; background: #0d1018; color: #fff; font-size: 17px; font-weight: 800; letter-spacing: .5px;
+  padding: 6px 14px 6px 8px; border-radius: 8px; border-bottom: 3px solid var(--season-light); box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+.church:not(:has(.church-logo:not([hidden]))) { padding-left: 14px; }
+.church-logo { height: 26px; width: auto; border-radius: 4px; background: #fff; }
+.church-name:empty { display: none; }
+.church:has(.church-name:empty):not(:has(.church-logo:not([hidden]))) { display: none; }
+.bug { display: grid; grid-template-columns: 270px 270px 230px; grid-template-rows: 68px auto; box-shadow: 0 10px 28px rgba(0,0,0,.5); border-radius: 12px; overflow: hidden; }
 .side { display: flex; align-items: center; gap: 10px; padding: 0 14px; font-weight: 900; }
-.home { background: var(--home-color); color: var(--home-fg, #fff); border-bottom: 6px solid var(--home-accent); }
-.away { background: var(--away-color); color: var(--away-fg, #fff); border-bottom: 6px solid var(--away-accent); }
-/* Light team colors: ring the white logo chip so it doesn't melt into the side panel. */
-.home-light .home .logo, .away-light .away .logo { box-shadow: 0 0 0 2px #111; }
-.logo { width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #111; display: flex; align-items: center; justify-content: center; font-size: 20px; overflow: hidden; }
-.logo img { width: 100%; height: 100%; object-fit: contain; }
-.name { font-size: 26px; letter-spacing: 2px; flex: 1; }
-.score { font-size: 40px; font-variant-numeric: tabular-nums; }
-.meta { background: #000; display: flex; align-items: center; justify-content: space-around; font-weight: 900; }
-.period { font-size: 22px; opacity: .8; }
-.clock { font-family: "DejaVu Sans Mono", monospace; font-size: 32px; color: #ff3b30; }
-.fouls { grid-column: 1 / 3; display: grid; grid-template-columns: 1fr 1fr; background: rgba(0,0,0,.75); font-size: 16px; }
-.fouls span { padding: 4px 14px; }
-.bonus { display: none; font-style: normal; background: #ffcc00; color: #111; font-weight: 900; padding: 0 6px; margin-left: 8px; border-radius: 3px; }
+.home { background: var(--home-color); color: var(--home-fg, #111); }
+.away { background: var(--away-color); color: var(--away-fg, #fff); }
+.logo { width: 42px; height: 42px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 21px; overflow: hidden; }
+.home .logo { background: var(--home-fg, #111); color: var(--home-color); }
+.away .logo { background: var(--away-fg, #fff); color: var(--away-color); }
+.logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.name { font-size: 27px; letter-spacing: 2px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score { font-size: 42px; font-variant-numeric: tabular-nums; }
+.meta { background: #0d1018; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 10px; padding: 4px 14px; font-weight: 900; }
+.grade { grid-column: 1 / 3; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: #e8eaf2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grade:empty { display: none; }
+.period { font-size: 20px; color: #e8eaf2; }
+.clock { font-family: "DejaVu Sans Mono", monospace; font-size: 32px; color: #ff4d42; text-align: right; font-variant-numeric: tabular-nums; }
+.fouls { grid-column: 1 / 3; display: grid; grid-template-columns: 1fr 1fr; background: #0d1018; color: #fff; font-size: 16px; font-weight: 700; }
+.fouls span { padding: 5px 14px; }
+.fouls span + span { border-left: 1px solid #2a3045; }
+.bonus { display: none; font-style: normal; background: #fff; color: #111; font-weight: 900; padding: 0 6px; margin-left: 8px; border-radius: 3px; }
 .home-bonus .home-b, .away-bonus .away-b { display: inline; }
-.banner { display: none; grid-column: 1 / 4; background: #ffcc00; color: #111; text-align: center; font-weight: 900; font-size: 20px; padding: 4px; letter-spacing: 3px; }
+.banner { display: none; grid-column: 1 / 4; background: #fff; color: #111; text-align: center; font-weight: 900; font-size: 20px; padding: 4px; letter-spacing: 3px; }
 .has-banner .banner { display: block; }
-.no-game .bug { display: none; }
-
-/* Offline / reconnecting: frozen clock, desaturated but readable (~9:1 on black), dashed underline as a non-color cue. */
+.no-game .bug, .no-game .church { display: none; }
+/* Offline / reconnecting: frozen clock, desaturated but readable (~9:1), dashed underline as a non-color cue. */
 [data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; text-decoration: underline dashed 2px #8a90a6; text-underline-offset: 6px; }

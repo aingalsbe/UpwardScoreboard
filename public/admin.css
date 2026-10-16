@@ -51,4 +51,86 @@ code { background: #222840; padding: 1px 5px; border-radius: 4px; }
 /* Comfortable touch targets */
 button, .button, input, select { min-height: 44px; }
 input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
+/* ---------- Season colors (Lenexa Baptist · Upward 2026–27) ---------- */
+#season-form { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.season-swatch .swatch-wrap { position: relative; display: block; }
+.season-swatch input[type=color] { height: 120px; padding: 0; border: 2px solid #3a4262; border-radius: 14px; cursor: pointer; background: none; }
+.season-swatch input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.season-swatch input[type=color]::-webkit-color-swatch { border: 0; border-radius: 12px; }
+.swatch-sample { position: absolute; left: 14px; bottom: 12px; pointer-events: none; font-size: 26px; font-weight: 900; letter-spacing: .5px; }
+.season-swatch.dark .swatch-sample { color: #fff; } .season-swatch.light .swatch-sample { color: #111; }
+.season-contrast { background: #171c2e; color: #e8eaf2; border-color: #3a4262; font-size: 15px; }
+.season-contrast .cw-row { font-variant-numeric: tabular-nums; }
+.season-contrast.bad { background: #3a3010; color: #ffe08a; border-color: #6b5a1f; border-left-width: 5px; }
+
+/* Swap colors: a clear switch (the real checkbox, restyled); whole label is the tap target. */
+.form label.swap-toggle { flex-direction: row; align-items: center; gap: 12px; min-height: 48px; padding: 8px 12px; border-radius: 10px; background: #171c2e; border: 1px solid #333a55; color: #e8eaf2; font-size: 14px; cursor: pointer; }
+.swap-toggle input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: none; width: 52px; height: 30px; min-height: 0; border-radius: 15px; margin: 0; cursor: pointer;
+  background: radial-gradient(circle at 15px 50%, #fff 10px, transparent 11px) #4a5272; border: 2px solid #6b7290; transition: background-position .15s; }
+.swap-toggle input[type=checkbox]:checked { background: radial-gradient(circle at 35px 50%, #fff 10px, transparent 11px) #1f5fbf; border-color: #7cc4ff; }
+.swap-toggle input[type=checkbox]:focus-visible { outline: 3px solid #7cc4ff; outline-offset: 2px; }
+.swap-toggle:has(input:checked) { border-color: #7cc4ff; }
+
+/* Cheer squads */
+.cheer-fields { border: 1px dashed #4a5272; border-radius: 12px; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.cheer-fields legend { padding: 0 6px; font-weight: 800; color: #e8eaf2; }
+.cheer-fields legend::before { content: "📣 "; }
+.advanced summary { cursor: pointer; color: #c9cee0; min-height: 44px; display: flex; align-items: center; }
+
+/* Grade filters: pill-shaped chip select (a real segmented control needs radio markup from admin.js). */
+.grade-filter { display: inline-flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 13px; font-weight: 700; color: #c9cee0; text-transform: uppercase; letter-spacing: .5px; }
+.grade-filter select { width: auto; min-width: 180px; border-radius: 22px; padding: 8px 36px 8px 16px; background: #262d45; border: 2px solid #4a5272; font-weight: 700; text-transform: none; letter-spacing: 0;
+  appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, #e8eaf2 50%), linear-gradient(135deg, #e8eaf2 50%, transparent 50%);
+  background-position: right 18px center, right 12px center; background-size: 6px 6px; background-repeat: no-repeat; }
+.grade-filter select:has(option:checked:not([value=""])) { border-color: #7cc4ff; background-color: #13294a; }
+
+/* Status badges (match the scorekeeper): icon + word + shape, neutral/blue only. */
+.status-badge { display: inline-flex; align-items: center; gap: 5px; font-weight: 800; border: 2px solid transparent; }
+.status-badge[data-status="scheduled"] { background: #262d45; color: #e8eaf2; border-color: #4a5272; }
+.status-badge[data-status="scheduled"]::before { content: "🕒"; }
+.status-badge[data-status="active"] { background: #1f5fbf; color: #fff; }
+.status-badge[data-status="active"]::before { content: "▶"; }
+.status-badge[data-status="complete"] { background: transparent; color: #d5d9e6; border: 2px dashed #6b7290; }
+.status-badge[data-status="complete"]::before { content: "✓"; }
+.tbl tr.live { background: #13294a; }
+
+/* Game actions: Start = primary; Complete = danger outline; Reopen = secondary outline. */
+button[data-complete] { background: transparent; color: #ffc4a8; border: 2px solid #b3261e; font-weight: 700; }
+button[data-complete]::before { content: "🔒 "; }
+button[data-reopen] { background: transparent; color: #dcecff; border: 2px solid #4a6fa5; text-decoration: none; }
+button[data-reopen]::before { content: "↺ "; }
+.tbl td.right button + button { margin-left: 4px; }
+
+/* ---------- Weekly QR codes ---------- */
+.qr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.qr-card { background: #fff; color: #111; border-radius: 16px; padding: 18px; text-align: center; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 4px #ffc72c; }
+.qr-card a, .qr-card code { color: #111; background: #f1f1f1; }
+.qr-court { font-size: 24px; font-weight: 900; margin: 0; color: #111; }
+.qr-court::after { content: ""; display: block; width: 60px; height: 5px; margin: 8px auto 0; border-radius: 3px; background: #800000; }
+.qr-code svg { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+.qr-help { font-weight: 800; font-size: 16px; }
+.qr-help::before { content: "Scan to keep score. "; display: block; font-size: 20px; }
+.qr-expires { font-size: 14px; color: #333; }
+.qr-url { font-size: 12px; overflow-wrap: anywhere; }
+.qr-url::after { content: "No camera? Open the scorekeeper page and enter the court PIN."; display: block; margin-top: 6px; font-size: 13px; color: #333; }
+.qr-card .qr-actions button.link { color: #0b4fa0; }
+
+@media print {
+  @page { size: letter portrait; margin: 0.6in; }
+  html, body { background: #fff !important; color: #111 !important; }
+  body * { visibility: hidden; }
+  #qr-panel, #qr-panel * { visibility: visible; }
+  #qr-panel { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
+  .no-print, .no-print * { display: none !important; }
+  .qr-cards { display: block; }
+  .qr-card { box-shadow: none; border: 3px solid #111; border-radius: 18px; height: 9.6in; padding: 0.5in; justify-content: center; gap: 0.2in;
+    break-after: page; page-break-after: always; break-inside: avoid; }
+  .qr-card:last-child { break-after: auto; page-break-after: auto; }
+  .qr-court { font-size: 44pt; } .qr-court::after { width: 1.4in; height: 8px; }
+  .qr-code svg { max-width: 5.2in; width: 5.2in; }
+  .qr-help { font-size: 16pt; } .qr-help::before { font-size: 28pt; }
+  .qr-expires { font-size: 14pt; color: #111; }
+  .qr-url { font-size: 11pt; } .qr-url code { background: none; }
+  .qr-url::after { font-size: 13pt; color: #111; }
+}
 [hidden] { display: none !important; }

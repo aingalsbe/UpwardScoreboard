@@ -1,6 +1,11 @@
-/* Combined West + East TV (/tv/split). Owned by Sage. Developer placeholder: two 16:9 boards side by side. */
-html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-.split { display: flex; align-items: center; justify-content: center; gap: 0.5vw; height: 100vh; }
-.half { width: 49.75vw; aspect-ratio: 16 / 9; position: relative; overflow: hidden; }
-.half iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0;
-  transform-origin: 0 0; transform: scale(calc(49.75 / 100 * var(--vw, 1920) / 1920)); }
+/* Combined West + East TV (/tv/split). Owned by Sage. Each half embeds the normal TV page at its
+   real size (~950x1000) instead of a shrunken 1920x1080, so tv.css's compact layout kicks in and
+   the type stays large. (The inline --vw script is left as-is; the scale isn't used any more.) */
+html, body { margin: 0; height: 100%; background: #0d1018; overflow: hidden; font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; height: 100vh; padding: 12px; box-sizing: border-box; }
+.half { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-radius: 16px; overflow: hidden; box-shadow: 0 0 0 2px #3a4262; }
+.court-label { margin: 0; padding: 8px 16px; background: #262d45; color: #fff; font-size: 26px; font-weight: 900; letter-spacing: 4px; text-transform: uppercase; text-align: center; }
+
+
+.frame { position: relative; flex: 1; }
+.half iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; transform: none; }

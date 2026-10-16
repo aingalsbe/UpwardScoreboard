@@ -36,8 +36,8 @@
       <h2>Season colors</h2>
       <form id="season-form" class="card form">
         <label>Season <input name="name" id="season-name" maxlength="40"></label>
-        <label>Dark color <input type="color" name="dark" id="season-dark"></label>
-        <label>Light color <input type="color" name="light" id="season-light"></label>
+        <label class="season-swatch dark">Dark color (away) <span class="swatch-wrap"><input type="color" name="dark" id="season-dark"><span class="swatch-sample" aria-hidden="true">White text · 88</span></span></label>
+        <label class="season-swatch light">Light color (home) <span class="swatch-wrap"><input type="color" name="light" id="season-light"><span class="swatch-sample" aria-hidden="true">Dark text · 88</span></span></label>
         <p class="muted full">Every team wears one of these two. Home = light and away = dark unless a game has "Swap colors" ticked.</p>
         <div class="contrast-warn season-contrast full" id="season-contrast" role="status" aria-live="polite" hidden></div>
         <div class="actions"><button class="primary" id="season-save">Save season colors</button></div>
