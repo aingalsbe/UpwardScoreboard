@@ -13,6 +13,8 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; justify
 .church-name:empty { display: none; }
 .church:has(.church-name:empty):not(:has(.church-logo:not([hidden]))) { display: none; }
 .bug { display: grid; grid-template-columns: 270px 270px 230px; grid-template-rows: 68px auto; box-shadow: 0 10px 28px rgba(0,0,0,.5); border-radius: 12px; overflow: hidden; }
+/* Home always first/left; swap changes colors only. */
+.side.home { grid-column: 1; grid-row: 1; } .side.away { grid-column: 2; grid-row: 1; } .meta { grid-column: 3; grid-row: 1; }
 .side { display: flex; align-items: center; gap: 10px; padding: 0 14px; font-weight: 900; }
 .home { background: var(--home-color); color: var(--home-fg, #111); }
 .away { background: var(--away-color); color: var(--away-fg, #fff); }

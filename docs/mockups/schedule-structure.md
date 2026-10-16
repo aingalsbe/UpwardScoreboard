@@ -40,7 +40,7 @@ Route `/upwardbasketballscores/schedule`, 1920x1080. Mockup: `schedule-mockup.ht
       </div></div>
     </div>
   </main>
-  <footer class="foot"><span>Page</span><i class="on"></i><i></i></footer>  <!-- one <i> per page, .on = current -->
+  <footer class="foot"><i class="on"></i><i></i></footer>   <!-- one <i> per page -->
 </body>
 ```
 
@@ -49,16 +49,13 @@ Route `/upwardbasketballscores/schedule`, 1920x1080. Mockup: `schedule-mockup.ht
 - `.game[data-winner]`: `home | away | tie` on complete games (winner chip stays solid + ★, loser chip goes outline).
 - `.score` only for active/complete; for upcoming render `<span class="score vs">vs</span>`.
 - `status-tag` text: `✓ FINAL`, `● LIVE`, `🕒 UP NEXT` (first upcoming), else `🕒 <time>`. Icon + word, never color alone.
-- `period`/`clock` only for active (empty spans are hidden). Cheer spans empty = hidden (`.cheer:empty` → remove the div or leave blank).
+- `period`/`clock` only for active; omit the `.cheer` div when there's no squad.
 - Season colors: root `--season-light` / `--season-dark` (same as TV). Swap changes colors only, never order.
-- Empty slots: omit the `.slot`, or `<div class="slot" data-time="…" data-empty="true">`.
 
 ## Paging / auto-scroll
 - CSS: `.sched-track { transform: translateY(var(--offset)); transition: transform .8s }`, none under `prefers-reduced-motion`.
 - JS: on each state, set `--offset` = −(top of the slot before the first non-complete game, relative to the track),
-  clamped so the track's bottom isn't above the view's bottom; set `data-page` and the footer dots; fill `earlier`.
-- If live+next don't fit, page every ~12 s between offsets (same variable). No scrollbars, no `scrollTop`.
+  clamped to the track end; set `data-page`, footer dots, `earlier`. If live+next don't fit, page every ~12 s.
 
 ## Offline
-- Root `data-conn` drives it: `.conn` pill grey + dashed, `.sched-view` dashed inner frame + slight desaturation
-  (same language as tv.css). Optional: `.top::after` "⟳ Reconnecting…" chip.
+- Root `data-conn`: `.conn` pill grey + dashed, `.sched-view` dashed frame + slight desaturation (as tv.css).
