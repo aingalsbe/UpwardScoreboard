@@ -52,7 +52,7 @@ ok(items.some((x) => x.includes(`5th Grade Eagles-${RUN} vs Lions-${RUN}`) && x.
 await ph.click(`[data-game-id="${g1}"]`);
 await ph.waitForSelector('#confirm-dialog[open]', { timeout: 3000 }).catch(() => {});
 const ct = await ph.textContent('#confirm-text');
-ok(ct === `Load 5th Grade Eagles-${RUN} vs Lions-${RUN} on East Court?` && (await ph.textContent('#confirm-ok')) === 'Load', `confirm: "${ct}"`);
+ok(ct === `Load 5th Grade · Eagles-${RUN} vs Lions-${RUN} on East Court?` && (await ph.textContent('#confirm-ok')) === 'Load', `confirm: "${ct}"`);
 await ph.click('#confirm-ok');
 await ph.waitForSelector('main.grid:not([hidden])', { timeout: 5000 }).catch(() => {});
 ok(await ph.evaluate(() => document.documentElement.dataset.view === 'game'), 'Load: the controller shows the game');

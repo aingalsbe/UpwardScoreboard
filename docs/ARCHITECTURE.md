@@ -74,3 +74,11 @@ Volunteer upkeep: none per week. Each season: update the Node base image (rebuil
 ## Update (courts, shared floor, season colors, grades, QR scorekeeping flow)
 
 Courts are now full, west and east (Full shares the floor with West and East; GAME_MINUTES default 60 with a per-game override). Statuses are scheduled/active/complete with one active game per court. Scorekeepers sign in with a weekly signed court QR (PIN fallback) and pick today's game. TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt} and /overlay variants, plus /tv/split. Season colors (Maroon #800000 / Gold #FFC72C) replace team colors; teams have grades. Full details: deliverables/UpwardScoreboard-POC.md section 3.4.
+
+## Update (2026-10): schedule screen, gender, one cheer squad per game
+
+- Schedule screen `/upwardbasketballscores/schedule` (alias `/schedule`): WebSocket `role=schedule` with `day`/`date`; the server keeps one day per socket and pushes a full day snapshot (debounced 150 ms) on every court broadcast and schedule change. Read-only. Also `GET /api/public/schedule?day=|date=`.
+- teams.gender (Boys/Girls); unique index (grade, gender, lower(name)) replaces (grade, lower(name)), created before the old one is dropped. Games must be within one grade and one gender.
+- games.cheer, cheer_logo_url, cheer_logo_data, cheer_logo_mime: one squad per game. migrateCheer() moves the legacy home_/away_cheer columns once (home wins if both; logged) and clears them.
+- Schedule warnings (team twice per Fri–Sat weekend, cheer rules, split-court hours) are computed in `scheduleWarnings()` (schedule.ts, pure) and exposed in import results, game save responses, `GET /api/games` (`warnings` per row) and `GET /api/warnings`.
+- Demo seed: `demoWeekend()` + `demoSeedPlan()` (pure, unit-tested invariants).

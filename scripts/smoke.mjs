@@ -164,7 +164,7 @@ await sk1b.cmd({ type: 'CLOCK_STOP' });
 
 console.log('8. CSV export / import');
 const tcsv = await fetch(BASE + '/api/export/teams.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-ok(tcsv.startsWith('name,short_name,grade,logo_url') && /SmokeA-/.test(tcsv), 'teams.csv exported (name, short_name, grade, logo_url; no team colors)');
+ok(tcsv.startsWith('name,short_name,grade,gender,logo_url') && /SmokeA-/.test(tcsv), 'teams.csv exported (name, short_name, grade, gender, logo_url; no team colors)');
 const imp = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,primary_color,secondary_color,logo_url\r\nCru-${RUN},CRU,#003366,#ffd700,\r\n"${T.C.name}",SC2,#14532d,#a3e635,\r\n` });
 ok(imp.body.created === 1 && imp.body.updated === 1 && imp.body.errors.length === 0, `teams.csv imported (created ${imp.body.created}, updated ${imp.body.updated})`);
 const simp = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-10-24,09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}\n2026-10-24,10:30,west,5th-6th Grade,Nobodies-${RUN},${T.A.name}\n` });
@@ -350,26 +350,27 @@ ok(putSeason.status === 200 && putSeason.body.dark === seasonNow.dark, 'season c
 const tvC = client('west', 'tv'), skC = client('west', 'score'); await Promise.all([tvC.open, skC.open]);
 skC.send({ type: 'auth', pin: PIN1, device: DEV('cheer') }); await skC.wait((m) => m.type === 'auth' && m.ok);
 tvC.msgs = []; skC.msgs = [];
-const ed1 = await api(`/api/games/${g1.id}`, { method: 'PUT', body: JSON.stringify({ swap_colors: true, home_cheer: `Cheer ${RUN}`, home_cheer_logo_url: 'https://example.org/c.png' }) });
-ok(ed1.status === 200, 'admin edit: swap colors + home cheer squad');
-const tvS = await tvC.wait((m) => m.type === 'state' && m.game?.home.cheer?.name === `Cheer ${RUN}`);
-ok(tvS.game.homeSide === 'dark' && tvS.game.swapped === true && tvS.game.home.color === seasonNow.dark && tvS.game.home.cheer.logo === 'https://example.org/c.png' && tvS.game.away.cheer === null, 'TV gets the swap (home dark) and the home cheer squad + logo; away has none');
+const ed1 = await api(`/api/games/${g1.id}`, { method: 'PUT', body: JSON.stringify({ swap_colors: true, cheer: `Cheer ${RUN}`, cheer_logo_url: 'https://example.org/c.png' }) });
+ok(ed1.status === 200, 'admin edit: swap colors + the game\'s cheer squad');
+const tvS = await tvC.wait((m) => m.type === 'state' && m.game?.cheer?.name === `Cheer ${RUN}`);
+ok(tvS.game.homeSide === 'dark' && tvS.game.swapped === true && tvS.game.home.color === seasonNow.dark && tvS.game.cheer.logo === 'https://example.org/c.png' && !('cheer' in tvS.game.home) && !('cheer' in tvS.game.away), 'TV gets the swap (home dark) and ONE cheer squad per game + logo; away has none');
 const skS = await skC.wait((m) => m.type === 'state' && m.game?.homeSide === 'dark');
-ok(!('cheer' in skS.game.home) && !('cheer' in skS.game.away) && !JSON.stringify(skS).includes(`Cheer ${RUN}`), 'scorekeeper never receives cheer squad data (but does get homeSide)');
-const badLogo = await api(`/api/games/${g1.id}`, { method: 'PUT', body: JSON.stringify({ away_cheer: 'X', away_cheer_logo_data_url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }) });
-ok(badLogo.status >= 400 && badLogo.status < 500 && (await api(`/api/games`)).body.find((g) => g.id === g1.id).away_cheer === null, `cheer logo uses team-logo validation (SVG refused, nothing saved): "${badLogo.body.error}"`);
+ok(!('cheer' in skS.game) && !('cheer' in skS.game.home) && !JSON.stringify(skS).includes(`Cheer ${RUN}`), 'scorekeeper never receives cheer squad data (but does get homeSide)');
+const badLogo = await api(`/api/games/${g1.id}`, { method: 'PUT', body: JSON.stringify({ cheer: 'X', cheer_logo_data_url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }) });
+ok(badLogo.status >= 400 && badLogo.status < 500 && (await api(`/api/games`)).body.find((g) => g.id === g1.id).cheer === `Cheer ${RUN}`, `cheer logo uses team-logo validation (SVG refused, nothing saved): "${badLogo.body.error}"`);
 const exp3 = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
 const hdr = exp3.split(/\r?\n/)[0];
 const line3 = exp3.split(/\r?\n/).find((l) => l.startsWith(g1.id + ','));
-ok(hdr.endsWith('minutes,grade,swap_colors,home_cheer,home_cheer_logo,away_cheer,away_cheer_logo') && line3.endsWith(`,true,Cheer ${RUN},https://example.org/c.png,,`), `export carries swap + cheer columns (${line3})`);
-const old = await api('/api/import/schedule.csv', { method: 'POST', body: exp3.split(/\r?\n/).map((l) => l.split(',').slice(0, 7).join(',')).join('\n') });
+ok(hdr.endsWith('minutes,grade,gender,swap_colors,cheer,cheer_logo') && line3.endsWith(`,true,Cheer ${RUN},https://example.org/c.png`), `export carries swap + cheer columns (${line3})`);
+// Only this run's game: other games (e.g. the demo seed) reuse names across grades and need the grade column.
+const old = await api('/api/import/schedule.csv', { method: 'POST', body: [hdr, line3].map((l) => l.split(',').slice(0, 7).join(',')).join('\n') });
 const g1After = (await api('/api/games')).body.find((g) => g.id === g1.id);
-ok(old.body.errors.length === 0 && old.body.created === 0 && g1After.home_cheer === `Cheer ${RUN}` && g1After.swap_colors === true, 'old-format schedule CSV (no new columns) still imports and keeps cheer/swap');
+ok(old.body.errors.length === 0 && old.body.created === 0 && g1After.cheer === `Cheer ${RUN}` && g1After.swap_colors === true, 'old-format schedule CSV (no new columns) still imports and keeps cheer/swap');
 const reX = await api('/api/import/schedule.csv', { method: 'POST', body: exp3 });
 ok(reX.body.created === 0 && reX.body.updated === 0 && reX.body.errors.length === 0, `full export with new columns re-imports unchanged (skipped ${reX.body.skipped})`);
-const clr = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,home,away,swap_colors,home_cheer\n${line3.split(',').slice(0, 4).join(',')},${T.A.name},${T.B.name},,\n` });
+const clr = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,home,away,swap_colors,cheer\n${line3.split(',').slice(0, 4).join(',')},${T.A.name},${T.B.name},,\n` });
 const g1Clr = (await api('/api/games')).body.find((g) => g.id === g1.id);
-ok(clr.body.updated === 1 && g1Clr.home_cheer === null && g1Clr.swap_colors === false && g1Clr.home_cheer_logo_url === null, 'CSV with empty swap_colors/home_cheer clears them (and the cheer logo)');
+ok(clr.body.updated === 1 && g1Clr.cheer === null && g1Clr.swap_colors === false && g1Clr.cheer_logo_url === null, 'CSV with empty swap_colors/cheer clears them (and the cheer logo)');
 tvC.ws.close(); skC.ws.close();
 // grades
 const mk = async (name, grade) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name, grade }) })).body.id;
@@ -526,16 +527,16 @@ ok(/add a grade column/.test(tiOld.body.errors[0] || ''), `old teams CSV without
 const sch = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,home,away\n,,,Dup-${RUN},Mate-${RUN}\n,,,Dup-${RUN},Twin-${RUN}\n` });
 const all17 = () => api('/api/games').then((r) => r.body);
 let g17 = (await all17()).filter((g) => [D2, D5, W2, W5, M5].some((t) => t.body.id === g.home_team_id || t.body.id === g.away_team_id));
-ok(sch.body.created === 1 && g17[0]?.home_team_id === D5.body.id && /fill the grade column/.test(sch.body.errors[0] || ''), `schedule CSV infers the grade from the unambiguous team; two ambiguous names are a row error (${sch.body.errors[0]})`);
+ok(sch.body.created === 1 && g17[0]?.home_team_id === D5.body.id && /fill the grade \(and gender\) column/.test(sch.body.errors[0] || ''), `schedule CSV infers the grade from the unambiguous team; two ambiguous names are a row error (${sch.body.errors[0]})`);
 const sch2 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away\n,,,2nd Grade,Dup-${RUN},Twin-${RUN}\n,,,3rd Grade,Dup-${RUN},Twin-${RUN}\n` });
 g17 = (await all17()).filter((g) => g.home_team_id === D2.body.id);
 ok(sch2.body.created === 1 && g17[0]?.away_team_id === W2.body.id && /unknown home team .* in 3rd Grade|within one grade/.test(sch2.body.errors[0] || ''), `schedule CSV grade column picks 2nd Grade Dup vs Twin (${sch2.body.errors[0]})`);
 const [dL, tL2] = local(nowMin + 5 * 86400_000);
-const cg = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: D5.body.id, away_team_id: M5.body.id, scheduled_at: new Date(nowMin + 5 * 86400_000).toISOString(), home_cheer: 'Dup Cheer', home_cheer_logo_data_url: tiny }) });
+const cg = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: D5.body.id, away_team_id: M5.body.id, scheduled_at: new Date(nowMin + 5 * 86400_000).toISOString(), cheer: 'Dup Cheer', cheer_logo_data_url: tiny }) });
 const CG = cg.body.id;
 const ex17 = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
 const hdr17 = ex17.split(/\r?\n/)[0], line17 = ex17.split(/\r?\n/).find((l) => l.startsWith(CG + ','));
-const logoUrl = (line17 || '').match(/https?:\/\/[^,]*\/logos\/cheer\/\d+\/home/)?.[0];
+const logoUrl = (line17 || '').match(/https?:\/\/[^,]*\/logos\/cheer\/\d+/)?.[0];
 const lr = logoUrl ? await fetch(logoUrl) : { status: 0 };
 ok(cg.status === 201 && logoUrl && lr.status === 200, `uploaded cheer logo exported as an absolute served URL (${logoUrl})`);
 const re17 = await api('/api/import/schedule.csv', { method: 'POST', body: hdr17 + '\n' + line17 + '\n' });
@@ -543,11 +544,11 @@ const lr2 = await fetch(logoUrl);
 ok(re17.body.skipped === 1 && !re17.body.errors.length && lr2.status === 200, `re-importing the export keeps the uploaded cheer logo (${JSON.stringify(re17.body)})`);
 console.log('18. Round 4 CSV + ticker fixes');
 const [dX, tX] = local(nowMin + 6 * 86400_000);
-const copyR4 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away,home_cheer,home_cheer_logo\n${dX},${tX},${fc.slug},5th Grade,Mate-${RUN},Dup-${RUN},Copy Cheer,${logoUrl}\n` });
+const copyR4 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away,cheer,cheer_logo\n${dX},${tX},${fc.slug},5th Grade,Mate-${RUN},Dup-${RUN},Copy Cheer,${logoUrl}\n` });
 const copiedR4 = (await all17()).find((g) => g.home_team_id === M5.body.id);
-ok(copyR4.body.created === 1 && /warning: home_cheer_logo points to the uploaded logo of game #\d+; it was not copied/.test(copyR4.body.errors[0] || '') && copiedR4 && !copiedR4.home_cheer_logo_url && !copiedR4.home_cheer_has_logo, `copiedR4 row: another game's uploaded logo is not carried over (${copyR4.body.errors[0]})`);
+ok(copyR4.body.created === 1 && /warning: cheer_logo points to the uploaded logo of game #\d+; it was not copied/.test(copyR4.body.errors[0] || '') && copiedR4 && !copiedR4.cheer_logo_url && !copiedR4.cheer_has_logo, `copiedR4 row: another game's uploaded logo is not carried over (${copyR4.body.errors[0]})`);
 const blankR4 = line17.split(',');
-const hiR4 = hdr17.split(',').indexOf('home_cheer_logo'); blankR4[hiR4] = '';
+const hiR4 = hdr17.split(',').indexOf('cheer_logo'); blankR4[hiR4] = '';
 const clrR4 = await api('/api/import/schedule.csv', { method: 'POST', body: hdr17 + '\n' + blankR4.join(',') + '\n' });
 const lr3R4 = await fetch(logoUrl);
 ok(clrR4.body.updated === 1 && lr3R4.status === 404, `clearing the cheer logo cell removes the uploaded logo (${JSON.stringify(clrR4.body)}, logo ${lr3R4.status})`);
@@ -566,6 +567,74 @@ for (const id of [GA, GB, GC]) await api(`/api/games/${id}`, { method: 'DELETE' 
 await api(`/api/courts/${fc.id}`, { method: 'DELETE' });
 // leave the floor free for the next run / the e2e tests
 await api(`/api/games/${g1.id}/complete`, { method: 'POST' }); await api(`/api/games/${g2.id}/complete`, { method: 'POST' });
+
+console.log('19. Gender / division, schedule warnings, schedule screen (route + live), home listed first');
+{
+  const T = (b) => api('/api/teams', { method: 'POST', body: JSON.stringify(b) });
+  const gb = await T({ name: `Gx-${RUN}`, grade: '3rd Grade', gender: 'Boys' }), gg = await T({ name: `Gx-${RUN}`, grade: '3rd Grade', gender: 'girls' });
+  ok(gb.status === 201 && gg.status === 201, 'same name in one grade is allowed once per gender (Boys + Girls)');
+  const gd = await T({ name: `gx-${RUN}`, grade: '3rd Grade', gender: 'Boys' });
+  ok(gd.status === 409 && /unique within a grade and gender/.test(gd.body.error), `duplicate grade + gender + name rejected (${gd.body.error})`);
+  ok((await T({ name: `Bad-${RUN}`, grade: '3rd Grade', gender: 'coed' })).status === 400, 'gender must be Boys or Girls');
+  const b2 = await T({ name: `Hx-${RUN}`, grade: '3rd Grade', gender: 'Boys' });
+  const teams19 = (await api('/api/teams')).body;
+  ok(teams19.find((t) => t.id === gg.body.id)?.gender === 'Girls', 'teams API returns the gender (normalized)');
+  const mix = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: (await api('/api/courts')).body.find((c) => c.slug === 'west').id, home_team_id: gb.body.id, away_team_id: gg.body.id }) });
+  ok(mix.status === 400 && /one gender/.test(mix.body.error), `a game must be within one gender (${mix.body.error})`);
+  const ti = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,grade,gender\nIx-${RUN},IX,3rd Grade,Girls\nGx-${RUN},GXG,3rd Grade,Girls\n` });
+  ok(ti.body.created === 1 && ti.body.updated === 1 && !ti.body.errors.length, `teams CSV gender column: creates + matches by grade + gender + name (${JSON.stringify(ti.body)})`);
+  const exT = await fetch(BASE + '/api/export/teams.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
+  ok(/^name,short_name,grade,gender,logo_url/.test(exT) && exT.includes(`Gx-${RUN},GXG,3rd Grade,Girls`), 'teams export has the gender column');
+  // Schedule CSV: gender column picks the right Gx team; warnings for team twice in a weekend, split hours, cheer rules.
+  const FRI = '2031-01-03', SAT = '2031-01-04';
+  const si = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away,home_cheer\n${SAT},09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN},Sx Cheer\n${SAT},09:00,east,3rd Grade,Girls,Gx-${RUN},Ix-${RUN},\n${FRI},18:00,east,3rd Grade,Boys,Hx-${RUN},Gx-${RUN},Fri Cheer\n${SAT},10:00,west,3rd Grade,Girls,Gx-${RUN},Hx-${RUN},\n` });
+  const w19 = si.body.warnings || [];
+  const leg = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away,home_cheer,away_cheer\n${SAT},09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN},Sx Cheer,Other Cheer\n` });
+  ok(leg.body.skipped === 1 && (leg.body.warnings || []).some((w) => /two cheer squads .* kept "Sx Cheer"/.test(w)), `legacy home_cheer + away_cheer: one squad kept (home) with a warning (${(leg.body.warnings || [])[0]})`);
+  ok(si.body.created === 3 && w19.some((w) => /Gx-\w+ plays 2 times this weekend/.test(w)) && w19.some((w) => /outside the split-court hours/.test(w)) && w19.some((w) => /only on Saturday split-court/.test(w)),
+    `schedule import: 3 games + warnings (twice in a weekend, split hours, cheer) (${w19.length} warnings)`);
+  ok(si.body.errors.some((e) => /row 5: .*(one gender|doesn't match|unknown away)/.test(e)), `schedule CSV gender column rejects a mixed / wrong-gender row (${si.body.errors[0]})`);
+  const games19 = (await api('/api/games')).body.filter((g) => [gb.body.id, gg.body.id, b2.body.id].includes(g.home_team_id));
+  const satW = games19.find((g) => g.court === 'West');
+  ok(satW && satW.label === '3rd Grade Boys' && satW.gender === 'Boys' && satW.warnings.some((w) => /plays 2 times/.test(w)), `games API: label "${satW?.label}" + per-game warnings`);
+  ok((await api('/api/warnings')).body.some((w) => w.gameId === satW.id), '/api/warnings lists them');
+  const exS = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
+  const hS = exS.split(/\r?\n/)[0].split(',');
+  ok(hS.indexOf('home') < hS.indexOf('away') && hS.indexOf('home_score') < hS.indexOf('away_score') && hS.includes('gender'), 'schedule export: home before away (names + scores), gender column');
+  // Schedule screen: routes, snapshot, live updates.
+  for (const u of ['/schedule', '/upwardbasketballscores/schedule', '/schedule?day=sat']) ok((await fetch(BASE + u)).status === 200, `GET ${u} serves the schedule screen`);
+  const snap19 = (await api(`/api/public/schedule?date=${SAT}`)).body;
+  const sg = snap19.games.find((g) => g.id === satW.id);
+  ok(snap19.dayLabel === 'Saturday, Jan 4' && snap19.title === 'LBC Upward' && sg && sg.label === '3rd Grade Boys' && sg.time === '09:00' && sg.court === 'west' && sg.home.name === `Gx-${RUN}` && sg.home.side === 'light' && sg.away.side === 'dark' && sg.cheer?.name === 'Sx Cheer',
+    'schedule snapshot: day label, time, court, label, home first in Gold (light), cheer');
+  ok((await api('/api/public/schedule?day=fri')).body.dayLabel.startsWith('Friday'), '?day=fri resolves to a Friday');
+  const sc = client('*', `schedule&date=${SAT}`); await sc.open;
+  const first = await sc.wait((m) => m.type === 'state' && m.kind === 'schedule');
+  ok(first.date === SAT && first.games.some((g) => g.id === satW.id), 'schedule WebSocket sends the day snapshot on connect');
+  await api(`/api/games/${satW.id}`, { method: 'PUT', body: JSON.stringify({ swap_colors: true }) });
+  const sw = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.swapped);
+  const swg = sw.games.find((g) => g.id === satW.id);
+  ok(swg.home.side === 'dark' && swg.home.name === `Gx-${RUN}`, 'swap changes colors only: home stays first, now in Maroon (dark)');
+  for (const g of (await api('/api/games')).body.filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
+  await api(`/api/games/${satW.id}/start`, { method: 'POST' });
+  ok(!!(await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.status === 'active').catch(() => null)), 'schedule updates live when a game becomes active');
+  const sk19 = client('west', 'score'); await sk19.open;
+  sk19.send({ type: 'auth', pin: PIN1, device: DEV('sk19') }); await sk19.wait((m) => m.type === 'auth' && m.ok);
+  await sk19.cmd({ type: 'SCORE', team: 'home', pts: 2 });
+  const sl = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.home.score === 2).catch(() => null);
+  ok(sl && sl.games.find((g) => g.id === satW.id).clock && sl.games.find((g) => g.id === satW.id).period === 1, 'live score + clock + period reach the schedule screen');
+  await api(`/api/games/${satW.id}/complete`, { method: 'POST' });
+  const fin = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.status === 'complete').catch(() => null);
+  ok(fin && fin.games.find((g) => g.id === satW.id).home.score === 2, 'complete shows the final score on the schedule');
+  const sc2 = client('*', 'schedule&date=2031-01-05'); await sc2.open;
+  const other = await sc2.wait((m) => m.kind === 'schedule');
+  ok(other.games.every((g) => g.id !== satW.id) && other.dayLabel === 'Sunday, Jan 5', 'a schedule screen only gets its own day');
+  sc2.send({ type: 'cmd', id: 'x', cmd: { type: 'SCORE', team: 'home', pts: 2 } });
+  ok(/read-only/.test((await sc2.wait((m) => m.type === 'error')).error), 'schedule screen is read-only');
+  sc.ws.close(); sc2.ws.close(); sk19.ws.close();
+  for (const g of (await api('/api/games')).body.filter((g) => [gb.body.id, gg.body.id, b2.body.id].includes(g.home_team_id))) await api(`/api/games/${g.id}`, { method: 'DELETE' });
+  for (const t of (await api('/api/teams')).body.filter((t) => t.name.endsWith(`x-${RUN}`))) await api(`/api/teams/${t.id}`, { method: 'DELETE' });
+}
 
 for (const c of [tv1b, tv2, sk1b, sk1c, sk2]) c.ws.close();
 console.log(`\nSmoke result: ${pass} passed, ${fail} failed`);

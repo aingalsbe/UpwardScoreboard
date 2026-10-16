@@ -76,3 +76,12 @@ Recommendation: pilot with **A on the TV only**. Add B once a volunteer owns OBS
 ## Update (courts, shared floor, season colors, grades, QR scorekeeping flow)
 
 Courts are now full, west and east (Full shares the floor with West and East; GAME_MINUTES default 60 with a per-game override). Statuses are scheduled/active/complete with one active game per court. Scorekeepers sign in with a weekly signed court QR (PIN fallback) and pick today's game. TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt} and /overlay variants, plus /tv/split. Season colors (Maroon #800000 / Gold #FFC72C) replace team colors; teams have grades. Full details: deliverables/UpwardScoreboard-POC.md section 3.4.
+
+## Update (2026-10)
+
+- ✅ Lobby schedule screen: /upwardbasketballscores/schedule (alias /schedule), all courts for one day, live, fits one 1920x1080 screen (moves/pages to keep live + next in view, reduced-motion aware, offline like the TV).
+- ✅ Gender (Boys/Girls) on teams, CSVs, Admin and every display ("3rd Grade Girls · Eagles vs Lions"); names unique per grade + gender + name.
+- ✅ One cheer squad per game (was per side); shown on the TV and schedule, never on the scorekeeper.
+- ✅ Schedule warnings in import and Admin (team twice in a weekend, cheer rules, split-court hours).
+- ✅ Home team always listed first, home on the left.
+- ✅ Demo weekend seed (Fri Full Court evening, Sat West/East 08–16 then Full Court). Details: deliverables/UpwardScoreboard-POC.md section 3.5.

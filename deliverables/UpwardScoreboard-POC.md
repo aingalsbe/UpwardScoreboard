@@ -177,9 +177,9 @@ Contrast of the season colors (WCAG ratio, 4.5:1 is the minimum for text):
 | Gold on the dark TV background #1b2340 | 9.89:1 |
 | Maroon on the dark TV background | 1.41:1 (too low; the TV lightens it automatically for text and rings) |
 
-Church and cheer squads. The TV shows the church logo (CHURCH_LOGO_URL setting) and name (Lenexa Baptist Church). Each game can have an optional cheer squad per side, with a name and a logo (URL or upload, same checks as team logos). They show on the TV under the team name, not on the overlay, and never on the scorekeeper page.
+Church and cheer squads. The TV shows the church logo (CHURCH_LOGO_URL setting) and name (Lenexa Baptist Church). Each game can have one optional cheer squad (one per game, not per side; changed 2026-10), with a name and a logo (URL or upload, same checks as team logos). It shows as one line on the TV (center column) and on the schedule screen, not on the overlay, and never on the scorekeeper page.
 
-Grades. Each team has a grade (seeded: 2nd, 3rd, 4th and 5th Grade). A game must be within one grade; mixed-grade games are refused in CSV import and in Admin. The grade shows on the TV, overlay and scorekeeper, for example "5th Grade · Eagles vs Lions".
+Grades. Each team has a grade (seeded: 2nd, 3rd, 4th and 5th Grade). A game must be within one grade; mixed-grade games are refused in CSV import and in Admin. Each team also has a gender (Boys or Girls), and a game must be within one grade and one gender. The grade and gender show on the TV, overlay, schedule and scorekeeper, for example "3rd Grade Girls · Eagles vs Lions" (home team first).
 
 Scorekeeping flow (Aaron's Saturday):
 
@@ -218,6 +218,63 @@ What Avery should test in this batch:
 7. Export the schedule, mark a never-started game complete with scores, re-import.
 8. /tv/split on the real TV from across the gym.
 
+### 3.5 Lobby schedule screen, gender, warnings and the demo weekend (2026-10)
+
+**Screens and routes**
+
+| Screen | Address | Notes |
+|---|---|---|
+| Scorekeeper | /score/{full,west,east} | PIN or weekly QR; picker lists today's games on the court, else the court's next game day within a week (with the day shown) |
+| TV | /upwardbasketballscores/{full,west,east}court (also /tv/<court>) | Home team on the left, always |
+| Overlay (OBS) | /upwardbasketballscores/<court>court/overlay | Transparent 1920x1080 |
+| West + East on one TV | /upwardbasketballscores/split (also /tv/split) | West left, East right; each half home-left |
+| **Schedule (lobby TV)** | **/upwardbasketballscores/schedule**, alias **/schedule** | All courts, one day; ?day=fri, ?day=sat (demo weekend) or ?date=YYYY-MM-DD; default today (America/Chicago) |
+| Admin | /admin | Password |
+
+**Schedule screen features.** A 1920x1080 lobby TV, live over the same WebSocket as the TV (role=schedule, subscribed to every court): any score, clock, status (load, complete, reopen) or schedule change (Admin edit, import, delete, season colors) pushes a fresh snapshot within ~150 ms. Header: "LBC Upward", the church name and the day ("Saturday, Oct 17"). Two columns, West Court and East Court, for the split block, one slot per hour; Full Court games are rows spanning both columns in time order (on Saturday after the split block, at 16:30). States: complete shows ✓ FINAL with the final score (winner marked); active is highlighted with ● LIVE, the live score, period and running clock (server time, frozen while offline); upcoming shows the time, both teams in season colors (home Gold/light, away Maroon/dark, swapped per game when Swap colors is on; order never changes), the grade + gender label ("3rd Grade Girls"), the cheer squad if set, and 🕒 UP NEXT on each court's next game. If the day doesn't fit, the track moves so the slot before the first open game is at the top ("▲ N earlier finals" above), and if the live and next games still don't fit it pages every 12 s; the motion is a CSS transition that is off under prefers-reduced-motion. Offline/reconnect is the same as the TV (data-conn on the root, connecting/offline/online).
+
+![Schedule, Saturday](screenshots/schedule-sat.png)
+
+![Schedule, Friday](screenshots/schedule-fri.png)
+
+**Gender.** Teams have a gender (Boys/Girls) in Admin (Teams), teams.csv and schedule.csv. Team names are unique per grade + gender + name (migration: the new unique index is a superset of the old grade + name one, created first, then the old one is dropped, so existing data always fits). A game must be within one grade and one gender (Admin and import refuse mixed games). The label "3rd Grade Girls" is shown on the TV header, the overlay, the scorekeeper header, picker and dialogs, Admin and the schedule.
+
+**Home team first.** Everywhere a matchup or score is shown, the home team is listed first ("Eagles vs Lions" = Eagles at home) and is on the left of side-by-side boards; Swap colors changes colors only. Audit (2026-10): TV, overlay, split, scorekeeper (header, picker, load/complete dialogs), Admin tables, CSV exports (home before away, home_score before away_score), the ticker and the new schedule all already list home first; nothing needed flipping. Sage pinned home-left in the TV and overlay CSS (dff4e1d). A unit test checks the markup order and the text templates; smoke checks the export header and the schedule order (also after a swap).
+
+**Warnings (not errors)** in Admin (Schedule: a warning list and a ⚠ tag per game; saving a game shows its warnings) and in CSV import results: a team playing twice in one Fri–Sat weekend; a cheer squad on a game that isn't 2nd–4th grade, or isn't a Saturday split-court game (West/East, 08:00–16:00); a West/East game that starts before 08:00 or ends after 16:00. GET /api/warnings lists them all.
+
+**Demo weekend seed** (SEED=demo, seed-demo.js, Start-Demo.ps1 -Reseed; the sheets-templates example schedule is generated from the same plan by scripts/gen-templates.mjs). Season 2026–27 Upward, Maroon/Gold, Lenexa Baptist Church. The weekend is chosen relative to today in America/Chicago: today + tomorrow on a Friday, yesterday + today on a Saturday, otherwise the upcoming Friday and Saturday (for Fri Oct 16, 2026 that is Oct 16–17).
+
+- Friday: Full Court 17:30, 18:30, 19:30. Saturday: West + East hourly 08:00–15:00 (last game ends 16:00), 16 games; then Full Court 16:30, 17:30, 18:30. All Full Court games are 5th–6th grade.
+- Every team plays exactly once (2 new teams per game, 44 teams); all games stay scheduled.
+- Boys/Girls split evenly: each Saturday hour has one Boys and one Girls game (West Boys / East Girls at 08, 10, 12, 14; swapped at 09, 11, 13, 15), so 8 + 8; Full Court 3 Boys + 3 Girls across 5th and 6th grade.
+- Cheer squads (one per game) on four Saturday split games, all 2nd–4th grade: 09:00 West, 11:00 East, 12:00 West, 14:00 East.
+
+**Uneven split decision.** 16 split games over three grades can't divide evenly (16/3). Youngest first, the 2nd and 3rd graders get 3 hours each (6 games: 08–10 and 11–13) and the 4th graders get 2 hours (4 games: 14–15). Reason: keep whole hours per grade so both courts always run the same grade (simpler gym flow and parents of one grade arrive together), give the younger grades (bigger Upward turnout, earlier bedtimes) the larger share, and let the 4th graders, who are closest in age to the 5th–6th Full Court block, play last right before it.
+
+| Slot | West | East |
+|---|---|---|
+| Fri 17:30 | Full: 5th Grade Boys · Eagles vs Lions | |
+| Fri 18:30 | Full: 5th Grade Girls · Stars vs Comets | |
+| Fri 19:30 | Full: 6th Grade Boys · Eagles vs Lions | |
+| Sat 08:00 | 2nd Grade Boys · Eagles vs Lions | 2nd Grade Girls · Stars vs Comets |
+| Sat 09:00 | 2nd Grade Girls · Lightning vs Sparks · cheer Lenexa Lil Cheer | 2nd Grade Boys · Bears vs Hawks |
+| Sat 10:00 | 2nd Grade Boys · Tigers vs Rams | 2nd Grade Girls · Hornets vs Cardinals |
+| Sat 11:00 | 3rd Grade Girls · Stars vs Comets | 3rd Grade Boys · Eagles vs Lions · cheer LBC Sparkle Squad |
+| Sat 12:00 | 3rd Grade Boys · Bears vs Hawks · cheer Joyful Noise Cheer | 3rd Grade Girls · Lightning vs Sparks |
+| Sat 13:00 | 3rd Grade Girls · Hornets vs Cardinals | 3rd Grade Boys · Tigers vs Rams |
+| Sat 14:00 | 4th Grade Boys · Eagles vs Lions | 4th Grade Girls · Stars vs Comets · cheer LBC Spirit Cheer |
+| Sat 15:00 | 4th Grade Girls · Lightning vs Sparks | 4th Grade Boys · Bears vs Hawks |
+| Sat 16:30 | Full: 6th Grade Girls · Stars vs Comets | |
+| Sat 17:30 | Full: 6th Grade Boys · Bears vs Hawks | |
+| Sat 18:30 | Full: 5th Grade Girls · Lightning vs Sparks | |
+
+(Team names repeat across divisions on purpose, like a real league: 2nd Grade Boys Eagles and 3rd Grade Boys Eagles are different teams.)
+
+**Tests (2026-10, freshly rebuilt container):** unit 23/23 (gender, demo weekend, seed invariants, warnings, home-first markup/templates); smoke 169/169 run twice on the same used database (gender, warnings incl. legacy two-cheer CSV, schedule routes, snapshot, live updates on swap/start/score/complete, read-only, home first); browser flow 19/19, lockout 8/8, offline 11/11; latency median 8.7 ms, p95 10.7 ms. The cheer migration was verified on the box's old data (3 games moved, 2 with both sides set kept home and were logged).
+
+**Hooks for Sage** (functional markup only; schedule.css is a minimal placeholder for Sage to replace). Structure matches docs/mockups/schedule-structure.md: root `data-conn` (connecting|online|offline), `data-day` (fri|sat|…), `data-date`, `data-page` (0-based), `data-pages`, `--offset` (and `--page`) in px, class `overflows`, `has-active`; `.sched-track` also gets `--offset` + `data-page`; `.heads` hidden when the day has no split games; `.earlier` text "▲ N earlier finals" (empty when none); `.foot` gets one `<i>` per page (`.on` = current), empty with one page. Per game: `.court-col[data-court=west|east] > .slot[data-time]` (empty slot keeps rows aligned: `data-empty`), `.full-row > .slot > .game[data-span=full]`, `.game[data-state=complete|active|upcoming]`, `[data-winner=home|away|tie]` on complete, `[data-next=true]` on each court's next game, `[data-swapped]`, `[data-court]`, `[data-game-id]`, class `has-cheer`; chips `.chip.home` / `.chip.away` with `data-wear=light|dark` and `--team-color` / `--team-accent` (colors only); `.score` for active/complete, `.score.vs` for upcoming; `.pc` (period + clock) only on active; `.cheer` (img `cheer-logo` + `cheer-name`) only with a squad. data-binds: time, grade-label, home-name, away-name, home-score, away-score, cheer, cheer-logo, period, clock, status-tag, brand, church-name, day, connText, earlier. TV: one `.cheer` in `section.center` after `.poss` (binds cheer / cheer-logo, root `has-cheer`); per-side cheer binds retired. Admin: new Gender select (Teams form), Gender column, `#schedule-warnings` box, `.warn-tag` and `tr.has-warning` in game rows, single cheer fieldset (unstyled additions).
+
 ## 4. Architecture and stack rationale
 
 ![System architecture](diagrams/architecture.png)
@@ -241,9 +298,9 @@ UI files owned by Sage: public/tv.css, public/tv.html, public/overlay.css, publi
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| teams | League teams | name (unique within a grade, ignoring case), short_name, grade, grade_order, logo_url, logo_data, logo_mime (primary_color and secondary_color are kept but unused) |
+| teams | League teams | name (unique per grade + gender, ignoring case), short_name, grade, grade_order, gender (Boys, Girls or empty), logo_url, logo_data, logo_mime (primary_color and secondary_color are kept but unused) |
 | courts | Physical courts | slug (unique, used in links and PINs), name, location, conflicts_with (courts sharing the floor), qr_version, current_game_id |
-| games | Scheduled and played games | court_id, home_team_id, away_team_id, scheduled_at, division, status (scheduled, active, complete; at most one active game per court), duration_min, swap_colors, home and away cheer name and logo, theme (advanced matchup overrides), rules, history (live state plus undo), final_home, final_away |
+| games | Scheduled and played games | court_id, home_team_id, away_team_id, scheduled_at, division, status (scheduled, active, complete; at most one active game per court), duration_min, swap_colors, cheer (one squad per game: cheer, cheer_logo_url or an uploaded logo), theme (advanced matchup overrides), rules, history (live state plus undo), final_home, final_away |
 | game_events | Change log for each game | game_id, seq, client_cmd_id, actor, command, created_at |
 | settings | League settings | season_name, season_dark, season_light |
 
@@ -350,8 +407,8 @@ Files in sheets-templates/. They match the POC importer exactly. Import them in 
 | File | Columns | Import behavior |
 |---|---|---|
 | courts.csv | slug, name, location, conflicts_with (required: slug, name) | Matched by slug: adds new courts, updates changed ones, skips identical ones. slug must be lowercase letters, digits and dashes. conflicts_with lists the courts sharing the floor, separated by spaces or semicolons (full has "west east"); it works both ways. Scorekeeper PINs are set separately (COURT_PINS) |
-| teams.csv | name, short_name, grade, logo_url (required: name) | Matched by grade + name, so 2nd Grade Eagles and 5th Grade Eagles are separate teams: adds, updates or skips. An old file without a grade column matches by name only, and a name that exists in two grades is a row error. A team with no grade yet is given the grade from the file. grade accepts 5, 5th or 5th Grade (K for Kindergarten). Old files with primary_color and secondary_color still import; those columns are ignored. logo_url must be http(s) or empty |
-| schedule.csv | id, date, time, court, grade, division, home, away, minutes, swap_colors, home_cheer, home_cheer_logo, away_cheer, away_cheer_logo (required columns: date, time, court, home, away; all others optional, so old files still import) | Keep the id column when you edit an exported sheet: it is how a game whose time, court or teams changed is updated instead of added again. Leave id blank only for new games. If id is filled (from an export), that game is updated. Otherwise games are matched by court + start time + home + away, which the database enforces as unique. Duplicate rows in one file are skipped. date is YYYY-MM-DD, time is HH:MM in league time (America/Chicago), court must be an existing court slug (unknown courts are a row error, not created), home and away must be existing teams in the same grade. Teams are found by grade + name: with the grade column filled, that grade is used; without it, a team name that exists in only one grade is used, and a name that exists in several grades takes the other team's grade; if that still leaves a choice, the row is an error asking for the grade column. minutes overrides GAME_MINUTES for that game. swap_colors is yes/no. A row that overlaps a game on a shared-floor court is a row error naming that game. Cheer logos must be http(s) URLs. In exports, an uploaded cheer logo is written as the full address of the served file (for example https://host/logos/cheer/12/home); re-importing it keeps the upload unchanged. A game that is not scheduled yet can have date and time both empty (and court empty); exports write such games that way and they re-import cleanly |
+| teams.csv | name, short_name, grade, gender, logo_url (required: name) | gender is Boys or Girls (b/g accepted); with the column, teams match by grade + gender + name. Matched by grade + name, so 2nd Grade Eagles and 5th Grade Eagles are separate teams: adds, updates or skips. An old file without a grade column matches by name only, and a name that exists in two grades is a row error. A team with no grade yet is given the grade from the file. grade accepts 5, 5th or 5th Grade (K for Kindergarten). Old files with primary_color and secondary_color still import; those columns are ignored. logo_url must be http(s) or empty |
+| schedule.csv | id, date, time, court, grade, gender, division, home, away, minutes, swap_colors, cheer, cheer_logo (required columns: date, time, court, home, away; all others optional, so old files still import) | Keep the id column when you edit an exported sheet: it is how a game whose time, court or teams changed is updated instead of added again. Leave id blank only for new games. If id is filled (from an export), that game is updated. Otherwise games are matched by court + start time + home + away, which the database enforces as unique. Duplicate rows in one file are skipped. date is YYYY-MM-DD, time is HH:MM in league time (America/Chicago), court must be an existing court slug (unknown courts are a row error, not created), home and away must be existing teams in the same grade. Teams are found by grade + name: with the grade column filled, that grade is used; without it, a team name that exists in only one grade is used, and a name that exists in several grades takes the other team's grade; if that still leaves a choice, the row is an error asking for the grade column. minutes overrides GAME_MINUTES for that game. swap_colors is yes/no. A row that overlaps a game on a shared-floor court is a row error naming that game. Cheer logos must be http(s) URLs. In exports, an uploaded cheer logo is written as the full address of the served file (for example https://host/logos/cheer/12). One cheer squad per game: older files with home_cheer/away_cheer still import (whichever is set; if both are set, home is kept and the row gets a warning). The gender column picks the right team when a name exists in both genders; a Boys vs Girls game is a row error. Rows that import may still get warnings: a team twice in one Fri–Sat weekend, a cheer squad on a game that isn't 2nd–4th grade or isn't a Saturday West/East game between 08:00 and 16:00, a West/East game outside 08:00–16:00; re-importing it keeps the upload unchanged. A game that is not scheduled yet can have date and time both empty (and court empty); exports write such games that way and they re-import cleanly |
 
 A file missing a required column is rejected as a whole with a message naming the column. Every bad row is reported with its row number; good rows still import. Re-importing the same file, or an export, changes nothing (all rows reported as skipped).
 
