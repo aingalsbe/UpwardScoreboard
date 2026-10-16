@@ -26,7 +26,7 @@ export interface Clock { running: boolean; remainingMs: number; startedAt: numbe
 
 export interface GameState {
   seq: number;              // increments on every accepted change
-  status: 'scheduled' | 'live' | 'final';
+  status: 'scheduled' | 'active' | 'complete';
   period: number;
   clock: Clock;
   home: TeamState;
@@ -52,7 +52,8 @@ export type Command =
   | { type: 'POSSESSION'; team: Side | 'toggle' | null }
   | { type: 'BANNER'; text: string | null }
   | { type: 'START_GAME' }
-  | { type: 'END_GAME' };
+  | { type: 'END_GAME' }
+  | { type: 'REOPEN' };
 
 export interface History { present: GameState; past: GameState[]; future: GameState[]; }
 
@@ -119,7 +120,7 @@ export function apply(s: GameState, c: Command, now: number): GameState {
     case 'CLOCK_START':
       if (s.clock.running || remainingMs(s.clock, now) <= 0) return s;
       next.clock = { running: true, remainingMs: s.clock.remainingMs, startedAt: now };
-      if (next.status === 'scheduled') next.status = 'live';
+      if (next.status === 'scheduled') next.status = 'active';
       next.banner = null; label = 'Clock start'; break;
     case 'CLOCK_STOP':
       if (!s.clock.running) return s;
@@ -163,10 +164,13 @@ export function apply(s: GameState, c: Command, now: number): GameState {
       next.banner = c.text ? String(c.text).slice(0, 40) : null; label = 'Banner'; break;
     case 'START_GAME':
       if (s.status !== 'scheduled') return s;
-      next.status = 'live'; label = 'Game started'; break;
+      next.status = 'active'; label = 'Game started'; break;
     case 'END_GAME':
-      if (s.status === 'final') return s;
-      next.clock = frozen(s.clock, now); next.status = 'final'; next.banner = 'FINAL'; label = 'Game ended'; break;
+      if (s.status === 'complete') return s;
+      next.clock = frozen(s.clock, now); next.status = 'complete'; next.banner = 'FINAL'; label = 'Game completed'; break;
+    case 'REOPEN': // admin only (the server never accepts it from a scorekeeper)
+      if (s.status !== 'complete') return s;
+      next.status = 'active'; next.banner = null; label = 'Game reopened'; break;
     default:
       throw new Error('Unknown command');
   }
@@ -232,4 +236,12 @@ export function parseCommand(x: any): Command {
     case 'BANNER': return { type: 'BANNER', text: x.text == null ? null : String(x.text) };
     default: throw new Error('unknown command');
   }
+}
+
+/** Older builds used 'live'/'final'; map stored histories to 'active'/'complete'. */
+export function normalizeStatus<T>(h: T): T {
+  const fix = (st: any) => { if (st && st.status === 'live') st.status = 'active'; else if (st && st.status === 'final') st.status = 'complete'; };
+  const x: any = h; if (!x) return h;
+  fix(x.present); (x.past || []).forEach(fix); (x.future || []).forEach(fix);
+  return h;
 }

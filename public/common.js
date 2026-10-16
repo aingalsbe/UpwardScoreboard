@@ -2,7 +2,12 @@
 // - Always receives a full snapshot from the server on (re)connect = exact resync.
 // - Estimates server clock offset from ping round-trips; the clock is computed
 //   from server timestamps, never by counting ticks locally.
-export function courtFromPath() { return decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || ''); }
+export function courtFromPath() {
+  const seg = location.pathname.split('/').filter(Boolean);
+  // /upwardbasketballscores/westcourt -> west ; /tv/west, /score/west, /overlay/west -> west
+  if (seg[0] === 'upwardbasketballscores') return decodeURIComponent(seg[1] || '').replace(/court$/, '');
+  return decodeURIComponent(seg[1] || '');
+}
 
 // Liveness: browsers can't see protocol-level pings, so we send an app-level ping every
 // second and treat ~3s of silence (no pong/state/time message) as a dead connection. That

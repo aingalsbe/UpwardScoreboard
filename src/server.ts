@@ -12,8 +12,10 @@ import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
-  History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus,
+  History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
 } from './game.js';
+import QRCode from 'qrcode';
+import { makeQrToken, verifyQrToken, weekEnd } from './qr.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -86,11 +88,13 @@ const runtimes = new Map<number, Runtime>();
 async function getRuntime(gameId: number): Promise<Runtime> {
   let rt = runtimes.get(gameId);
   if (rt) return rt;
-  const { rows } = await pool.query('SELECT history, rules FROM games WHERE id=$1', [gameId]);
+  const { rows } = await pool.query('SELECT history, rules, status FROM games WHERE id=$1', [gameId]);
   if (!rows.length) throw new Error('game not found');
   rt = runtimes.get(gameId); // another caller may have loaded it meanwhile
   if (rt) return rt;
-  rt = { history: rows[0].history ?? newHistory(initialState(rows[0].rules || {})), queue: Promise.resolve(), seen: [] };
+  const h: History = normalizeStatus(rows[0].history) ?? newHistory(initialState(rows[0].rules || {}));
+  h.present.status = rows[0].status; // the games.status column is authoritative (imports, migrations)
+  rt = { history: h, queue: Promise.resolve(), seen: [] };
   runtimes.set(gameId, rt);
   armClock(gameId, rt);
   return rt;
@@ -111,18 +115,24 @@ async function mutate(gameId: number, actor: string, cmdId: string | null, op: O
   const run = rt.queue.then(async () => {
     if (cmdId && rt.seen.includes(cmdId)) return { seq: rt.history.present.seq, dup: true }; // retry-safe
     const before = rt.history;
+    // Complete locks the final score: no commands, no undo/redo. Only an admin REOPEN gets through.
+    if (before.present.status === 'complete' && (logged as any)?.type !== 'REOPEN') throw new HttpError(409, 'This game is complete. The final score is locked (an admin can reopen it).');
     const after = op(before);
     if (cmdId) { rt.seen.push(cmdId); if (rt.seen.length > 500) rt.seen.shift(); }
     if (after === before) return { seq: before.present.seq };
     const p = after.present;
     await pool.query(
       `UPDATE games SET history=$2, status=$3, final_home=$4, final_away=$5, updated_at=now() WHERE id=$1`,
-      [gameId, after, p.status, p.status === 'final' ? p.home.score : null, p.status === 'final' ? p.away.score : null]);
+      [gameId, after, p.status, p.status === 'complete' ? p.home.score : null, p.status === 'complete' ? p.away.score : null]);
     await pool.query('INSERT INTO game_events(game_id, seq, client_cmd_id, actor, command) VALUES ($1,$2,$3,$4,$5)',
       [gameId, p.seq, cmdId, actor, JSON.stringify(logged)]);
     rt.history = after;
     armClock(gameId, rt);
-    await broadcastGame(gameId);
+    if (p.status === 'complete' && before.present.status !== 'complete') {
+      // court goes idle ("Next up") the moment a game is completed
+      const { rows } = await pool.query('UPDATE courts SET current_game_id=NULL WHERE current_game_id=$1 RETURNING slug', [gameId]);
+      for (const r of rows) await broadcastCourt(r.slug);
+    } else await broadcastGame(gameId);
     return { seq: p.seq };
   });
   rt.queue = run.catch(() => undefined);
@@ -183,13 +193,23 @@ function normalizeRow(r: any) {
 async function courtSnapshot(slug: string) {
   const c = (await pool.query('SELECT * FROM courts WHERE slug=$1', [slug])).rows[0];
   if (!c) return null;
-  const game = c.current_game_id ? await gameViewNorm(c.current_game_id) : null;
+  // Displays always show the court's ACTIVE game; with none, an idle "Next up" screen.
+  const active = (await pool.query(`SELECT id FROM games WHERE court_id=$1 AND status='active'`, [c.id])).rows[0];
+  const game = active ? await gameViewNorm(active.id) : null;
+  const lite = `SELECT g.id, g.status, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
+      to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today,
+      COALESCE(h.grade, a.grade) AS grade, h.name AS home, a.name AS away, g.final_home, g.final_away
+    FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.court_id=$1`;
+  const nextUp = (await pool.query(`${lite} AND g.status='scheduled' AND g.scheduled_at >= date_trunc('day', now()) ORDER BY g.scheduled_at, g.id LIMIT 1`, [c.id])).rows[0] || null;
+  const lastFinal = (await pool.query(`${lite} AND g.status='complete' AND g.scheduled_at::date = now()::date ORDER BY g.updated_at DESC LIMIT 1`, [c.id])).rows[0] || null;
+  // Scorekeeper game picker: today's games on this court that aren't complete.
+  const today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = now()::date ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
   const upNext = (await pool.query(
     `SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade
      FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
-     WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2
-     ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, c.current_game_id])).rows;
-  return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext };
+     WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
+     ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
+  return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext, nextUp, lastFinal, today };
 }
 
 async function gameViewNorm(gameId: number) {
@@ -277,17 +297,27 @@ function attachWs(server: http.Server) {
           // 1) Session token or admin token: no PIN, no limiter, never locked out.
           if (validCourtSession(msg.session, court)) return welcome(null, 'session');
           if (validToken(msg.token)) return welcome(null, 'admin');
-          if (msg.pin == null) return send(client, { type: 'auth', ok: false, needPin: true, error: msg.session ? 'Session expired. Enter the PIN.' : 'Enter the PIN.' });
-          // 2) PIN: limited per court + device and per socket, with a high per-IP backstop.
+          if (msg.pin == null && msg.qr == null) return send(client, { type: 'auth', ok: false, needPin: true, error: msg.session ? 'Session expired. Enter the PIN.' : 'Enter the PIN.' });
+          // 2) Weekly QR token or PIN: limited per court + device and per socket, with a high per-IP backstop.
           const dev = typeof msg.device === 'string' && /^[\w-]{8,64}$/.test(msg.device) ? msg.device : `sock-${ip}-${court}`;
           const devKey = `pin:${court}:${dev}`, ipKey = `pinip:${ip}`;
           const locked = (ms: number) => send(client, { type: 'auth', ok: false, locked: true, retryAfter: Math.ceil(ms / 1000), error: `Too many wrong PINs. Try again in ${Math.ceil(ms / 1000)} s.` });
           const wait = Math.max(pinDeviceLimiter.retryAfter(devKey), pinIpBackstop.retryAfter(ipKey));
           if (wait) return locked(wait);
-          if (pinOk(court, msg.pin)) { pinDeviceLimiter.succeed(devKey); pinIpBackstop.succeed(ipKey); return welcome(makeCourtSession(court), 'pin'); }
+          let qrError: string | null = null, qrReason: string | null = null;
+          if (msg.qr != null) {
+            const ver = (await pool.query('SELECT qr_version FROM courts WHERE slug=$1', [court])).rows[0]?.qr_version ?? -1;
+            const chk = verifyQrToken(SESSION_SECRET, msg.qr, court, Date.now(), ver);
+            if (chk.ok) { pinDeviceLimiter.succeed(devKey); pinIpBackstop.succeed(ipKey); return welcome(makeCourtSession(court), 'qr'); }
+            qrReason = chk.reason;
+            qrError = chk.reason === 'expired' ? "This court's QR code has expired (codes are good until Sunday night). Scan this week's code or enter the PIN."
+              : chk.reason === 'revoked' ? 'This QR code was replaced by a newer one. Scan the new code or enter the PIN.'
+              : "This QR code isn't valid for this court. Scan the court's code or enter the PIN.";
+          } else if (pinOk(court, msg.pin)) { pinDeviceLimiter.succeed(devKey); pinIpBackstop.succeed(ipKey); return welcome(makeCourtSession(court), 'pin'); }
           const lockMs = Math.max(pinDeviceLimiter.fail(devKey), pinIpBackstop.fail(ipKey));
           pinFails++;
           if (lockMs) locked(lockMs);
+          else if (qrError) send(client, { type: 'auth', ok: false, qrInvalid: true, reason: qrReason, needPin: true, error: qrError });
           else send(client, { type: 'auth', ok: false, error: `Wrong PIN (${SOCKET_MAX_PIN_FAILS - pinFails} ${SOCKET_MAX_PIN_FAILS - pinFails === 1 ? 'try' : 'tries'} left)` });
           if (pinFails >= SOCKET_MAX_PIN_FAILS) {
             const ms = Math.max(pinDeviceLimiter.retryAfter(devKey), LOCK_BASE_MS);
@@ -296,10 +326,15 @@ function attachWs(server: http.Server) {
           }
           return;
         }
+        if (msg.type === 'load') { // scorekeeper picked a game from today's list
+          if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
+          const gid = await activateGame(Number(msg.gameId), court, `pin:${court}`, false);
+          return send(client, { type: 'ack', id: msg.id, loaded: gid });
+        }
         if (['cmd', 'undo', 'redo'].includes(msg.type)) {
           if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
-          const c = (await pool.query('SELECT current_game_id FROM courts WHERE slug=$1', [court])).rows[0];
-          if (!c?.current_game_id) return send(client, { type: 'error', id: msg.id, error: 'no game started on this court' });
+          const c = (await pool.query(`SELECT g.id AS current_game_id FROM courts c JOIN games g ON g.court_id=c.id AND g.status='active' WHERE c.slug=$1`, [court])).rows[0];
+          if (!c?.current_game_id) return send(client, { type: 'error', id: msg.id, error: 'No game is loaded on this court. Pick a game first.' });
           if (msg.gameId && Number(msg.gameId) !== c.current_game_id) {
             // controller is looking at a stale game (admin switched games): refuse and resync
             send(client, { type: 'error', id: msg.id, error: 'game changed, resyncing' });
@@ -458,6 +493,55 @@ async function gradeCheck(homeId: number, awayId: number, stated: string | null)
   return gradeMismatch(h, a, stated);
 }
 
+/**
+ * Make a game the court's active game (scorekeeper "Load", admin "Start on court", admin reopen).
+ * Rules: one active game per court (DB partial unique index), complete the current game first,
+ * and the shared floor (Full vs West/East can't both be active; admins may force).
+ */
+async function activateGame(gameId: number, courtSlug: string | null, actor: string, force: boolean, reopen = false): Promise<number> {
+  const g = (await pool.query(`SELECT g.id, g.court_id, g.status, c.slug, c.name AS court FROM games g LEFT JOIN courts c ON c.id=g.court_id WHERE g.id=$1`, [gameId])).rows[0];
+  if (!g) throw new HttpError(404, 'game not found');
+  if (!g.court_id) throw new HttpError(400, 'assign the game to a court first');
+  if (courtSlug && g.slug !== courtSlug) throw new HttpError(400, `That game is on ${g.court}, not this court.`);
+  if (g.status === 'complete' && !reopen) throw new HttpError(409, 'That game is complete. An admin can reopen it.');
+  if (g.status !== 'active') {
+    const live = (await pool.query(`SELECT c.name AS court, me.name AS me, h.name AS home, a.name AS away
+      FROM courts c JOIN courts me ON me.id = $1 JOIN games x ON x.court_id = c.id AND x.status = 'active'
+      JOIN teams h ON h.id = x.home_team_id JOIN teams a ON a.id = x.away_team_id
+      WHERE c.id <> me.id AND (c.slug = ANY(me.conflicts_with) OR me.slug = ANY(c.conflicts_with)) ORDER BY c.id`, [g.court_id])).rows;
+    if (live.length && !force) {
+      throw new HttpError(409, `${live.map((l) => `${l.court} is live (${l.home} vs ${l.away})`).join(' and ')}. ${live[0].me} shares the floor with ${live.map((l) => l.court).join(' and ')}: complete ${live.length > 1 ? 'those games' : 'that game'} first.`);
+    }
+    const cur = (await pool.query(`SELECT COALESCE(h.grade || ' ', '') || h.name || ' vs ' || a.name AS m FROM games x JOIN teams h ON h.id=x.home_team_id JOIN teams a ON a.id=x.away_team_id
+      WHERE x.court_id=$1 AND x.status='active' AND x.id<>$2`, [g.court_id, gameId])).rows[0];
+    if (cur) throw new HttpError(409, `${cur.m} is still active on ${g.court}. Complete it before loading another game.`);
+  }
+  try {
+    if (reopen) await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'REOPEN' }, Date.now()), { type: 'REOPEN' });
+    else await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'START_GAME' }, Date.now()), { type: 'START_GAME' });
+  } catch (e: any) {
+    if (/games_one_active_per_court|duplicate key/.test(e.message)) throw new HttpError(409, `Another game just became active on ${g.court}. Complete it first.`);
+    throw e;
+  }
+  await pool.query('UPDATE courts SET current_game_id=$2 WHERE id=$1', [g.court_id, gameId]);
+  await broadcastCourt(g.slug);
+  return gameId;
+}
+
+/** Public base URL for QR links: PUBLIC_BASE_URL, else the request's host. */
+function baseUrl(req: http.IncomingMessage) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, '');
+  const proto = process.env.TRUST_PROXY === 'true' && req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : 'http';
+  return `${proto}://${req.headers.host || 'localhost:3000'}`;
+}
+async function courtQr(c: any, req: http.IncomingMessage) {
+  const exp = weekEnd(Date.now(), process.env.TZ || 'America/Chicago');
+  const token = makeQrToken(SESSION_SECRET, c.slug, exp, c.qr_version);
+  const url = `${baseUrl(req)}/score/${encodeURIComponent(c.slug)}?t=${encodeURIComponent(token)}`;
+  const svg = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 2 });
+  return { court_id: c.id, slug: c.slug, name: c.name, version: c.qr_version, expires: new Date(exp).toISOString(), url, svg };
+}
+
 type ImportResult = { created: number; updated: number; skipped: number; errors: string[] };
 function requireColumns(headers: string[], need: string[], file: string) {
   if (!headers.length) throw new HttpError(400, `${file} is empty`);
@@ -565,6 +649,19 @@ async function importSchedule(text: string): Promise<ImportResult> {
         await setGameExtras(nid, extra);
         out.created++; continue;
       }
+      // Optional status column (scheduled / active / complete; old exports say live / final).
+      if (headers.includes('status') && (r.status || '').trim()) {
+        const st = ({ live: 'active', final: 'complete' } as any)[(r.status || '').trim().toLowerCase()] || (r.status || '').trim().toLowerCase();
+        if (!['scheduled', 'active', 'complete'].includes(st)) throw new HttpError(400, `status "${r.status}" must be scheduled, active or complete`);
+        if (st !== ex.status) {
+          // Results played elsewhere can be recorded for a game that never started; started games change status in Admin.
+          if (ex.history || st === 'active') throw new HttpError(400, `status ${ex.status} -> ${st}: change a started game's status in Admin (Complete / Reopen); games become active from the scorekeeper or Admin`);
+          const hs = (r.home_score || '').trim(), as = (r.away_score || '').trim();
+          if (st === 'complete' && !(/^\d+$/.test(hs) && /^\d+$/.test(as))) throw new HttpError(400, 'status complete needs home_score and away_score');
+          await pool.query('UPDATE games SET status=$2, final_home=$3, final_away=$4 WHERE id=$1', [ex.id, st, st === 'complete' ? Number(hs) : null, st === 'complete' ? Number(as) : null]);
+          runtimes.delete(ex.id); out.updated++; continue;
+        }
+      }
       const extrasSame = Object.entries(extra).every(([k, v]) => (ex[k] ?? null) === v);
       const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division && (ex.duration_min ?? null) === dur && extrasSame;
       if (same) { out.skipped++; continue; }
@@ -625,6 +722,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   }
   if (seg[1] === 'courts') {
     const id = seg[2] ? Number(seg[2]) : undefined;
+    // Weekly scorekeeper QR codes (print view in Admin > Courts)
+    if (id && seg[3] === 'qr') {
+      if (m === 'POST' && (seg[4] === 'regenerate' || seg[4] === 'revoke')) await pool.query('UPDATE courts SET qr_version = qr_version + 1 WHERE id=$1', [id]);
+      const c = (await pool.query('SELECT * FROM courts WHERE id=$1', [id])).rows[0];
+      if (!c) throw new HttpError(404, 'court not found');
+      if (seg[4] === 'revoke') return json(res, 200, { ok: true, version: c.qr_version });
+      return json(res, 200, await courtQr(c, req));
+    }
     if (m === 'GET') return json(res, 200, (await pool.query('SELECT * FROM courts ORDER BY id')).rows.map((c) => ({ ...c, has_pin: COURT_PINS.has(c.slug) })));
     if (m === 'POST') {
       const b = await readJson(req);
@@ -634,6 +739,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       return json(res, 201, { id: r.rows[0].id, slug });
     }
     if (m === 'DELETE' && id) { await pool.query('DELETE FROM courts WHERE id=$1', [id]); return json(res, 200, { ok: true }); }
+  }
+  if (p === '/api/qr' && m === 'GET') {
+    const { rows } = await pool.query('SELECT * FROM courts ORDER BY id');
+    return json(res, 200, await Promise.all(rows.map((c) => courtQr(c, req))));
   }
   if (p === '/api/settings/season') {
     if (m === 'GET') return json(res, 200, season);
@@ -708,23 +817,22 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       await broadcastGame(id); return json(res, 200, { id });
     }
     if (m === 'DELETE' && id) { runtimes.delete(id); await pool.query('DELETE FROM games WHERE id=$1', [id]); await refreshAllCourts(); return json(res, 200, { ok: true }); }
-    if (m === 'POST' && id && seg[3] === 'start') {
-      const g = (await pool.query('SELECT court_id FROM games WHERE id=$1', [id])).rows[0];
-      if (!g?.court_id) throw new Error('assign the game to a court first');
+    if (m === 'POST' && id && seg[3] === 'start') { // admin "Start on court" (force = start anyway despite the shared floor)
       const sb = await readJson(req).catch(() => ({} as any));
-      const live = (await pool.query(`SELECT c.name AS court, me.name AS me, h.name AS home, a.name AS away
-        FROM courts c JOIN courts me ON me.id = $1 JOIN games x ON x.id = c.current_game_id
-        JOIN teams h ON h.id = x.home_team_id JOIN teams a ON a.id = x.away_team_id
-        WHERE c.id <> me.id AND x.status = 'live' AND x.id <> $2 AND (c.slug = ANY(me.conflicts_with) OR me.slug = ANY(c.conflicts_with))
-        ORDER BY c.id`, [g.court_id, id])).rows;
-      if (live.length && !sb?.force) {
-        throw new HttpError(409, `${live.map((l) => `${l.court} is live (${l.home} vs ${l.away})`).join(' and ')}. ${live[0].me} shares the floor with ${live.map((l) => l.court).join(' and ')}: end ${live.length > 1 ? 'those games' : 'that game'} before starting this one.`);
-      }
-      await pool.query('UPDATE courts SET current_game_id=$2 WHERE id=$1', [g.court_id, id]);
-      await mutate(id, 'admin', null, (h) => dispatch(h, { type: 'START_GAME' }, Date.now()), { type: 'START_GAME' });
-      const slug = (await pool.query('SELECT slug FROM courts WHERE id=$1', [g.court_id])).rows[0].slug;
-      await broadcastCourt(slug);
+      await activateGame(id, null, 'admin', !!sb?.force);
+      const slug = (await pool.query('SELECT c.slug FROM games g JOIN courts c ON c.id=g.court_id WHERE g.id=$1', [id])).rows[0].slug;
       return json(res, 200, { ok: true, court: slug });
+    }
+    if (m === 'POST' && id && seg[3] === 'complete') { // admin force-complete (locks the final score)
+      await mutate(id, 'admin', null, (h) => dispatch(h, { type: 'END_GAME' }, Date.now()), { type: 'END_GAME', by: 'admin' });
+      await refreshAllCourts(); return json(res, 200, { ok: true });
+    }
+    if (m === 'POST' && id && seg[3] === 'reopen') { // admin reopen a completed game (becomes active again)
+      const sb = await readJson(req).catch(() => ({} as any));
+      const st = (await pool.query('SELECT status FROM games WHERE id=$1', [id])).rows[0]?.status;
+      if (st !== 'complete') throw new HttpError(409, 'Only a complete game can be reopened.');
+      await activateGame(id, null, 'admin', !!sb?.force, true);
+      return json(res, 200, { ok: true });
     }
     if (m === 'GET' && id && seg[3] === 'events') {
       return json(res, 200, (await pool.query('SELECT seq, actor, command, created_at FROM game_events WHERE game_id=$1 ORDER BY id', [id])).rows);
@@ -773,7 +881,9 @@ function csvOut(res: http.ServerResponse, name: string, body: string) {
 
 const PAGES: [RegExp, string][] = [
   [/^\/$/, 'index.html'], [/^\/admin\/?$/, 'admin.html'],
-  [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/tv\/[\w-]+\/?$/, 'tv.html'], [/^\/overlay\/[\w-]+\/?$/, 'overlay.html'],
+  [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/upwardbasketballscores\/split\/?$/, 'split.html'],
+  // Fixed TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt}[/overlay] (any court: <slug>court)
+  [/^\/upwardbasketballscores\/[\w-]+\/overlay\/?$/, 'overlay.html'], [/^\/upwardbasketballscores\/[\w-]+\/?$/, 'tv.html'], [/^\/tv\/[\w-]+\/?$/, 'tv.html'], [/^\/overlay\/[\w-]+\/?$/, 'overlay.html'],
 ];
 
 const server = http.createServer(async (req, res) => {

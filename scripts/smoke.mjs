@@ -54,6 +54,10 @@ for (let i = 0; i < 3 && !token; i++) {
   token = (await r.json()).token;
 }
 ok(!!token, 'admin login ok');
+// One active game per court: complete whatever a previous run (or dev use) left active on the floor.
+for (const g of (await api('/api/games')).body.filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) {
+  await api(`/api/games/${g.id}/complete`, { method: 'POST' }); console.log(`  (completed leftover active game #${g.id} on ${g.court})`);
+}
 // Own fixtures: 4 teams + courts full/west/east (created if missing) + 2 games on west/east.
 const T = {};
 for (const [k, c1, c2] of [['A', '#7a1020', '#f2b705'], ['B', '#0d2c6b', '#4fc3f7'], ['C', '#14532d', '#a3e635'], ['D', '#4c1d95', '#f0abfc']]) {
@@ -201,7 +205,7 @@ const re2 = await api('/api/import/schedule.csv', { method: 'POST', body: exp2 }
 ok(re2.body.created === 0 && re2.body.updated === 0 && re2.body.errors.length === 0, `r2-B: full export incl. undated game re-imports cleanly (skipped ${re2.body.skipped} ${JSON.stringify(re2.body.errors).slice(0,300)} c${re2.body.created} u${re2.body.updated})`);
 const g1Live = (await api('/api/public/court/west')).body.game.state;
 const g1Line = exp2.split(/\r?\n/).find((l) => l.startsWith(g1.id + ','));
-ok(g1Line && g1Line.includes(`,${g1Live.home.score},${g1Live.away.score},live,`), `#8: export carries the live score of an in-progress game (${g1Line})`);
+ok(g1Line && g1Line.includes(`,${g1Live.home.score},${g1Live.away.score},active,`), `#8: export carries the live score of an in-progress game (${g1Line})`);
 const tAgain = await api('/api/import/teams.csv', { method: 'POST', body: tcsv });
 ok(tAgain.body.created === 0 && tAgain.body.errors.length === 0, `teams re-import idempotent (created 0, skipped ${tAgain.body.skipped})`);
 const ccsv2 = await fetch(BASE + '/api/export/courts.csv', { headers: auth }).then((r) => r.text());
@@ -385,6 +389,96 @@ ok(new RegExp(`G5a-${RUN},G5A,5th Grade,`).test(tcsv2), 'teams.csv export includ
 const oldT = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,logo_url\nG5a-${RUN},G5A,\n` });
 ok(oldT.body.errors.length === 0 && (await api('/api/teams')).body.find((t) => t.id === G5a).grade === '5th Grade', 'old teams.csv without a grade column keeps the grade');
 await api(`/api/games/${gg.id}`, { method: 'DELETE' });
+
+console.log('16. Scorekeeping flow: weekly QR, pick a game, one active game, complete locks, resume, TV routes, status export');
+const fc = (await api('/api/courts', { method: 'POST', body: JSON.stringify({ name: `Flow ${RUN}`, slug: `flow-${RUN}` }) })).body; // own court, no PIN: QR only
+const qrs = (await api('/api/qr')).body; const q1 = qrs.find((q) => q.slug === fc.slug);
+const tok1 = new URL(q1.url).searchParams.get('t');
+ok(q1 && q1.svg.startsWith('<svg') && new URL(q1.url).pathname === `/score/${fc.slug}` && Date.parse(q1.expires) > Date.now(), `Admin QR: SVG + /score/${fc.slug}?t=… valid until ${q1.expires}`);
+ok(new Date(q1.expires).toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' }).startsWith('Sun') && /23:59/.test(new Date(q1.expires).toLocaleString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23' })), 'QR expires Sunday 23:59 America/Chicago');
+const fk = client(fc.slug, 'score'); await fk.open;
+fk.send({ type: 'auth', qr: tok1, device: DEV('qr1') });
+const qa = await fk.wait((m) => m.type === 'auth');
+ok(qa.ok && qa.how === 'qr' && typeof qa.session === 'string', 'scanning the QR signs in and returns the 12 h device session');
+const fk0 = client('west', 'score'); await fk0.open;
+fk0.send({ type: 'auth', qr: tok1, device: DEV('qrx') });
+ok((await fk0.wait((m) => m.type === 'auth')).qrInvalid === true, "another court's QR is refused");
+fk0.ws.close();
+await api(`/api/courts/${fc.id}/qr/regenerate`, { method: 'POST' });
+const fkR = client(fc.slug, 'score'); await fkR.open;
+fkR.send({ type: 'auth', qr: tok1, device: DEV('qrr') });
+const rv = await fkR.wait((m) => m.type === 'auth');
+ok(rv.ok === false && rv.reason === 'revoked' && /replaced by a newer one/.test(rv.error), `regenerated: old code refused ("${rv.error}")`);
+const tok2 = new URL((await api(`/api/courts/${fc.id}/qr`)).body.url).searchParams.get('t');
+await api(`/api/courts/${fc.id}/qr/revoke`, { method: 'POST' });
+fkR.send({ type: 'auth', qr: tok2, device: DEV('qrr') });
+ok((await fkR.wait((m) => m.type === 'auth')).reason === 'revoked', 'revoked: the current code stops working too');
+const fkB = client(fc.slug, 'score'); await fkB.open;
+const fkBClosed = new Promise((r) => fkB.ws.on('close', (c) => r(c)));
+let lastQ; for (let i = 0; i < 5; i++) { fkB.send({ type: 'auth', qr: tok1 + 'x', device: DEV('qrbad') }); lastQ = await fkB.wait((m) => m.type === 'auth'); }
+ok(lastQ.locked === true && (await fkBClosed) === 4008, 'invalid QR tokens count toward the per-device lockout (5 -> locked)');
+fkR.ws.close();
+// games today on the flow court
+const nowMin = Math.floor(Date.now() / 60_000) * 60_000;
+const mkToday = async (h, a, plus) => (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: h, away_team_id: a, scheduled_at: new Date(nowMin + plus * 60_000).toISOString() }) })).body.id;
+const GA = await mkToday(G5a, G5b, 0), GB = await mkToday(G5b, G5a, 1);
+const tvF = client(fc.slug, 'tv'); await tvF.open;
+const st0 = await fk.wait((m) => m.type === 'state' && m.today?.length >= 2);
+ok(!st0.game && st0.today.map((t) => t.id).join() === `${GA},${GB}` && st0.today[0].grade === '5th Grade', "picker: today's games on this court that aren't complete");
+fk.send({ type: 'load', id: 'L1', gameId: GA });
+const l1 = await fk.wait((m) => m.id === 'L1');
+const tvA2 = await tvF.wait((m) => m.type === 'state' && m.game?.id === GA);
+ok(l1.loaded === GA && tvA2.game.state.status === 'active', 'Load: game A becomes active and the court TV switches to it');
+fk.send({ type: 'load', id: 'L2', gameId: GB });
+const l2 = await fk.wait((m) => m.id === 'L2');
+ok(l2.type === 'error' && /still active on Flow .*Complete it/.test(l2.error), `only one active game per court: "${l2.error}"`);
+const adm2 = await api(`/api/games/${GB}/start`, { method: 'POST' });
+ok(adm2.status === 409, 'admin "Start on court" is refused too while another game is active');
+const sc = await fk.cmd({ type: 'SCORE', team: 'home', pts: 2 });
+ok(sc.type === 'ack', 'scoring the active game works');
+// resume: another device signs in with the session while A is active
+const fk2 = client(fc.slug, 'score'); await fk2.open;
+fk2.send({ type: 'auth', session: qa.session, device: DEV('qr2') });
+await fk2.wait((m) => m.type === 'auth' && m.ok);
+const rs = await fk2.wait((m) => m.type === 'state' && m.game);
+ok(rs.game.id === GA && rs.game.state.status === 'active', 'a device that rejoins gets the active game (offered Resume)');
+fk2.ws.close();
+tvF.msgs = [];
+const done = await fk.cmd({ type: 'END_GAME' });
+const tvIdle = await tvF.wait((m) => m.type === 'state' && !m.game);
+ok(done.type === 'ack' && tvIdle.nextUp?.id === GB && tvIdle.lastFinal?.id === GA && tvIdle.lastFinal.final_home === 2, 'Complete game: TV goes idle with Next up (B) and the last final (A 2-0)');
+const lk = await fk.cmd({ type: 'SCORE', team: 'home', pts: 2 });
+const lkU = await (async () => { const id = 'u' + RUN; fk.send({ type: 'undo', id }); return fk.wait((m) => m.id === id); })();
+ok(lk.type === 'error' && /No game is loaded/.test(lk.error), 'after Complete there is no active game to score');
+const gaRow = (await api('/api/games')).body.find((g) => g.id === GA);
+ok(gaRow.status === 'complete' && gaRow.home_score === 2 && lkU.type === 'error', 'final score locked (status complete, 2-0; undo refused)');
+const reB = await api(`/api/games/${GB}/start`, { method: 'POST' });
+const reA = await api(`/api/games/${GA}/reopen`, { method: 'POST' });
+ok(reB.status === 200 && reA.status === 409 && /still active/.test(reA.body.error), 'admin reopen is refused while another game is active on the court');
+ok((await api(`/api/games/${GB}/complete`, { method: 'POST' })).status === 200, 'admin force-complete');
+const reA2 = await api(`/api/games/${GA}/reopen`, { method: 'POST' });
+ok(reA2.status === 200 && (await api(`/api/public/court/${fc.slug}`)).body.game?.id === GA, 'admin reopen makes the game active again');
+const lockAdmin = await api(`/api/games/${GB}/start`, { method: 'POST' });
+ok(lockAdmin.status === 409 && /complete/.test(lockAdmin.body.error), 'a complete game cannot be started again (only reopened)');
+await api(`/api/games/${GA}/complete`, { method: 'POST' });
+const expF = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
+const aLine = expF.split(/\r?\n/).find((l) => l.startsWith(GA + ','));
+ok(/,2,0,complete,/.test(aLine), `status + final score exported (${aLine})`);
+const GC = await mkToday(G5a, G5b, 2);
+const cLine = `id,date,time,court,home,away,home_score,away_score,status\n${GC},,,${fc.slug},G5a-${RUN},G5b-${RUN},40,38,complete\n${GA},,,${fc.slug},G5a-${RUN},G5b-${RUN},,,scheduled\n`;
+const [dC, tC] = local(nowMin + 2 * 60_000), [dA, tA] = local(nowMin);
+const si = await api('/api/import/schedule.csv', { method: 'POST', body: cLine.replace(`${GC},,,`, `${GC},${dC},${tC},`).replace(`${GA},,,`, `${GA},${dA},${tA},`) });
+const gcRow = (await api('/api/games')).body.find((g) => g.id === GC);
+ok(si.body.updated === 1 && gcRow.status === 'complete' && gcRow.home_score === 40 && /row 3: status complete -> scheduled/.test(si.body.errors[0] || ''), `status import: result recorded for a never-started game; a started game's status is Admin-only (${si.body.errors[0]})`);
+const tvHtml = await fetch(BASE + '/upwardbasketballscores/westcourt').then((r) => r.text());
+const ovHtml = await fetch(BASE + '/upwardbasketballscores/fullcourt/overlay').then((r) => r.text());
+const alias = await fetch(BASE + '/tv/east').then((r) => r.text());
+ok(/data-role="tv"/.test(tvHtml) && /data-role="overlay"/.test(ovHtml) && /data-role="tv"/.test(alias), 'TV routes: /upwardbasketballscores/westcourt, …/fullcourt/overlay, and the /tv/east alias');
+fk.ws.close(); tvF.ws.close();
+for (const id of [GA, GB, GC]) await api(`/api/games/${id}`, { method: 'DELETE' });
+await api(`/api/courts/${fc.id}`, { method: 'DELETE' });
+// leave the floor free for the next run / the e2e tests
+await api(`/api/games/${g1.id}/complete`, { method: 'POST' }); await api(`/api/games/${g2.id}/complete`, { method: 'POST' });
 
 for (const c of [tv1b, tv2, sk1b, sk1c, sk2]) c.ws.close();
 console.log(`\nSmoke result: ${pass} passed, ${fail} failed`);

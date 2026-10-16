@@ -19,8 +19,14 @@ for (let i = 0; i < 3 && !token; i++) {
   token = (await r.json()).token;
 }
 const H = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
-const games = await (await fetch(BASE + '/api/games', { headers: H })).json();
-const g = games.find((x) => x.court === 'West' && x.status !== 'final');
+// One active game per court: complete anything left active on the floor by earlier runs.
+for (const x of (await (await fetch(BASE + '/api/games', { headers: H })).json()).filter((x) => x.status === 'active' && ['West', 'East', 'Full'].includes(x.court))) {
+  await fetch(`${BASE}/api/games/${x.id}/complete`, { method: 'POST', headers: H });
+}
+const RUN = Date.now().toString(36).slice(-5);
+const team = async (k) => (await (await fetch(BASE + '/api/teams', { method: 'POST', headers: H, body: JSON.stringify({ name: `Off${k}-${RUN}`, grade: '3rd Grade' }) })).json()).id;
+const westId = (await (await fetch(BASE + '/api/courts', { headers: H })).json()).find((c) => c.slug === 'west').id;
+const g = await (await fetch(BASE + '/api/games', { method: 'POST', headers: H, body: JSON.stringify({ court_id: westId, home_team_id: await team('A'), away_team_id: await team('B'), scheduled_at: new Date(Math.floor(Date.now() / 60000) * 60000).toISOString() }) })).json();
 await fetch(`${BASE}/api/games/${g.id}/start`, { method: 'POST', headers: H });
 
 // Node-side scorekeeper (unaffected by the browser going offline)
@@ -42,6 +48,8 @@ const ctl = await ctx.newPage();
 await ctl.goto(BASE + '/score/west');
 await ctl.fill('#pin', PIN1); await ctl.click('#pin-gate button');
 await ctl.waitForSelector('#app:not([hidden])');
+await ctl.click('#resume-ok'); // game was started from Admin, so this device is offered Resume
+await ctl.waitForSelector('main.grid:not([hidden])');
 const clock = (p) => p.textContent('[data-clock]');
 await sleep(2500);
 const before = await clock(tv);
@@ -105,5 +113,6 @@ ok(pres.displays === 0 && pres.controllers === 1, `server presence after drop: $
 await ctx.setOffline(false);
 
 await browser.close(); sk.close();
+await fetch(`${BASE}/api/games/${g.id}/complete`, { method: 'POST', headers: H }); // leave the court free
 console.log(`\nOffline e2e result: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

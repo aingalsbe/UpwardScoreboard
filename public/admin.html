@@ -39,7 +39,7 @@
         <label>Dark color <input type="color" name="dark" id="season-dark"></label>
         <label>Light color <input type="color" name="light" id="season-light"></label>
         <p class="muted full">Every team wears one of these two. Home = light and away = dark unless a game has "Swap colors" ticked.</p>
-        <div class="season-contrast full" id="season-contrast" role="status" aria-live="polite" hidden></div>
+        <div class="contrast-warn season-contrast full" id="season-contrast" role="status" aria-live="polite" hidden></div>
         <div class="actions"><button class="primary" id="season-save">Save season colors</button></div>
       </form>
       <h2>Teams</h2>
@@ -66,6 +66,10 @@
       </form>
       <p class="muted">Scorekeeper PINs come from the <code>COURT_PINS</code> env var (e.g. <code>full:1111,west:2222,east:3333</code>). Restart after changing it.</p>
       <table class="tbl"><thead><tr><th>Name</th><th>Slug</th><th>PIN set?</th><th>Links</th><th></th></tr></thead><tbody id="court-rows"></tbody></table>
+      <h2>Weekly scorekeeper QR codes</h2>
+      <p class="muted">One code per court, good until Sunday 11:59 PM. Print them each week. "New code" or "Revoke" stops older printed codes. The PIN always works as a fallback.</p>
+      <p><button class="primary" id="qr-show" type="button">Show this week's QR codes</button> <button id="qr-print" type="button">Print</button></p>
+      <section id="qr-panel" class="qr-panel print-area" hidden><div id="qr-cards" class="qr-cards"></div></section>
     </section>
 
     <section id="schedule" class="view">

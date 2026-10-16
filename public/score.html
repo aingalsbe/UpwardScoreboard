@@ -28,7 +28,24 @@
       </div>
     </header>
 
-    <div class="no-game-msg">No game is running on this court yet. Ask the admin to press <b>Start</b> on a game.</div>
+    <!-- Game picker: today's games on this court that aren't complete (filled by score.js). -->
+    <section id="picker" class="picker" hidden aria-labelledby="picker-title">
+      <h2 id="picker-title">Pick a game · <span data-bind="court"></span></h2>
+      <ul id="picker-list" class="picker-list"></ul>
+      <p id="picker-empty" class="picker-empty" hidden>No games left today on this court.</p>
+    </section>
+    <!-- Resume prompt: a game is already active on this court (this device rejoined / another device loaded it). -->
+    <section id="resume" class="resume" hidden>
+      <p id="resume-text" class="resume-text"></p>
+      <button class="btn go" id="resume-ok" type="button">Resume</button>
+    </section>
+    <!-- Confirm dialog, used for Load and Complete game. -->
+    <dialog id="confirm-dialog" class="confirm-dialog">
+      <form method="dialog">
+        <p id="confirm-text" class="confirm-text"></p>
+        <div class="confirm-actions"><button class="btn sm" id="confirm-cancel" value="cancel">Cancel</button><button class="btn go" id="confirm-ok" value="ok">Load</button></div>
+      </form>
+    </dialog>
 
     <main class="grid">
       <section class="panel mid">
@@ -84,7 +101,7 @@
       <button class="btn sm undo" id="undo">↶ Undo<small data-bind="undoText"></small></button>
       <button class="btn sm" id="redo">↷ Redo</button>
       <button class="btn sm" id="banner">Show "Halftime"</button>
-      <button class="btn sm" id="end">End game &amp; save</button>
+      <button class="btn sm complete" id="complete-game" type="button">Complete game</button>
     </footer>
   </div>
   <script src="/contrast.js"></script>

@@ -21,13 +21,18 @@ for (let i = 0; i < 3 && !token; i++) {
 }
 const H = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
 const api = async (p, o = {}) => (await fetch(BASE + p, { ...o, headers: H })).json();
+// One active game per court: complete anything left active on the floor by earlier runs.
+for (const x of (await (await fetch(BASE + '/api/games', { headers: H })).json()).filter((x) => x.status === 'active' && ['West', 'East', 'Full'].includes(x.court))) {
+  await fetch(`${BASE}/api/games/${x.id}/complete`, { method: 'POST', headers: H });
+}
 const courts = await api('/api/courts');
+const started = [];
 const team = async (k) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `E2E${k}-${RUN}`, short_name: `E${k}`, primary_color: '#0d2c6b', secondary_color: '#f2b705' }) })).id;
 for (const [slug, a, b] of [['west', 'A', 'B'], ['east', 'C', 'D']]) {
   const c = courts.find((x) => x.slug === slug);
   const day = new Date(); day.setUTCHours(15, 0, 0, 0);
   const g = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: c.id, home_team_id: await team(a), away_team_id: await team(b), scheduled_at: new Date(day.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000).toISOString(), division: `E2E ${RUN}` }) });
-  await api(`/api/games/${g.id}/start`, { method: 'POST' });
+  await api(`/api/games/${g.id}/start`, { method: 'POST' }); started.push(g.id);
 }
 const score = async () => (await (await fetch(BASE + '/api/public/court/west')).json()).game.state.home.score;
 
@@ -40,6 +45,7 @@ console.log('1. west signs in');
 await p1.goto(BASE + '/score/west');
 await p1.fill('#pin', PIN1); await p1.click('#pin-gate button');
 await p1.waitForSelector('#app:not([hidden])', { timeout: 5000 });
+await p1.click('#resume-ok'); await p1.waitForSelector('main.grid:not([hidden])', { timeout: 5000 });
 const sess = await p1.evaluate(() => localStorage.getItem('sb-session-west'));
 ok(!!sess, 'west unlocked; court session token stored in localStorage');
 
@@ -77,5 +83,6 @@ await p1.reload(); await p1.waitForSelector('#app:not([hidden])', { timeout: 600
 ok(await p1.$eval('#pin-gate', (e) => e.hidden), 'reload reuses the session (no PIN prompt)');
 
 await browser.close();
+for (const id of started) await api(`/api/games/${id}/complete`, { method: 'POST' });
 console.log(`\nLockout e2e result: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

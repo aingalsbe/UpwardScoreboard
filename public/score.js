@@ -9,7 +9,13 @@ const SESSION_KEY = `sb-session-${court}`;   // court-scoped session token (12 h
 const PENDING_KEY = `sb-pending-${court}`;   // unsent taps survive closing/reloading the page (QA #6)
 const DEVICE_KEY = 'sb-device';              // random per-device id: wrong-PIN counting is per court + device
 localStorage.removeItem(`sb-pin-${court}`);  // older builds stored the PIN itself; sessions replace that
+const LOADED_KEY = `sb-loaded-${court}`;     // the game this device loaded/resumed (else: offer Resume)
 let snap = null, presence = {}, authed = false, lockUntil = 0, lockTimer = null;
+// Weekly court QR: /score/<court>?t=<token> signs in once, then the token is removed from the address bar.
+let qrToken = new URLSearchParams(location.search).get('t');
+if (qrToken) history.replaceState(null, '', location.pathname);
+/** #pin-err text + data-kind (lockout | wrong | info | busy | readonly) for Sage's styles. */
+function setErr(text, kind = 'info') { const el = $('#pin-err'); el.textContent = text; el.dataset.kind = text ? kind : ''; }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 const device = localStorage.getItem(DEVICE_KEY) || (localStorage.setItem(DEVICE_KEY, uid()), localStorage.getItem(DEVICE_KEY));
 
@@ -27,6 +33,7 @@ const conn = connect({
   },
   onState: (m) => { snap = m; presence = m.presence || presence; render(); },
   onMessage: (m) => {
+    if (m.type === 'ack' && m.loaded) { localStorage.setItem(LOADED_KEY, String(m.loaded)); render(); }
     if (m.type === 'auth') {
       if (m.ok) {
         authed = true; clearLock();
@@ -36,28 +43,33 @@ const conn = connect({
       } else {
         authed = false;
         if (m.locked) startLock(m.retryAfter, m.error);
-        else { if (m.needPin) localStorage.removeItem(SESSION_KEY); showGate(m.error || 'Wrong PIN'); }
+        else {
+          if (m.needPin) localStorage.removeItem(SESSION_KEY);
+          const kind = /read-only/.test(m.error || '') ? 'readonly' : (m.qrInvalid || /Wrong PIN/.test(m.error || '')) ? 'wrong' : 'info';
+          showGate(m.error || 'Wrong PIN', kind);
+        }
       }
     }
     if (m.type === 'ack') { pending.delete(m.id); savePending(); render(); }
     if (m.type === 'error') {
-      if (m.id && /game changed/.test(m.error) && pending.has(m.id)) toast('A saved tap was for an earlier game and was discarded.');
+      if (m.id && /game changed|complete/.test(m.error) && pending.has(m.id)) toast(/complete/.test(m.error) ? 'The game is complete; a saved tap was not applied.' : 'A saved tap was for an earlier game and was discarded.', 'warn');
       if (m.id && !/PIN required/.test(m.error)) { pending.delete(m.id); savePending(); } // keep taps refused only for auth; they retry after re-auth
       if (/PIN required/.test(m.error)) { authed = false; authenticate(); }
-      else if (!/resyncing/.test(m.error)) toast(m.error);
+      else if (!/resyncing/.test(m.error)) toast(m.error, 'error');
       render();
     }
   },
 });
 
 function authenticate() {
+  if (qrToken && conn.send({ type: 'auth', qr: qrToken, device })) { qrToken = null; setErr('Signing in…', 'busy'); return; }
   const session = localStorage.getItem(SESSION_KEY);
   if (session) conn.send({ type: 'auth', session, device });
   else showGate();
 }
-function showGate(err = '') {
+function showGate(err = '', kind = 'info') {
   $('#app').hidden = true; $('#pin-gate').hidden = false;
-  if (!lockUntil) $('#pin-err').textContent = err;
+  if (!lockUntil) setErr(err, kind);
   bindText(document, { court: snap?.court?.name || court });
   render();
 }
@@ -68,9 +80,9 @@ function startLock(sec, text) {
   const btn = $('#pin-gate button');
   const tick = () => {
     const left = Math.ceil((lockUntil - Date.now()) / 1000);
-    if (left <= 0) { clearLock(); $('#pin-err').textContent = 'You can try the PIN again now.'; authenticate(); return; }
+    if (left <= 0) { clearLock(); setErr('You can try the PIN again now.', 'info'); authenticate(); return; }
     btn.disabled = true;
-    $('#pin-err').textContent = `Too many wrong PINs. Try again in ${left} s.`;
+    setErr(`Too many wrong PINs. Try again in ${left} s.`, 'lockout');
   };
   clearInterval(lockTimer); tick(); lockTimer = setInterval(tick, 250);
   void text;
@@ -81,9 +93,9 @@ $('#pin-gate').addEventListener('submit', (e) => {
   e.preventDefault();
   if (lockUntil > Date.now()) return; // button is disabled; countdown is showing
   const pin = $('#pin').value.trim();
-  if (!pin) { $('#pin-err').textContent = 'Enter the court PIN.'; return; }
-  if (!conn.send({ type: 'auth', pin, device })) $('#pin-err').textContent = 'Not connected yet. Reconnecting… try again in a moment.';
-  else $('#pin-err').textContent = 'Checking…';
+  if (!pin) { setErr('Enter the court PIN.', 'info'); return; }
+  if (!conn.send({ type: 'auth', pin, device })) setErr('Not connected yet. Reconnecting… try again in a moment.', 'busy');
+  else setErr('Checking…', 'busy');
 });
 
 function send(type, extra = {}) {
@@ -109,7 +121,27 @@ document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click
 $('#undo').addEventListener('click', () => send('undo'));
 $('#redo').addEventListener('click', () => send('redo'));
 $('#banner').addEventListener('click', () => send('cmd', { cmd: { type: 'BANNER', text: snap?.game?.state.banner ? null : 'HALFTIME' } }));
-$('#end').addEventListener('click', () => { if (confirm('End the game and save the final score?')) send('cmd', { cmd: { type: 'END_GAME' } }); });
+// Confirm dialog (Load / Complete game). Falls back to confirm() where <dialog> isn't supported.
+function confirmBox(text, okLabel) {
+  const d = $('#confirm-dialog');
+  if (!d.showModal) return Promise.resolve(confirm(text));
+  $('#confirm-text').textContent = text; $('#confirm-ok').textContent = okLabel;
+  d.dataset.kind = okLabel === 'Load' ? 'load' : 'complete';
+  return new Promise((res) => { d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }); d.returnValue = ''; d.showModal(); });
+}
+const matchup = (x) => `${x.grade ? x.grade + ' ' : ''}${x.home} vs ${x.away}`;
+$('#picker-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-game-id]'); if (!b) return;
+  const x = (snap?.today || []).find((t) => String(t.id) === b.dataset.gameId); if (!x) return;
+  if (!(await confirmBox(`Load ${matchup(x)} on ${snap.court.name} Court?`, 'Load'))) return;
+  if (!conn.send({ type: 'load', id: uid(), gameId: x.id })) toast('Not connected. Try again in a moment.', 'warn');
+});
+$('#resume-ok').addEventListener('click', () => { if (snap?.game) { localStorage.setItem(LOADED_KEY, String(snap.game.id)); render(); } });
+$('#complete-game').addEventListener('click', async () => {
+  const g = snap?.game; if (!g) return;
+  const s = g.state;
+  if (await confirmBox(`Complete this game? The final score ${g.home.name} ${s.home.score} – ${s.away.score} ${g.away.name} will be locked.`, 'Complete game')) send('cmd', { cmd: { type: 'END_GAME' } });
+});
 $('#set-clock').addEventListener('click', () => {
   const cur = snap?.game ? fmtClock(clockMs(snap.game.state.clock, conn.serverNow())) : '';
   const v = prompt('Set clock (mm:ss)', cur); if (!v) return;
@@ -118,13 +150,35 @@ $('#set-clock').addEventListener('click', () => {
   send('cmd', { cmd: { type: 'CLOCK_SET', ms: (Number(m[1]) * 60 + Number(m[2] || 0)) * 1000 } });
 });
 
-function toast(t) { const el = document.createElement('div'); el.className = 'toast'; el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), 3000); }
+function toast(t, kind = 'info') {
+  const el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.dataset.kind = kind;
+  el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), 3000);
+}
+const STATUS_LABEL = { scheduled: 'Scheduled', active: 'Active', complete: 'Complete' };
+/** Picker / resume / game: which part of the app this device shows. */
+function renderMode() {
+  const g = snap?.game;
+  const mode = !g ? 'picker' : (localStorage.getItem(LOADED_KEY) === String(g.id) || [...pending.values()].some((p) => p.msg.gameId === g.id) ? 'game' : 'resume');
+  if (!g) localStorage.removeItem(LOADED_KEY);
+  root.dataset.view = mode;
+  $('#picker').hidden = mode !== 'picker'; $('#resume').hidden = mode !== 'resume';
+  $('main.grid').hidden = mode !== 'game'; $('footer.foot').hidden = mode !== 'game';
+  if (mode === 'resume') $('#resume-text').textContent = `${matchup({ grade: g.grade, home: g.home.name, away: g.away.name })} is active on ${snap.court.name} Court.`;
+  if (mode === 'picker') {
+    const list = snap?.today || [];
+    const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const html = list.map((x) => `<li><button type="button" class="pick" data-game-id="${x.id}" data-status="${x.status}"><span class="pick-time">${esc(x.time)}</span> <span class="pick-grade">${esc(x.grade || '')}</span> <span class="pick-matchup">${esc(x.home)} vs ${esc(x.away)}</span> <span class="status-badge" data-status="${x.status}">${STATUS_LABEL[x.status] || esc(x.status)}</span></button></li>`).join('');
+    if ($('#picker-list').innerHTML !== html) $('#picker-list').innerHTML = html;
+    $('#picker-empty').hidden = list.length > 0;
+  }
+}
 
 function render() {
   const online = conn.isOpen();
   const g = snap?.game, s = g?.state;
   root.classList.toggle('no-game', !g);
-  root.classList.toggle('is-final', s?.status === 'final');
+  root.classList.toggle('is-final', s?.status === 'complete');
+  renderMode();
   const p = $('#pending'); p.hidden = pending.size === 0; p.textContent = `${pending.size} tap${pending.size === 1 ? '' : 's'} sending…`;
   const view = {
     court: snap?.court?.name || court,

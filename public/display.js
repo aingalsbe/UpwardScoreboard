@@ -34,12 +34,18 @@ function render() {
   root.classList.toggle('has-home-cheer', !!hc); root.classList.toggle('has-away-cheer', !!ac);
   img('home-cheer-logo', hc?.logo); img('away-cheer-logo', ac?.logo);
   root.dataset.homeSide = g?.homeSide || 'light'; root.dataset.swapped = String(!!g?.swapped);
+  // Idle screen (no active game): next scheduled game, else church branding; plus today's last final.
+  const nx = snap.nextUp, lf = snap.lastFinal;
+  root.classList.toggle('has-next-up', !g && !!nx); root.classList.toggle('has-last-final', !g && !!lf);
+  root.dataset.status = g ? g.state.status : 'idle';
   root.classList.toggle('no-game', !g);
   const view = {
     league: snap.league, court: snap.court?.name,
     'church-name': snap.church?.name || '', 'home-cheer': hc?.name || '', 'away-cheer': ac?.name || '',
     gameInfo: g ? [snap.court?.name, g.grade || g.division, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ') : 'Waiting for the next game',
-    grade: g?.grade || '', matchup: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
+    grade: g?.grade || '',
+    next: nx ? { time: nx.is_today ? nx.time : `${nx.day} ${nx.time}`, grade: nx.grade || '', matchup: `${nx.home} vs ${nx.away}` } : { time: '', grade: '', matchup: '' },
+    lastFinal: lf ? `Final: ${lf.grade ? lf.grade + ' · ' : ''}${lf.home} ${lf.final_home ?? ''} – ${lf.final_away ?? ''} ${lf.away}` : '', matchup: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
     upNext: (snap.upNext || []).map((u) => `${u.time || ''}  ${u.grade ? u.grade + ' · ' : ''}${u.home} vs ${u.away}`).join('   ·   ') || 'Thanks for coming!',
   };
   if (g) {

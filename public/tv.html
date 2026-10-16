@@ -49,7 +49,14 @@
     </section>
 
     <div class="banner" data-bind="banner"></div>
-    <div class="waiting"><div data-bind="court"></div><small>Waiting for the next game</small></div>
+    <!-- Idle screen (no active game on this court). Root: .no-game, .has-next-up, .has-last-final, data-status="idle". -->
+    <div class="waiting idle" id="idle">
+      <div class="idle-brand"><img class="church-logo" data-bind="church-logo" alt="" hidden><div class="church-name" data-bind="church-name"></div></div>
+      <div data-bind="court"></div>
+      <div class="next-up" id="next-up"><span class="next-up-label">Next up</span> <span class="next-time" data-bind="next.time"></span> <span class="next-grade" data-bind="next.grade"></span> <span class="next-matchup" data-bind="next.matchup"></span></div>
+      <div class="last-final" data-bind="lastFinal"></div>
+      <small>Waiting for the next game</small>
+    </div>
   </main>
 
   <footer class="ticker"><b>UP NEXT</b><span data-bind="upNext"></span></footer>

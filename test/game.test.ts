@@ -33,7 +33,7 @@ test('fouls drive the bonus and reset at halftime', () => {
 test('clock is derived from server timestamps (no ticking drift)', () => {
   let s = initialState({ periodLengthMs: 60_000 });
   s = apply(s, { type: 'CLOCK_START' }, T0);
-  assert.equal(s.status, 'live');
+  assert.equal(s.status, 'active');
   assert.equal(remainingMs(s.clock, T0 + 15_000), 45_000);
   s = apply(s, { type: 'CLOCK_STOP' }, T0 + 20_000);
   assert.equal(s.clock.running, false);

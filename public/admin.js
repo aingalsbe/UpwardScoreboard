@@ -40,23 +40,26 @@ async function load() {
   render();
 }
 
+const STATUS = { scheduled: 'Scheduled', active: 'Active', complete: 'Complete' };
+const tvPath = (slug) => `/upwardbasketballscores/${encodeURIComponent(slug)}court`;
 function gameRow(g) {
   return `<tr class="${g.on_court ? 'live' : ''}" data-grade="${esc(g.grade || '')}"><td>${when(g.scheduled_at)}</td><td>${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(g.grade || '—')}</td>` : ''}
     <td>${!g.__full && g.grade ? `${esc(g.grade)} · ` : ''}${esc(g.home)} vs ${esc(g.away)}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
-    <td>${g.home_score}–${g.away_score}</td><td><span class="tag ${g.status}">${g.on_court ? 'ON COURT' : esc(g.status)}</span></td>
-    <td class="right"><button class="primary sm" data-start="${g.id}">${g.on_court ? 'Re-show' : 'Start on court'}</button>
+    <td>${g.home_score}–${g.away_score}</td><td><span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status] || esc(g.status)}</span></td>
+    <td class="right">${g.status === 'scheduled' ? `<button class="primary sm" data-start="${g.id}">Start on court</button>`
+      : g.status === 'active' ? `<button class="sm" data-complete="${g.id}">Complete</button>` : `<button class="link sm" data-reopen="${g.id}">Reopen</button>`}
     <button class="link sm" data-edit-game="${g.id}">Edit</button><button class="link sm" data-del-game="${g.id}">Delete</button></td></tr>`;
 }
 
 function render() {
   const opt = (arr, label) => arr.map((x) => `<option value="${x.id}">${esc(label(x))}</option>`).join('');
   $('#court-cards').innerHTML = courts.map((c) => {
-    const g = games.find((x) => x.id === c.current_game_id);
+    const g = games.find((x) => x.court_id === c.id && x.status === 'active');
     const s = encodeURIComponent(c.slug);
-    return `<div class="card"><h3>${esc(c.name)}</h3><p>${g ? `<b>${esc(g.home)} ${g.home_score} – ${g.away_score} ${esc(g.away)}</b> <span class="tag ${g.status}">${esc(g.status)}</span>` : '<span class="muted">No game on court</span>'}</p>
-      <p class="links"><a href="/tv/${s}" target="_blank">TV</a> · <a href="/score/${s}" target="_blank">Scorekeeper</a> · <a href="/overlay/${s}" target="_blank">Overlay</a></p></div>`;
+    return `<div class="card"><h3>${esc(c.name)}</h3><p>${g ? `<b>${esc(g.home)} ${g.home_score} – ${g.away_score} ${esc(g.away)}</b> <span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status]}</span>` : '<span class="muted">No active game (TV shows Next up)</span>'}</p>
+      <p class="links"><a href="${tvPath(c.slug)}" target="_blank">TV</a> · <a href="/score/${s}" target="_blank">Scorekeeper</a> · <a href="${tvPath(c.slug)}/overlay" target="_blank">Overlay</a></p></div>`;
   }).join('');
-  $('#today-games').innerHTML = games.filter((g) => g.status !== 'final' || g.on_court).map(gameRow).join('') || '<tr><td colspan="6" class="muted">No games</td></tr>';
+  $('#today-games').innerHTML = games.filter((g) => g.status !== 'complete').map(gameRow).join('') || '<tr><td colspan="6" class="muted">No games</td></tr>';
   const gf = $('#game-grade-filter').value, tf = $('#team-grade-filter').value;
   $('#game-rows').innerHTML = games.filter((g) => !gf || g.grade === gf).map((g) => gameRow({ ...g, __full: true })).join('') || '<tr><td colspan="7" class="muted">No games</td></tr>';
   // Grade filters + datalist (teams come sorted by grade, then name, from the server).
@@ -88,6 +91,21 @@ document.addEventListener('click', guard(async (e) => {
     }
     msg(`Game is now on ${r.court}. TV and scorekeeper update automatically.`); await load();
   }
+  if (b.dataset.complete && confirm('Complete this game? The final score will be locked and the court goes to "Next up".')) {
+    await api(`/api/games/${b.dataset.complete}/complete`, { method: 'POST' }); msg('Game completed. Final score locked.'); await load();
+  }
+  if (b.dataset.reopen && confirm('Reopen this game? It becomes the active game on its court again.')) {
+    const url = `/api/games/${b.dataset.reopen}/reopen`;
+    try { await api(url, { method: 'POST' }); } catch (err) {
+      if (err.status !== 409 || !/shares the floor/.test(err.message) || !confirm(`${err.message}\n\nReopen anyway?`)) throw err;
+      await api(url, { method: 'POST', body: JSON.stringify({ force: true }) });
+    }
+    msg('Game reopened.'); await load();
+  }
+  if (b.dataset.qrRegen && confirm('Make a new QR code for this court? Codes already printed for it stop working.')) { await api(`/api/courts/${b.dataset.qrRegen}/qr/regenerate`, { method: 'POST' }); await loadQr(); msg('New QR code made. Print it.'); }
+  if (b.dataset.qrRevoke && confirm('Revoke this court\'s QR code? Printed codes stop working until you print a new one (the PIN still works).')) { await api(`/api/courts/${b.dataset.qrRevoke}/qr/revoke`, { method: 'POST' }); qrCards = qrCards.filter((q) => String(q.court_id) !== b.dataset.qrRevoke); renderQr(); msg('QR code revoked.'); }
+  if (b.id === 'qr-show') await loadQr();
+  if (b.id === 'qr-print') window.print();
   if (b.dataset.editGame) {
     const g = games.find((x) => x.id === Number(b.dataset.editGame)); const f = $('#game-form');
     f.reset();
@@ -187,3 +205,19 @@ async function boot() { $('#app').hidden = false; route(); await load(); setInte
 api('/api/me').then((me) => { leagueTz = me.tz; boot(); }).catch(() => {});
 
 for (const sel of document.querySelectorAll('[data-grade-filter]')) sel.addEventListener('change', () => render());
+
+// Weekly scorekeeper QR codes (Courts tab). Each code signs a phone in to one court until Sunday 23:59.
+let qrCards = [];
+async function loadQr() { qrCards = await api('/api/qr'); renderQr(); }
+function renderQr() {
+  const fmt = (iso) => new Date(iso).toLocaleString([], { timeZone: leagueTz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  $('#qr-cards').innerHTML = qrCards.map((q) => `<article class="qr-card" data-court="${esc(q.slug)}">
+    <h3 class="qr-court">${esc(q.name)} Court</h3>
+    <div class="qr-code">${q.svg /* SVG generated by the server's QR library from our own URL */}</div>
+    <p class="qr-help">Scorekeeper: scan with the phone camera.</p>
+    <p class="qr-expires">Valid until ${esc(fmt(q.expires))}</p>
+    <p class="qr-url"><code>${esc(q.url.replace(/\?t=.*/, '?t=…'))}</code></p>
+    <p class="qr-actions no-print"><button class="link sm" data-qr-regen="${q.court_id}">New code</button><button class="link sm" data-qr-revoke="${q.court_id}">Revoke</button></p>
+  </article>`).join('');
+  $('#qr-panel').hidden = false;
+}

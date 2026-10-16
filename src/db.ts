@@ -66,6 +66,16 @@ ALTER TABLE games ADD COLUMN IF NOT EXISTS home_cheer TEXT, ADD COLUMN IF NOT EX
   ADD COLUMN IF NOT EXISTS home_cheer_logo_url TEXT, ADD COLUMN IF NOT EXISTS away_cheer_logo_url TEXT,
   ADD COLUMN IF NOT EXISTS home_cheer_logo_data BYTEA, ADD COLUMN IF NOT EXISTS away_cheer_logo_data BYTEA,
   ADD COLUMN IF NOT EXISTS home_cheer_logo_mime TEXT, ADD COLUMN IF NOT EXISTS away_cheer_logo_mime TEXT;
+-- Scorekeeping flow: statuses scheduled / active / complete (older builds: live / final).
+UPDATE games SET status='active' WHERE status='live';
+UPDATE games SET status='complete' WHERE status='final';
+-- Old dev data may hold several started games per court: keep the one on court, complete the rest.
+UPDATE games g SET status='complete', final_home=COALESCE(final_home, (history->'present'->'home'->>'score')::int), final_away=COALESCE(final_away, (history->'present'->'away'->>'score')::int)
+  WHERE status='active' AND court_id IS NOT NULL AND id <> COALESCE((SELECT current_game_id FROM courts c WHERE c.id=g.court_id), -1);
+-- Only one active game per court (enforced by the database).
+CREATE UNIQUE INDEX IF NOT EXISTS games_one_active_per_court ON games(court_id) WHERE status='active';
+-- Weekly court QR codes: bumping the version invalidates every older printed code for that court.
+ALTER TABLE courts ADD COLUMN IF NOT EXISTS qr_version INT NOT NULL DEFAULT 1;
 -- Shared gym floor (2026-10): courts a court can't overlap in time (slugs, symmetric), per-game length.
 ALTER TABLE courts ADD COLUMN IF NOT EXISTS conflicts_with TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE games ADD COLUMN IF NOT EXISTS duration_min INT CHECK (duration_min IS NULL OR duration_min BETWEEN 1 AND 600);
