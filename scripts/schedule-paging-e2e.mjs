@@ -74,7 +74,13 @@ const inspect = () => page.evaluate(() => {
     finalsFit: (() => { const t = document.querySelector('.sched-track'), offs = (t.dataset.offsets || '0').split(',').map(Number), last = offs.at(-1);
       const tt = t.getBoundingClientRect().top, vh = document.querySelector('.sched-view').clientHeight;
       return trackGames.filter((g) => g.dataset.state === 'complete').every((g) => { const b = g.getBoundingClientRect(); return b.top - tt >= last - 1 && b.bottom - tt <= last + vh + 1; }); })(),
-    pinnedEmptySlots: document.querySelectorAll('.sched-pinned .slot[data-empty]').length,
+    // Pinned rows by time: same time -> same top (one row across West/East), different times -> different rows.
+    pinnedRows: (() => { const sl = [...document.querySelectorAll('.sched-pinned .slot')].map((x) => ({ t: x.dataset.time, top: Math.round(x.getBoundingClientRect().top), empty: x.hasAttribute('data-empty'), full: !!x.closest('.full-row') }));
+      const byT = {}; for (const x of sl) (byT[x.t] ||= []).push(x.top);
+      const same = Object.values(byT).every((a) => a.every((y) => Math.abs(y - a[0]) <= 1));
+      const tops = Object.values(byT).map((a) => a[0]); const distinct = new Set(tops).size === tops.length;
+      return { same, distinct, times: Object.keys(byT), empty: sl.filter((x) => x.empty).length, splitCells: sl.filter((x) => !x.full).length }; })(),
+    titlesOk: [...document.querySelectorAll('.chip[data-bind$="-name"]')].every((c) => c.title && c.title === c.textContent),
     earlier: document.querySelector('.earlier').textContent,
     earlierBeforeFinals: (() => { const e = document.querySelector('.earlier'), f = document.querySelector('.sched-track .game[data-state="complete"]'); return !f || !!(e.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING); })(),
     times: trackGames.filter((g) => g.dataset.state === 'complete').map((g) => g.querySelector('[data-bind=time]').textContent),
@@ -88,7 +94,9 @@ async function scene(name, expectPhase, totalFinals) {
   ok(s.phase === expectPhase, `${name}: data-phase=${s.phase}`);
   ok(s.keyInPinned && s.pinnedOnlyKey && !s.pinnedAncestorTrack && s.pinnedTransform === 'none', `${name}: live + UP NEXT (${s.keyCount}) are all in .sched-pinned (untransformed, outside the track), nothing else is`);
   ok(s.keyVisible, `${name}: live + UP NEXT fully visible at 1920x1080`);
-  ok(s.pinnedEmptySlots === 0, `${name}: no empty placeholder slots in .sched-pinned`);
+  const pr = s.pinnedRows;
+  ok(pr.same && pr.distinct && pr.splitCells % 2 === 0, `${name}: pinned rows aligned by time (${pr.times.join(', ') || 'none'}; same time = same top, different times = different rows; ${pr.empty} empty cell(s))`);
+  ok(s.titlesOk, `${name}: every team-name chip has a title with the full name`);
   const firstFinal = s.order.indexOf('complete');
   ok(firstFinal === -1 || s.order.slice(firstFinal).every((x) => x === 'complete'), `${name}: track order = later upcoming, then finals`);
   const n = Number((s.earlier.match(/\d+/) || [0])[0]);
@@ -112,6 +120,7 @@ await live(at('10:00', 'East'), [['home', 2], ['away', 3], ['home', 2]]);
 const m = await scene('midday', 'midday', 5);
 if (Number(m.pages) > 1) { await sleep(12_600); await page.screenshot({ path: `${OUT}/midday-p2.png` }); // the page with the finals
   const m2 = await inspect(); ok(m2.page === '1' && JSON.stringify(m2.keyRects) === JSON.stringify(m.keyRects), 'midday: page 2 (later upcoming + compact finals) leaves live + next where they were'); }
+ok(m.pinnedRows.times.length === 2 && m.pinnedRows.empty === 1, `midday: pinned = 10:00 row (West empty, East live) + 11:00 row (both next)`);
 ok(m.compact >= 1, `midday: at least one compact final in the leftover space (${m.compact} shown: ${m.times.join(' ')})`);
 // End: everything final.
 await api(`/api/games/${at('10:00', 'East').id}/complete`, { method: 'POST' });

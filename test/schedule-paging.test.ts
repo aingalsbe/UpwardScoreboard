@@ -80,3 +80,14 @@ test('page offsets: one page when it fits, breaks at row tops otherwise', { skip
   const tops = [0, 100, 200, 300, 400, 500, 600], bots = tops.map((t) => t + 90);
   assert.deepEqual(v.pageOffsets(tops, bots, 300), [0, 300, 600]); // a row is never cut
 });
+
+test('pinned rows align by time across West/East (empty cell where a court has no pinned game), Full stays full-width', { skip }, async () => {
+  const v = await load();
+  const mid = v.planSchedule(day((t, c) => (t < '10:00' || (t === '10:00' && c === 'west') ? 'complete' : t === '10:00' ? 'active' : 'scheduled')));
+  const b = v.blocksOf(mid.pinned);
+  assert.deepEqual(b.map((r: any) => r.type), ['split']);
+  assert.deepEqual(b[0].rows.map((r: any) => [r.time, r.west && 'game', r.east && 'game']), [['10:00', null, 'game'], ['11:00', 'game', 'game']]);
+  const late = v.blocksOf(v.planSchedule(day((t) => (t < '15:00' ? 'complete' : t === '15:00' ? 'active' : 'scheduled'))).pinned);
+  assert.deepEqual(late.map((r: any) => r.type), ['split', 'full']);
+  assert.equal(late[0].rows.length, 1);
+});

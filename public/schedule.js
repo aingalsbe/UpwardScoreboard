@@ -36,6 +36,8 @@ function gameEl(g, isNext, compact) {
   setText(el, 'time', t12(g.time));
   setText(el, 'grade-label', g.label || g.grade || '');
   setText(el, 'home-name', g.home.name); setText(el, 'away-name', g.away.name);
+  // Full name on hover/inspection (compact finals can cut long names off with an ellipsis).
+  el.querySelector('[data-bind="home-name"]').title = g.home.name || ''; el.querySelector('[data-bind="away-name"]').title = g.away.name || '';
   if (state === 'upcoming') { const sc = el.querySelector('.score'); sc.className = 'score vs'; sc.textContent = 'vs'; }
   else { setText(el, 'home-score', hs); setText(el, 'away-score', as); }
   // Cheer squads: omit the .cheer div when there's none.
@@ -55,7 +57,7 @@ function gameEl(g, isNext, compact) {
 function slot(time, child) { const s = document.createElement('div'); s.className = 'slot'; s.dataset.time = time; if (child) s.appendChild(child); else s.dataset.empty = 'true'; return s; }
 
 /** Blocks -> DOM: West/East runs share one .split (two .court-col, one aligned .slot per time); Full rows span both. */
-function buildBlocks(games, nextIds, compact = false, pinnedMode = false) {
+function buildBlocks(games, nextIds, compact = false) {
   const frag = document.createDocumentFragment();
   for (const b of blocksOf(games)) {
     if (b.type === 'full') {
@@ -65,8 +67,8 @@ function buildBlocks(games, nextIds, compact = false, pinnedMode = false) {
     const wrap = document.createElement('div'); wrap.className = 'split';
     for (const c of SPLIT) {
       const col = document.createElement('section'); col.className = 'court-col'; col.dataset.court = c;
-      // Pinned: only real games (no data-empty placeholders); each court lists its live + next top-aligned.
-      for (const r of b.rows) if (r[c] || !pinnedMode) col.appendChild(slot(r.time, r[c] ? gameEl(r[c], nextIds.has(r[c].id), compact) : null));
+      // One row per time across West/East (pinned and track alike); a court without a game then gets data-empty.
+      for (const r of b.rows) col.appendChild(slot(r.time, r[c] ? gameEl(r[c], nextIds.has(r[c].id), compact) : null));
       wrap.appendChild(col);
     }
     frag.appendChild(wrap);
@@ -87,7 +89,7 @@ function render() {
   // overflow), finals last and only in the leftover space (most recent first to stay, the rest "▲ N earlier finals").
   plan = planSchedule(snap.games);
   if (plan.phase) root.dataset.phase = plan.phase; else delete root.dataset.phase;
-  pinned.replaceChildren(buildBlocks(plan.pinned, plan.nextIds, false, true));
+  pinned.replaceChildren(buildBlocks(plan.pinned, plan.nextIds));
   pinned.hidden = !plan.pinned.length;
   $('.heads').hidden = !snap.games.some((g) => SPLIT.includes(g.court)); // omitted on Fridays (Full only)
   // Empty day: hide the court heads, show .empty (outside the track, so paging can't move it).

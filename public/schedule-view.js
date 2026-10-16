@@ -57,7 +57,7 @@ export function planSchedule(games) {
 }
 
 /**
- * Blocks in time order: runs of West/East games share one two-column block with one row per time (a missing court is
+ * Blocks in time order (used for .sched-pinned and .sched-track): runs of West/East games share one two-column block with one row per time (a missing court is
  * null, so both columns stay aligned); each Full Court game is its own full-width row.
  */
 export function blocksOf(games) {
