@@ -123,11 +123,11 @@ button[data-reopen]::before { content: "↺ "; }
   #qr-panel { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
   .no-print, .no-print * { display: none !important; }
   .qr-cards { display: block; }
-  .qr-card { box-shadow: none; border: 3px solid #111; border-radius: 18px; height: 9.6in; padding: 0.5in; justify-content: center; gap: 0.2in;
+  .qr-card { box-shadow: none; border: 3px solid #111; border-radius: 18px; height: 9.3in; padding: 0.4in; justify-content: space-evenly; gap: 0.12in; overflow: hidden;
     break-after: page; page-break-after: always; break-inside: avoid; }
   .qr-card:last-child { break-after: auto; page-break-after: auto; }
-  .qr-court { font-size: 44pt; } .qr-court::after { width: 1.4in; height: 8px; }
-  .qr-code svg { max-width: 5.2in; width: 5.2in; }
+  .qr-court { font-size: 40pt; line-height: 1.15; } .qr-court::after { width: 1.4in; height: 8px; }
+  .qr-code svg { max-width: 4.6in; width: 4.6in; }
   .qr-help { font-size: 16pt; } .qr-help::before { font-size: 28pt; }
   .qr-expires { font-size: 14pt; color: #111; }
   .qr-url { font-size: 11pt; } .qr-url code { background: none; }
