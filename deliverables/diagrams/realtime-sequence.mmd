@@ -1,25 +1,31 @@
 sequenceDiagram
   autonumber
-  participant SK as Scorekeeper (controller)
+  participant SK as Scorekeeper phone
   participant S as App server (authoritative)
   participant DB as Postgres
   participant TV as TV display
-  SK->>S: connect /ws?court=west&role=score + auth PIN
-  TV->>S: connect /ws?court=west&role=tv
-  S-->>SK: full snapshot (state, seq=41, serverNow)
-  S-->>TV: full snapshot (state, seq=41, serverNow)
-  Note over SK,TV: Clients estimate the server clock offset from ping/pong.<br/>Clock shown = remainingMs - (serverNow - startedAt)
-  SK->>S: cmd {id:"a1", type:SCORE, team:home, pts:2}
-  S->>S: queue per game, validate, reducer gives seq=42
-  S->>DB: save history + append game_event(seq 42)
+  TV->>S: connect /ws?court=west&role=tv (read-only, no login)
+  S-->>TV: snapshot: no active game, idle Next up
+  SK->>S: open /score/west?t=QR token (weekly, signed, court qr_version)
+  Note over SK: token removed from the address bar
+  SK->>S: auth {qr, device}
+  S->>DB: check court qr_version (Regenerate/Revoke bumps it)
+  S-->>SK: auth ok + 12 h device session (tied to that qr_version)
+  Note over SK,S: Reconnects send the session, no PIN. A session from an older QR version is refused.<br/>PIN is the fallback. Bad QR codes and PINs lock only that device.
+  S-->>SK: snapshot with the picker (today's games on West, not complete)
+  SK->>S: load {gameId} after "Load 2nd Grade Bears vs Dolphins on West Court?"
+  S->>DB: status scheduled to active (one active game per court, shared-floor rule)
+  S-->>TV: snapshot: the game (TV switches by itself)
+  SK->>S: cmd {id:"a1", SCORE home +2}
+  S->>S: per-game queue, validate, reducer gives seq=42
+  S->>DB: save history + append game_event (seq 42)
   S-->>SK: ack {id:"a1", seq:42}
   S-->>TV: snapshot seq=42 (home +2)
-  Note over TV: Wi-Fi drops - TV goes offline
-  SK->>S: cmd {id:"a2", FOUL away}, applied as seq=43
-  SK->>S: retry cmd {id:"a2"} after network blip
-  S-->>SK: ack {id:"a2", seq:43, dup:true} (not applied twice)
-  TV->>S: reconnect (backoff 0.5s to 8s)
-  S-->>TV: full snapshot seq=43 = exact current state
-  Note over SK,S: A second controller on the same court:<br/>its commands join the same queue in arrival order
-  SK->>S: undo {id:"u1"}
-  S-->>TV: snapshot seq=44 (foul removed, clock untouched)
+  Note over TV: Wi-Fi drops, clock freezes and dims
+  SK->>S: retry cmd {id:"a2"} after a blip
+  S-->>SK: ack {id:"a2", dup:true} (applied once)
+  TV->>S: reconnect (backoff 0.5 s to 8 s)
+  S-->>TV: full snapshot = exact current state
+  SK->>S: cmd END_GAME after "Complete this game?"
+  S->>DB: status complete, final score saved, game locked (no taps, no undo)
+  S-->>TV: snapshot: idle Next up + last final score

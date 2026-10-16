@@ -12,8 +12,10 @@ A game that is not scheduled yet can have date and time both empty (court may be
 
 Team names are unique within a grade: 2nd Grade Eagles and 5th Grade Eagles are two teams (see teams.csv). teams.csv matches on grade + name. In schedule.csv, fill the grade column when a team name exists in more than one grade; without it, a name used in one grade only is found automatically, and a name in several grades takes the other team's grade, otherwise the row is an error.
 
-home_score and away_score are ignored on import. status is optional: a game that never started can be set to complete with its scores; other status changes are made in Admin.
+home_score and away_score are used only with status complete. status is optional: a game that never started can be set to complete with its scores; other status changes are made in Admin.
 
 Uploaded cheer logos are exported as the full address of the served file; re-importing keeps the upload.
 
 Full column reference: section 10 of ../UpwardScoreboard-POC.md.
+
+Partial rows: a row with only id and status (and home_score/away_score for complete) changes just that game's status; the other columns can be blank or left out. Clearing a cheer logo cell removes the game's uploaded logo. A cheer logo address that points to another game's uploaded logo (for example after copying a row) is not carried over; the row imports with a warning, so upload the logo for the new game in Admin.

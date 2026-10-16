@@ -39,7 +39,7 @@ npm test                  # reducer unit tests (score, fouls/bonus, clock, timeo
 CHROME_PATH=/usr/bin/google-chrome node scripts/offline-e2e.mjs  # Playwright setOffline: Offline in <5 s, clock freezes, recovers
 CHROME_PATH=/usr/bin/google-chrome node scripts/lockout-e2e.mjs # wrong PINs on east don't affect signed-in west; queued tap delivered
 CHROME_PATH=/usr/bin/google-chrome node scripts/flow-e2e.mjs    # QR sign-in, picker, complete lock, resume, TV switching
-node scripts/smoke.mjs    # end-to-end (133 checks, repeatable on a used DB): 3 courts + shared-floor rule, grades (team names unique per grade), season colors, cheer squads, QR flow, statuses, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
+node scripts/smoke.mjs    # end-to-end (144 checks, repeatable on a used DB): 3 courts + shared-floor rule, grades (team names unique per grade), season colors, cheer squads, QR flow, statuses, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
                           # Repeatable on a used DB (own uniquely named fixtures); waits out an admin-login lock left by a previous run
 node scripts/latency.mjs  # tap -> TV latency (median/p95)
 CHROME_PATH=/usr/bin/google-chrome node scripts/screenshots.mjs   # writes docs/screenshots/*.png

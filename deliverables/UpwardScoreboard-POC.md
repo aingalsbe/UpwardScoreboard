@@ -9,7 +9,7 @@ Prepared by Devon (lead developer) with Sage (UI/UX), Avery (QA) and Morgan (PM)
 - Approach: custom build, fully cloud-hosted. There is no computer at the gym; it needs only a TV device with a browser and the scorekeeper's phone or tablet.
 - Three modules: Score (bench controller), Display (TV board plus stream overlay), Admin (teams, courts, schedule).
 - Stack: one TypeScript Node 20 container that serves the web pages, the API and live WebSocket updates, plus managed Postgres.
-- Status: a working POC runs with docker compose. Current batch (courts, shared floor, grades, season colors, cheer squads, QR scorekeeping flow), on a freshly rebuilt container: unit tests 18/18, browser offline test 13/13, browser lockout test 8/8, browser flow test 15/15, and the end-to-end smoke test 133/133 run twice in a row on the same used database.
+- Status: a working POC runs with docker compose. After QA round 4 fixes, on a freshly rebuilt container: unit tests 18/18, browser offline test 13/13, browser lockout test 8/8, browser flow test 19/19, and the end-to-end smoke test 144/144 run twice in a row on the same used database.
 - Courts: Full (whole floor), West and East (half courts). Full cannot run at the same time as West or East; West and East can run together. See section 3.4.
 - Recommended host: Render, about $13 per month including managed Postgres.
 
@@ -69,7 +69,7 @@ URLs: /score/full, /score/west, /score/east (one link per court; the weekly cour
 
 URLs: /upwardbasketballscores/fullcourt, /upwardbasketballscores/westcourt and /upwardbasketballscores/eastcourt (full-screen TV board), the same with /overlay on the end (transparent scorebug for OBS), and /tv/split (West and East side by side on one TV). The older /tv/west and /overlay/west style links still work. All are public and read-only. Each link stays on the court all day: it shows an idle "Next up" screen between games and switches to the next game by itself.
 
-TV layout: church logo (CHURCH_LOGO_URL) and name, league name and a court · grade · matchup header (for example "West · 5th Grade · Eagles vs Lions"). For each team: a color bar in the team's season color, logo or initial badge, name, optional cheer squad name and logo, a large score, fouls, timeout dots and a BONUS tag. In the center: a red clock, the period (OT1, OT2 for overtime) and the possession arrow. At the bottom: an UP NEXT ticker from the schedule. Also a HALFTIME/FINAL banner, and a waiting screen when no game is on the court.
+TV layout: church logo (CHURCH_LOGO_URL) and name, league name and a court · grade · matchup header (for example "West · 5th Grade · Eagles vs Lions"). For each team: a color bar in the team's season color, logo or initial badge, name, optional cheer squad name and logo, a large score, fouls, timeout dots and a BONUS tag. In the center: a red clock, the period (OT1, OT2 for overtime) and the possession arrow. At the bottom: an UP NEXT ticker from the schedule (games on a later day show the date, for example "Sat Oct 24 · 10:00"). Also a HALFTIME/FINAL banner, and a waiting screen when no game is on the court.
 
 | Behavior | Status | Notes |
 |---|---|---|
@@ -183,7 +183,7 @@ Grades. Each team has a grade (seeded: 2nd, 3rd, 4th and 5th Grade). A game must
 
 Scorekeeping flow (Aaron's Saturday):
 
-1. Each week Admin prints the court QR sheet (Admin > Courts > Print QR codes): one signed code per court, valid until Sunday 23:59 Kansas City time. Regenerate or Revoke on a court makes its old codes stop working at once.
+1. Each week Admin prints the court QR sheet (Admin > Courts > Print QR codes): one signed code per court, valid until Sunday 23:59 Kansas City time. Regenerate or Revoke on a court makes its old codes stop working at once and signs out every phone that signed in with an old code (they see "This phone was signed in with a court QR code that has been replaced…" and can scan the new code or use the PIN). Phones signed in with the PIN stay signed in.
 2. The volunteer scans the court's QR. It opens /score/west, signs the device in for 12 hours and removes the code from the address bar. The court PIN still works as the fallback. A bad, expired or revoked code shows a clear message and counts toward the device lockout, like a wrong PIN.
 3. The phone lists today's games on that court that are not complete. Tapping one asks "Load 5th Grade Eagles vs Lions on West Court?". Confirming makes it the court's active game. Only one game can be active per court (enforced by the database), and the shared-floor rule applies.
 4. The TV and overlay links switch to the active game automatically, and back to the idle "Next up" screen (with the last final score) when it is completed.
@@ -203,7 +203,7 @@ Recommendation: A, with C on the main site for a friendly link. Set PUBLIC_BASE_
 
 Migration. No wipe is needed. On start the server renames an existing court-1 to west and court-2 to east (keeping their games), adds full with its floor rule, maps old statuses (live to active, final to complete; if a court had more than one live game, the extra ones are completed), and adds the new columns with defaults. This was tested on a copy of a database from the previous version and is safe to run repeatedly. Update COURT_PINS to full, west and east. For a clean demo with today's sample games, reset the dev database with docker compose down -v.
 
-Test counts for this batch (freshly rebuilt container): unit 18/18; browser offline 13/13; browser lockout 8/8; browser flow 15/15 (QR sign-in, picker, complete lock, resume, TV switching); smoke 133/133 (including team names per grade and the cheer logo export), run twice in a row on the same used database (covers floor overlap in CSV and Admin, grades, season colors, cheer squads, QR tokens, one active game per court, complete locking and the status export and import).
+Test counts (after the QA round 4 fixes, freshly rebuilt container): unit 18/18; browser offline 13/13; browser lockout 8/8; browser flow 19/19 (QR sign-in, picker, complete lock, resume, TV switching, sign-out on Regenerate, QR lockout wording, idle cleanup); smoke 144/144 (including team names per grade, cheer logo export, QR session invalidation, the shared-IP spare phone case and the round 4 CSV fixes), run twice in a row on the same used database (covers floor overlap in CSV and Admin, grades, season colors, cheer squads, QR tokens, one active game per court, complete locking and the status export and import).
 
 Markup added for Sage (functional only, unstyled where noted): church logo and name on the TV and overlay; cheer squad slots on the TV; grade spans on the TV, overlay and scorekeeper; idle screen #idle with #next-up and .last-final (unstyled); scorekeeper #picker with .pick items and .status-badge, #resume prompt, dialog#confirm-dialog and #complete-game; Admin #season-form with the .contrast-warn box, #swap-colors, #cheer-fields, grade filters, status badges, Start/Complete/Reopen buttons and the QR print panel #qr-panel (print-friendly .qr-card, .no-print buttons); public/split.html with split.css (Sage owns it).
 
@@ -212,7 +212,7 @@ What Avery should test in this batch:
 1. Start West and East together; then try to start Full: refused ("Full is live"), and Admin's "Start anyway?" works.
 2. Import a schedule CSV where a Full game overlaps a West game: that row is an error naming the game. Try a 45-minute game using the minutes column.
 3. Mixed-grade game in CSV and in Admin: refused.
-4. Scan a printed QR on a phone: signed in, the code disappears from the address bar. Regenerate in Admin: the old printout fails with a clear message. Several bad codes trigger the lockout countdown.
+4. Scan a printed QR on a phone: signed in, the code disappears from the address bar. Regenerate in Admin: the old printout fails with a clear message, and a phone already signed in with it is signed out. Several bad codes trigger the lockout countdown with QR wording ("Too many invalid QR codes…"), and other phones on the same Wi-Fi keep working.
 5. Picker, confirm, score, Complete game: the score locks and the TV goes to Next up. Reload mid-game: Resume is offered. Admin Reopen works.
 6. Swap colors on one game; cheer squads with and without logos on the TV; the overlay shows no cheer squads; the scorekeeper never does.
 7. Export the schedule, mark a never-started game complete with scores, re-import.
@@ -271,7 +271,7 @@ Planned later: seasons, divisions, users with roles, and hashed per-day court PI
 | Role | POC | Next step |
 |---|---|---|
 | Admin | Password from server settings. Signed session cookie for 12 hours. 5 wrong passwords lock that address for 30 s (doubling, max 15 min) with HTTP 429 and Retry-After | Google sign-in with a users table |
-| Scorekeeper | PIN for each court, valid only for that court. A correct PIN gives that device a signed 12-hour session for that court, stored on the device; reconnects use it and are never affected by lockouts. The weekly court QR gives the same session (section 3.4); a bad or expired QR counts as a wrong PIN. Wrong PINs are counted per court and per device: 5 wrong lock that device for that court for 30 s (doubling, max 15 min) with an on-screen countdown, and close the connection. A backstop of 50 wrong PINs from one network address locks that address. TV and overlay links are read-only, and their connections never count toward a lockout | Per-day PINs; per-person logins |
+| Scorekeeper | PIN for each court, valid only for that court. A correct PIN gives that device a signed 12-hour session for that court, stored on the device; reconnects use it and are never affected by lockouts. The weekly court QR gives the same session (section 3.4), tied to the court's QR version: Regenerate or Revoke ends QR sessions, PIN sessions stay. Wrong PINs and bad QR codes are counted per court and per device: 5 lock that device for that court for 30 s (doubling, max 15 min) with an on-screen countdown (with QR wording for bad codes), and close the connection. A backstop of 100 wrong PINs from one network address (gym phones share one) blocks further PIN tries from that address; bad QR codes never count toward it, and valid sessions and valid QR codes are never blocked by it. TV and overlay links are read-only, and their connections never count toward a lockout | Per-day PINs; per-person logins |
 | Public viewer | TV and overlay need no login; the server rejects any command from them | Optional public live-scores page |
 
 HTTPS is provided by the host. Secrets live only in host settings, never in the code repository.
@@ -355,7 +355,7 @@ Files in sheets-templates/. They match the POC importer exactly. Import them in 
 
 A file missing a required column is rejected as a whole with a message naming the column. Every bad row is reported with its row number; good rows still import. Re-importing the same file, or an export, changes nothing (all rows reported as skipped).
 
-Exports use the same columns. The schedule export starts with the game id (keep it) and adds home_score, away_score and status. Scores are the final score for completed games and the current score for active games. On import, status is optional: a game that never started can be set to complete with its scores (for paper-scored games); changing the status of a game that has already started is a row error, and other values are ignored. A note on keeping the id column is also in sheets-templates/README.md. In Google Sheets, use File > Download > CSV to produce a file for import, and File > Import > Upload to open an export.
+Exports use the same columns. The schedule export starts with the game id (keep it) and adds home_score, away_score and status. Scores are the final score for completed games and the current score for active games. On import, status is optional: a game that never started can be set to complete with its scores (for paper-scored games); changing the status of a game that has already started is a row error. A row with only id and status (plus scores; the other cells blank or the columns left out) changes just the status. Clearing a cheer logo cell removes that game's uploaded logo; a cheer logo address that points to another game's uploaded logo (a copied row) is not carried over, and the row imports with a warning. A note on keeping the id column is also in sheets-templates/README.md. In Google Sheets, use File > Download > CSV to produce a file for import, and File > Import > Upload to open an export.
 
 ## 11. Known risks and gaps
 
@@ -364,7 +364,7 @@ Exports use the same columns. The schedule export starts with the game id (keep 
 | Gym Wi-Fi (captive portal, weak signal) | The TV or controller can't reach the cloud | Test before the pilot; bring a hotspot or travel router; Keepthescore as fallback |
 | Taps during long outages are kept only in memory | Taps can be lost if the page is closed while offline | Offline app mode with stored queue (next step) |
 | POC-level auth (PINs in server settings, 4-digit PINs) | Guessing is now throttled, but PINs are shared and long-lived | Per-day PINs, Google sign-in for admins |
-| PIN lockouts are per court and device, held in memory | Someone guessing on one court cannot lock out other courts or a scorekeeper already signed in (sessions skip the PIN). Lockouts reset when the server restarts, and a guesser who clears site data gets a new device id (5 more tries); the 50-per-address backstop and 4-digit PINs limit this to slow guessing | Per-day PINs, per-person logins later |
+| PIN lockouts are per court and device, held in memory | Someone guessing on one court cannot lock out other courts or a scorekeeper already signed in (sessions skip the PIN). Lockouts reset when the server restarts, and a guesser who clears site data gets a new device id (5 more tries); the 100-per-address PIN backstop and 4-digit PINs limit this to slow guessing; bad QR codes lock only the device that sent them | Per-day PINs, per-person logins later |
 | Scorekeeper sessions last 12 hours | Anyone holding an unlocked phone can score on that court for the day. Changing SESSION_SECRET signs everyone out | Per-day PINs; a sign-out button |
 | Schedule times in the 1 a.m. hour on the night clocks fall back are ambiguous in league time | Two such games with the same court and teams could look like duplicates on re-import. Not realistic for youth games | Store the UTC offset in exports if ever needed |
 | Single app instance | Restart takes a few seconds (state is preserved) | Fine for a league; coordination layer before scaling out |
@@ -393,7 +393,13 @@ From QA round 1 (Avery). Fixed in round 1: silent network drops (#1), duplicate 
 | Phone controller shows the clock above the teams | Backlog (Sage) | Decide the layout order after the pilot |
 | Horn, player fouls, shot clock; matchup logo override in the Admin form | Backlog | |
 | Cheer squads on the overlay | Backlog | The scorebug has no room; shown on the TV only |
-| Idle "Next up" screen and the new scorekeeper picker, resume and confirm markup are unstyled | Backlog (Sage) | Functional markup only; see the list for Sage in section 3.4 |
+| QA round 4: Regenerate did not sign out phones already signed in with the old QR | Fixed (round 4) | QR sessions carry the QR version; see section 7 |
+| QA round 4: QR lockout said "Too many wrong PINs" | Fixed (round 4) | "Too many invalid QR codes on this phone…"; the message box gets data-cause="qr" |
+| QA round 4: blank cheer logo cell kept an uploaded logo; copied rows carried another game's logo address | Fixed (round 4) | See section 10 |
+| QA round 4: id + status rows failed with "home team is empty" | Fixed (round 4) | Partial rows update only the status |
+| QA round 4: Up next listed later-day games with the time only | Fixed (round 4) | Later days show the date, for example "Sat Oct 24 · 10:00" |
+| QA round 4: leftover team color class on the idle TV | Fixed (round 4) | The idle screen clears every per-game class and color |
+| Offline dimming on the idle, picker, resume and confirm screens | Backlog (Sage) | Every screen now carries data-conn; the dim style is CSS |
 | Maroon text directly on the dark TV background is 1.41:1 | Handled (Sage) | contrast.js lightens it automatically; worth a look on the real TV |
 
 ## 13. On-site test checklist for Aaron
