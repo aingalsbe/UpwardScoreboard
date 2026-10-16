@@ -25,6 +25,5 @@ body { font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; color: 
 .has-banner .banner { display: block; }
 .no-game .bug { display: none; }
 
-/* State hook (functional, added by Devon for QA #1; Sage may restyle): while the
-   connection is not live the clock is frozen at the last confirmed value and dimmed. */
-[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { opacity: .4; }
+/* Offline / reconnecting: frozen clock, desaturated but readable (~9:1 on black), dashed underline as a non-color cue. */
+[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; text-decoration: underline dashed 2px #8a90a6; text-underline-offset: 6px; }

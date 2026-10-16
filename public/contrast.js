@@ -140,6 +140,6 @@
     inp.value = b.dataset.val; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); update();
   });
   document.addEventListener('input', update); document.addEventListener('change', update); document.addEventListener('reset', () => setTimeout(update));
-  // admin.js fills the form programmatically (Edit), which fires no events: poll cheaply.
-  setInterval(update, 400); update();
+  // admin.js dispatches input events after filling the colors on Edit, so events are enough.
+  update();
 })();

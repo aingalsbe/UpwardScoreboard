@@ -13,7 +13,7 @@ input, select { font: inherit; padding: 9px 10px; border-radius: 8px; border: 1p
 input[type=color] { padding: 2px; height: 40px; }
 input[type=checkbox] { width: auto; }
 button, .button { font: inherit; padding: 9px 14px; border-radius: 8px; border: 0; background: #262d45; color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
-button.primary, .primary { background: #1f9d4c; font-weight: 700; }
+button.primary, .primary { background: #1b8842; font-weight: 700; }
 button.link { background: none; color: #7cc4ff; padding: 6px 8px; }
 button.sm { padding: 6px 10px; font-size: 13px; }
 .card { background: #171c2e; border-radius: 12px; padding: 14px; }
@@ -30,7 +30,7 @@ button.sm { padding: 6px 10px; font-size: 13px; }
 .swatch { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 4px solid; vertical-align: middle; }
 img.mini { width: 30px; height: 30px; object-fit: contain; border-radius: 50%; background: #fff; }
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #262d45; text-transform: uppercase; letter-spacing: .5px; }
-.tag.live { background: #1f9d4c; } .tag.final { background: #555; }
+.tag.live { background: #1b8842; color: #fff; } .tag.final { background: #555; }
 .muted { color: #8890aa; } .bad, .err { color: #ff6b6b; }
 .msg { min-height: 1.4em; margin: 8px 0; } .msg.ok { color: #5be37d; } .msg.bad { color: #ff6b6b; }
 code { background: #222840; padding: 1px 5px; border-radius: 4px; }
@@ -42,4 +42,13 @@ code { background: #222840; padding: 1px 5px; border-radius: 4px; }
 .contrast-warn .cw-chip.cw-tv { background: #1b2340; }
 .contrast-warn code { background: #171c2e; color: #fff; }
 .contrast-warn button.sm { background: #ffe08a; color: #111; font-weight: 700; }
+/* Admin status message (#msg, role=alert) incl. import created/updated/skipped results. */
+.msg:empty { display: none; }
+.msg.ok, .msg.bad { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-weight: 600; overflow-wrap: anywhere; }
+.msg.ok { background: #13301f; color: #a6f4bb; border: 1px solid #2c6b3c; }
+.msg.bad { background: #3a1518; color: #ffc4c4; border: 1px solid #7a2c33; border-left-width: 5px; }
+.msg.ok::before { content: "✓"; font-weight: 900; } .msg.bad::before { content: "⚠"; font-weight: 900; }
+/* Comfortable touch targets */
+button, .button, input, select { min-height: 44px; }
+input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
 [hidden] { display: none !important; }

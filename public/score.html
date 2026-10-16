@@ -14,7 +14,7 @@
     <p data-bind="court"></p>
     <input id="pin" inputmode="numeric" autocomplete="one-time-code" placeholder="Court PIN" maxlength="12" required>
     <button class="btn go" type="submit">Unlock</button>
-    <p class="err" id="pin-err"></p>
+    <p class="err" id="pin-err" role="status" aria-live="polite"></p>
   </form>
 
   <div id="app" class="app" hidden>
@@ -23,7 +23,7 @@
       <div class="pills">
         <span class="pill conn" data-bind="connText"></span>
         <span class="pill tv" data-bind="tvText"></span>
-        <span class="pill warn" id="pending" hidden></span>
+        <span class="pill warn" id="pending" role="status" aria-live="polite" hidden></span>
       </div>
     </header>
 

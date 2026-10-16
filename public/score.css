@@ -9,7 +9,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .btn:active { transform: scale(.96); filter: brightness(1.3); }
 .btn:disabled { opacity: .35; }
 .btn small { display: block; font-size: 13px; opacity: .65; font-weight: 400; margin-top: 3px; min-height: 1em; }
-.btn.go { background: #1f9d4c; font-size: 26px; font-weight: 900; padding: 18px 0; }
+.btn.go { background: #1b8842; font-size: 26px; font-weight: 900; padding: 18px 0; }
 .btn.go.stop { background: #c0392b; }
 .btn.pt { font-size: 32px; font-weight: 900; padding: 18px 0; min-height: 76px; }
 .home .btn.pt { background: var(--home-color); color: var(--home-fg, #fff); } .away .btn.pt { background: var(--away-color); color: var(--away-fg, #fff); }
@@ -50,6 +50,29 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 }
 [hidden] { display: none !important; }
 
-/* State hook (functional, added by Devon for QA #1; Sage may restyle): while the
-   connection is not live the clock is frozen at the last confirmed value and dimmed. */
-[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { opacity: .4; }
+/* ---- connection + state treatments (QA r2) ---- */
+/* Frozen clock while offline: desaturated but readable (~9:1), dashed frame = non-color cue. */
+.clock { border: 3px solid transparent; }
+[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; border-style: dashed; border-color: #6b7080; }
+/* Connection pill: online = solid border; offline/connecting = dashed border + amber + the words themselves. */
+.pill { font-weight: 700; }
+.pill.conn { border-style: solid; }
+[data-conn="offline"] .pill.conn, [data-conn="connecting"] .pill.conn { border: 2px dashed #b8962e; background: #3a3010; color: #ffe08a; animation: pill-breathe 2s ease-in-out infinite; }
+@keyframes pill-breathe { 50% { background: #4a3d14; } }
+.tv-off .pill.tv { border-style: dashed; }
+/* Taps queued (may show right after a reload): calm info chip with a spinning glyph. */
+.pill.warn { background: #262d45; color: #e8eaf2; border: 2px dashed #7c86a8; }
+.pill.warn::before { content: "⟳"; display: inline-block; margin-right: 5px; animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pill.warn::before, [data-conn] .pill.conn { animation: none; } }
+/* PIN gate messages: score.js only sets text (no type hook), so one neutral style for all of them. */
+.pin-gate .err { color: #e8eaf2; min-height: 0; font-size: 16px; line-height: 1.4; }
+.pin-gate .err:not(:empty) { background: #1d2338; border: 1px solid #3a4262; border-left: 4px solid #7c86a8; border-radius: 12px; padding: 12px 14px; text-align: left; display: flex; gap: 10px; align-items: flex-start; }
+.pin-gate .err:not(:empty)::before { content: "ⓘ"; font-weight: 900; font-size: 18px; line-height: 1.25; }
+/* Disabled buttons (Unlock during lockout, Undo/Redo with nothing to undo): flat, dashed, no shadow,
+   not-allowed cursor, text still >= 4.5:1. */
+.btn:disabled, .btn.go:disabled { opacity: 1; background: #1d2234; color: #b4bad0; border: 2px dashed #4a5272; cursor: not-allowed; filter: none; transform: none; }
+.pin-gate .btn.go:disabled::before { content: "🔒 "; }
+/* Toast: friendly dark card with an icon, never wider than the screen. */
+.toast { background: #262d45; color: #fff; border: 1px solid #3a4262; border-left: 5px solid #ffd24d; box-shadow: 0 10px 30px rgba(0,0,0,.5); max-width: calc(100vw - 24px); width: max-content; font-weight: 600; line-height: 1.35; display: flex; gap: 10px; }
+.toast::before { content: "ⓘ"; font-weight: 900; }

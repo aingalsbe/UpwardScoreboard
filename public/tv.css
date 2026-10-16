@@ -56,6 +56,10 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 [data-conn="offline"] .conn-dot, [data-conn="connecting"] .conn-dot { background: #ff3b30; opacity: 1; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .2; } }
 
-/* State hook (functional, added by Devon for QA #1; Sage may restyle): while the
-   connection is not live the clock is frozen at the last confirmed value and dimmed. */
-[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { opacity: .4; }
+/* Offline / reconnecting: the clock is frozen at the last confirmed value. Calm, not alarming:
+   desaturated (still ~9:1 on black), dashed frame, and a small text label so it isn't color-only. */
+.clock { position: relative; }
+[data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; text-shadow: none; border-style: dashed; border-color: #6b7080; }
+[data-conn="offline"] [data-clock]::after, [data-conn="connecting"] [data-clock]::after {
+  content: "⟳ Reconnecting…"; position: absolute; left: 50%; top: -3.2rem; transform: translateX(-50%); white-space: nowrap;
+  font: 700 1.5rem/1 "DejaVu Sans", Arial, sans-serif; letter-spacing: .05rem; color: #e8eaf2; background: #262d45; padding: .45rem 1rem; border-radius: 2rem; }
