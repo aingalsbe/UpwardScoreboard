@@ -52,8 +52,10 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 /* team chips: data-wear carries the season tone; text color fixed per tone (auto-contrast for the season pair) */
 .chip { font-size: 1.55rem; font-weight: 900; padding: .05rem .7rem; border-radius: .8rem; white-space: nowrap; flex: 0 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; border: .2rem solid transparent; }
-.chip[data-wear="light"] { background: var(--season-light); color: #111; }
-.chip[data-wear="dark"] { background: var(--season-dark); color: #fff; border-color: rgba(255,255,255,.75); }
+/* --team-color / --team-fg come from schedule.js (season tone or admin custom color; fg via Contrast.bestText);
+   data-wear values are the fallback when JS/contrast.js didn't set them. */
+.chip[data-wear="light"] { background: var(--team-color, var(--season-light)); color: var(--team-fg, #111); }
+.chip[data-wear="dark"] { background: var(--team-color, var(--season-dark)); color: var(--team-fg, #fff); border-color: rgba(255,255,255,.75); }
 .score { flex: none; font-size: 2.1rem; font-weight: 900; font-variant-numeric: tabular-nums; display: flex; gap: .5rem; }
 .score i { font-style: normal; color: var(--muted); }
 .score.vs { font-size: 1.6rem; color: var(--muted); }
@@ -67,7 +69,16 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 .cheer:has(.cheer-logo:not([hidden])) .cheer-name::before { content: ""; }
 
 /* status column */
-.side { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+/* The body spans under the status column; the label line (grade + cheer) runs full width while the tag sits on
+   the teams line, so a wide tag (UP NEXT) never squeezes the cheer. Active games keep tag + clock centered and
+   the body stops before them. Row height and alignment are unchanged. */
+.body { grid-column: 2 / 4; grid-row: 1; }
+.side { grid-column: 3; grid-row: 1; align-self: end; padding-bottom: .15rem; display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.teams { padding-right: 9rem; }                                   /* ✓ FINAL / 🕒 time tags (≈ 8.3rem) */
+.game[data-next="true"] .teams { padding-right: 11.6rem; }          /* 🕒 UP NEXT (≈ 10.7rem) */
+.game[data-state="active"] .body { grid-column: 2; }
+.game[data-state="active"] .side { align-self: center; padding-bottom: 0; }
+.game[data-state="active"] .teams { padding-right: 0; }
 .status-tag { font-size: 1.3rem; font-weight: 900; letter-spacing: .05rem; padding: .25rem .8rem; border-radius: 2rem; white-space: nowrap;
   background: #262d45; color: #e8eaf2; border: .2rem solid #4a5272; }
 .pc { font-size: 1.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff8a80; white-space: nowrap; } /* 7.6:1 */
@@ -77,6 +88,8 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 .game[data-state="complete"] .time { color: var(--muted); }
 .game[data-state="complete"] .status-tag { background: transparent; border-style: dashed; color: #d5d9e6; }
 .game[data-winner="home"] .chip.away, .game[data-winner="away"] .chip.home { background: transparent; color: var(--muted); border-color: #4a5272; font-weight: 700; }
+/* loser keeps a hint of its own (possibly custom) color as a left stripe; text stays muted on dark (≥ 10:1) */
+.game[data-winner="home"] .chip.away, .game[data-winner="away"] .chip.home { box-shadow: inset .5rem 0 0 var(--team-color, #4a5272); padding-left: 1.1rem; }
 .game[data-winner="home"] .chip.home::after, .game[data-winner="away"] .chip.away::after { content: " ★"; }
 /* up next: brighter frame + solid light tag */
 .game[data-next="true"] { border-color: #8a93b8; }
