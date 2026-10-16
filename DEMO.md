@@ -8,7 +8,7 @@ Start (PowerShell, in C:\UpwardScoreboard):
 
     powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1
 
-It checks Docker, builds and starts the app, waits until it answers, loads today's demo games if needed, and opens two Edge windows: scorekeeper on the left, TV on the right. Add -Reseed for a fresh start (wipes and reloads the demo games). Add -NoBrowser to skip the windows.
+It checks Docker, builds and starts the app, waits until it answers, loads today's demo games if needed, and opens two Edge windows: scorekeeper on the left, TV on the right. Add -Reseed for a fresh start (wipes and reloads the demo games). Add -NoBrowser to skip the windows, or -WindowsOnly to just reopen the two windows (app already running). The windows are Edge app windows with their own demo profile, so your normal Edge is not affected.
 
 Stop:
 
