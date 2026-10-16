@@ -83,3 +83,7 @@ On the dev box Docker inter-container traffic was blocked by a leftover `iptable
 ## Upgrading an existing database
 
 No wipe needed: on start, `court-1`/`court-2` are renamed to `west`/`east` (games kept), `full` is added with `conflicts_with = west east`, statuses live/final become active/complete, and new columns get defaults. Idempotent. For a fresh demo seed: `docker compose down -v`.
+
+## Laptop demo (Windows)
+
+See DEMO.md: `Start-Demo.ps1` / `Stop-Demo.ps1`, demo data via `SEED=demo` (in the committed dev-only `.env.demo`) or `docker compose exec app npm run seed:demo[:reset]`.

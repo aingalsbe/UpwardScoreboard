@@ -10,7 +10,9 @@
     "start": "node dist/src/server.js",
     "test": "tsc -p . && node --test dist/test/",
     "smoke": "node scripts/smoke.mjs",
-    "screenshots": "node scripts/screenshots.mjs"
+    "screenshots": "node scripts/screenshots.mjs",
+    "seed:demo": "node dist/src/seed-demo.js",
+    "seed:demo:reset": "node dist/src/seed-demo.js --reset"
   },
   "engines": {
     "node": ">=20"

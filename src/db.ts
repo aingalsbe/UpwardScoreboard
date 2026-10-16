@@ -150,3 +150,45 @@ export async function seedIfEmpty(): Promise<boolean> {
   await pool.query(`UPDATE games SET home_cheer='Knights Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Knights'), await id('Saints')]);
   return true;
 }
+
+/**
+ * Demo seed for a laptop demo (SEED=demo on start, or `node dist/src/seed-demo.js`). Today's date in
+ * America/Chicago regardless of the server TZ. Season 2026–27 Upward Maroon/Gold, Lenexa Baptist Church.
+ * West + East block at 9:00 and 10:00, Full block at 11:00 and 12:00 (no overlaps). The 9:00 West game has a
+ * cheer squad and stays scheduled so it is ready to load.
+ * mode 'if-needed': seeds only when no game is scheduled for today (wipes stale demo data from another day).
+ * mode 'reset': always wipes teams, courts, games and events, then seeds.
+ */
+export async function seedDemo(mode: 'if-needed' | 'reset'): Promise<boolean> {
+  const today = `(date_trunc('day', now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago')`;
+  if (mode === 'if-needed') {
+    const n = (await pool.query(`SELECT count(*)::int AS n FROM games WHERE scheduled_at >= ${today} AND scheduled_at < ${today} + interval '1 day'`)).rows[0].n;
+    if (n > 0) return false;
+  }
+  await pool.query('BEGIN');
+  try {
+    await pool.query('TRUNCATE game_events, games, teams, courts RESTART IDENTITY CASCADE');
+    for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
+      await pool.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
+    }
+    for (const [name, short, grade, order] of SEED_TEAMS) {
+      await pool.query('INSERT INTO teams(name, short_name, grade, grade_order) VALUES ($1,$2,$3,$4)', [name, short, grade, order]);
+    }
+    await pool.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
+      ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')`);
+    const games: [string, string, string, number, string][] = [
+      ['west', 'Bears', 'Dolphins', 9, '2nd Grade'], ['east', 'Hawks', 'Tigers', 9, '3rd Grade'],
+      ['west', 'Rams', 'Knights', 10, '4th Grade'], ['east', 'Saints', 'Warriors', 10, '4th Grade'],
+      ['full', 'Eagles', 'Lions', 11, '5th Grade'], ['full', 'Knights', 'Saints', 12, '4th Grade'],
+    ];
+    for (const [court, h, a, hour, div] of games) {
+      await pool.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division)
+        VALUES ((SELECT id FROM courts WHERE slug=$1), (SELECT id FROM teams WHERE name=$2), (SELECT id FROM teams WHERE name=$3), ${today} + make_interval(hours => $4), $5)`,
+      [court, h, a, hour, div]);
+    }
+    await pool.query(`UPDATE games SET home_cheer='Bears Cheer' WHERE home_team_id=(SELECT id FROM teams WHERE name='Bears') AND away_team_id=(SELECT id FROM teams WHERE name='Dolphins')`);
+    await pool.query(`UPDATE games SET home_cheer='Eagles Cheer', away_cheer='Lions Cheer' WHERE home_team_id=(SELECT id FROM teams WHERE name='Eagles')`);
+    await pool.query('COMMIT');
+  } catch (e) { await pool.query('ROLLBACK'); throw e; }
+  return true;
+}

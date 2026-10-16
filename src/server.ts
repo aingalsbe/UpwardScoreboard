@@ -6,7 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { pool, migrate, seedIfEmpty } from './db.js';
+import { pool, migrate, seedIfEmpty, seedDemo } from './db.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf } from './schedule.js';
@@ -964,6 +964,7 @@ async function main() {
     }
   }
   if (process.env.SEED === 'true' && (await seedIfEmpty())) console.log('Seeded demo teams, courts and games.');
+  if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.');
   await loadSeason();
   attachWs(server);
   server.listen(PORT, () => console.log(`Scoreboard listening on :${PORT}`));

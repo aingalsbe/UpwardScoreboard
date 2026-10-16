@@ -5,7 +5,13 @@ services:
     build: .
     ports:
       - "3000:3000"
-    env_file: .env
+    # .env.demo (committed, dev-only values) works out of the box, also on Windows. An optional .env
+    # (never committed) overrides it. No host bind mounts; data lives in the named volume pgdata.
+    env_file:
+      - path: .env.demo
+        required: true
+      - path: .env
+        required: false
     environment:
       TZ: ${TZ:-America/Chicago}
     depends_on:
