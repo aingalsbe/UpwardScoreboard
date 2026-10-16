@@ -81,6 +81,14 @@ Write-Host "Admin:              $Base/admin   password change-me-admin" -Foregro
 if ($NoBrowser) { exit 0 }
 $x0 = 0; $y0 = 0; $w = 960; $h = 1040
 try {
+  Add-Type -Namespace UsbDemo -Name Win -MemberDefinition @"
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+"@ -ErrorAction Stop
+  [void][UsbDemo.Win]::SetProcessDPIAware()  # physical pixels for both the screen size and MoveWindow (display scaling)
+} catch { }
+try {
   Add-Type -AssemblyName System.Windows.Forms
   $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
   $x0 = $area.X; $y0 = $area.Y; $w = [int][Math]::Floor($area.Width / 2); $h = [int]$area.Height
@@ -95,6 +103,8 @@ try {
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Milliseconds 800
 } catch { }
+# Fresh throwaway profiles every run (never signed in, no leftover state).
+Remove-Item -Path $profileRoot -Recurse -Force -ErrorAction SilentlyContinue
 
 $edge = $null
 foreach ($p in @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe")) {
@@ -108,33 +118,30 @@ if (-not $edge) {
   exit 0
 }
 
-try {
-  Add-Type -Namespace UsbDemo -Name Win -MemberDefinition @"
-[DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
-[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
-"@ -ErrorAction Stop
-} catch { }
-
 function Open-DemoWindow([string]$Name, [string]$Url, [int]$X) {
   $dir = Join-Path $profileRoot $Name
-  $argList = @("--user-data-dir=`"$dir`"", '--no-first-run', '--no-default-browser-check', "--app=$Url",
-    "--window-position=$X,$y0", "--window-size=$w,$h")
+  # --disable-features=msImplicitSignin / --disable-sync: keep the throwaway profile signed out (no sync pop-up).
+  $argList = @("--user-data-dir=`"$dir`"", '--no-first-run', '--no-default-browser-check', '--disable-sync',
+    '--disable-features=msImplicitSignin,msEdgeSyncConsent', "--app=$Url", "--window-position=$X,$y0", "--window-size=$w,$h")
   Start-Process -FilePath $edge -ArgumentList $argList | Out-Null
-  # Fallback: move the window explicitly once it exists (DPI scaling can shift the flags).
-  for ($i = 0; $i -lt 40; $i++) {
-    Start-Sleep -Milliseconds 250
-    $procs = Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and $_.CommandLine.Contains($dir) }
-    foreach ($cp in $procs) {
-      $gp = Get-Process -Id $cp.ProcessId -ErrorAction SilentlyContinue
-      if ($gp -and $gp.MainWindowHandle -ne [IntPtr]::Zero) {
-        try { [void][UsbDemo.Win]::ShowWindow($gp.MainWindowHandle, 9); [void][UsbDemo.Win]::MoveWindow($gp.MainWindowHandle, $X, $y0, $w, $h, $true) } catch { }
-        return
-      }
+}
+
+# Fallback positioning: find each demo window by its title and move it (the flags can be off with display scaling).
+function Set-DemoWindow([string]$TitleLike, [int]$X) {
+  for ($i = 0; $i -lt 60; $i++) {
+    $gp = Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like $TitleLike } | Select-Object -First 1
+    if ($gp) {
+      try { [void][UsbDemo.Win]::ShowWindow($gp.MainWindowHandle, 9); [void][UsbDemo.Win]::MoveWindow($gp.MainWindowHandle, $X, $y0, $w, $h, $true) } catch { }
+      return $true
     }
+    Start-Sleep -Milliseconds 250
   }
+  return $false
 }
 
 Open-DemoWindow 'score' $ScoreUrl $x0
 Open-DemoWindow 'tv' $TvUrl ($x0 + $w)
+Start-Sleep -Seconds 2
+$null = Set-DemoWindow 'UpwardScoreboard*Scorekeeper*' $x0
+$null = Set-DemoWindow 'UpwardScoreboard*TV*' ($x0 + $w)
 Write-Host "Opened scorekeeper (left) and TV (right), each ${w}x${h}." -ForegroundColor Green
