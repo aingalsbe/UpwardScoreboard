@@ -28,7 +28,7 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
   padding: .3rem; margin-bottom: .4rem; border-radius: 1rem; background: #262d45; }
 .earlier { flex: none; font-size: 1.4rem; font-weight: 700; color: var(--muted); text-align: center; padding: .2rem; }
 .earlier:empty { display: none; }
-.sched-view { flex: 1; min-height: 0; overflow: hidden; position: relative; padding: .4rem 2rem 0; }
+.sched-view { flex: 1; min-height: 0; overflow: hidden; position: relative; padding: .5rem 2rem 0; }
 .sched-track { transform: translateY(var(--offset, 0px)); transition: transform .8s ease; will-change: transform; }
 @media (prefers-reduced-motion: reduce) { .sched-track { transition: none; } }
 /* when the track runs past the frame, a soft fade at the bottom says "more below" */
@@ -93,7 +93,7 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 .game[data-state="complete"] .status-tag { background: transparent; border-style: dashed; color: #d5d9e6; }
 .game[data-winner="home"] .chip.away, .game[data-winner="away"] .chip.home { background: transparent; color: var(--muted); border-color: #4a5272; font-weight: 700; }
 /* loser keeps a hint of its own (possibly custom) color as a left stripe; text stays muted on dark (≥ 10:1) */
-.game[data-winner="home"] .chip.away, .game[data-winner="away"] .chip.home { box-shadow: inset .5rem 0 0 var(--team-color, #4a5272); padding-left: 1.1rem; }
+.game[data-winner="home"] .chip.away, .game[data-winner="away"] .chip.home { box-shadow: inset .35rem 0 0 var(--team-color, #4a5272); padding-left: .95rem; }
 .game[data-winner="home"] .chip.home::after, .game[data-winner="away"] .chip.away::after { content: " ★"; }
 /* up next: brighter frame + solid light tag */
 .game[data-next="true"] { border-color: #8a93b8; }
@@ -116,7 +116,7 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 
 /* offline / connecting: same language as the TV (grey dashed pill, dashed inner frame, slight desaturation, clocks frozen) */
 [data-conn="offline"] .conn, [data-conn="connecting"] .conn { background: #262d45; color: #e8eaf2; border-style: dashed; border-color: #6b7080; }
-[data-conn="offline"] .sched-view, [data-conn="connecting"] .sched-view { filter: saturate(.75); outline: .3rem dashed #6b7080; outline-offset: -.6rem; }
+[data-conn="offline"] .sched-view, [data-conn="connecting"] .sched-view { filter: saturate(.75); outline: .25rem dashed #6b7080; outline-offset: -.3rem; } /* stays in the frame padding: never crosses .earlier */
 [data-conn="offline"] .pc { color: var(--muted); }
 
 /* ---- Pinned live/next + compact finals (pre-styled for Devon's hooks; harmless when absent) ----
@@ -136,7 +136,7 @@ html { --row-compact: 3.75rem; }                                     /* 72px at 
 .game[data-compact] { grid-template-rows: auto; padding: .2rem .9rem; row-gap: 0; }
 .game[data-compact] .time { grid-row: 1; font-size: 1.6rem; }
 .game[data-compact] .grade-label, .game[data-compact] .cheer { display: none; }
-.game[data-compact] .teams { grid-column: 2 / 4; grid-row: 1; }
+.game[data-compact] .teams { grid-column: 2 / 4; grid-row: 1; margin-left: -.4rem; }  /* empty grade column: drop its extra gap so long names get the room */
 .game[data-compact] .side { grid-row: 1; }
 .game[data-compact] .chip { font-size: 1.4rem; }
 .game[data-compact] .score { font-size: 1.9rem; }                     /* score stays the largest thing in the row */
