@@ -43,8 +43,9 @@ async function load() {
 const STATUS = { scheduled: 'Scheduled', active: 'Active', complete: 'Complete' };
 const tvPath = (slug) => `/upwardbasketballscores/${encodeURIComponent(slug)}court`;
 function gameRow(g) {
-  return `<tr class="${g.on_court ? 'live' : ''}" data-grade="${esc(g.grade || '')}"><td>${when(g.scheduled_at)}</td><td>${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(g.grade || '—')}</td>` : ''}
-    <td>${!g.__full && g.grade ? `${esc(g.grade)} · ` : ''}${esc(g.home)} vs ${esc(g.away)}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
+  const lbl = g.label || g.grade, warn = (g.warnings || []).length ? ` <span class="tag warn-tag" title="${esc(g.warnings.join('\n'))}">⚠ ${g.warnings.length}</span>` : '';
+  return `<tr class="${g.on_court ? 'live' : ''}${warn ? ' has-warning' : ''}" data-grade="${esc(g.grade || '')}" data-gender="${esc(g.gender || '')}"><td>${when(g.scheduled_at)}</td><td>${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(lbl || '—')}</td>` : ''}
+    <td>${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${esc(g.home)} vs ${esc(g.away)}${warn}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
     <td>${g.home_score}–${g.away_score}</td><td><span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status] || esc(g.status)}</span></td>
     <td class="right">${g.status === 'scheduled' ? `<button class="primary sm" data-start="${g.id}">Start on court</button>`
       : g.status === 'active' ? `<button class="sm" data-complete="${g.id}">Complete</button>` : `<button class="link sm" data-reopen="${g.id}">Reopen</button>`}
@@ -67,15 +68,19 @@ function render() {
   for (const sel of document.querySelectorAll('[data-grade-filter]')) { const v = sel.value; sel.innerHTML = '<option value="">All grades</option>' + grades.map((g) => `<option>${esc(g)}</option>`).join(''); sel.value = grades.includes(v) ? v : ''; }
   $('#grade-list').innerHTML = grades.map((g) => `<option value="${esc(g)}">`).join('');
   $('#team-rows').innerHTML = teams.filter((t) => !tf || t.grade === tf).map((t) => `<tr><td>${t.has_logo || t.logo_url ? `<img class="mini" src="${t.has_logo ? `/logos/${t.id}?v=${Date.now()}` : esc(t.logo_url)}" alt="">` : swatch(t)}</td>
-    <td>${esc(t.grade || '—')}</td><td>${esc(t.name)}</td><td>${esc(t.short_name)}</td>
+    <td>${esc(t.grade || '—')}</td><td>${esc(t.gender || '—')}</td><td>${esc(t.name)}</td><td>${esc(t.short_name)}</td>
     <td class="right"><button class="link sm" data-edit-team="${t.id}">Edit</button><button class="link sm" data-del-team="${t.id}">Delete</button></td></tr>`).join('');
   $('#court-rows').innerHTML = courts.map((c) => `<tr><td>${esc(c.name)}</td><td><code>${esc(c.slug)}</code></td><td>${c.has_pin ? '✔' : '<span class="bad">no PIN — scorekeeping disabled</span>'}</td>
     <td><a href="/tv/${esc(c.slug)}" target="_blank">TV</a> · <a href="/score/${esc(c.slug)}" target="_blank">Score</a> · <a href="/overlay/${esc(c.slug)}" target="_blank">Overlay</a></td>
     <td class="right"><button class="link sm" data-del-court="${c.id}">Delete</button></td></tr>`).join('');
   const f = $('#game-form');
   f.elements.court_id.innerHTML = opt(courts, (c) => c.name);
-  f.elements.home_team_id.innerHTML = opt(teams, (t) => [t.grade, t.name].filter(Boolean).join(' '));
-  f.elements.away_team_id.innerHTML = opt(teams, (t) => [t.grade, t.name].filter(Boolean).join(' '));
+  f.elements.home_team_id.innerHTML = opt(teams, (t) => [t.grade, t.gender, t.name].filter(Boolean).join(' '));
+  f.elements.away_team_id.innerHTML = opt(teams, (t) => [t.grade, t.gender, t.name].filter(Boolean).join(' '));
+  // Schedule warnings (not errors): team twice in a weekend, cheer squad rules, split-court hours.
+  const warns = games.flatMap((g) => g.warnings || []), wbox = $('#schedule-warnings');
+  wbox.hidden = !warns.length;
+  wbox.innerHTML = warns.length ? `<b>⚠ ${warns.length} schedule warning${warns.length === 1 ? '' : 's'}</b><ul>${[...new Set(warns)].map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '';
   if (teams[1]) f.elements.away_team_id.value = teams[1].id;
 }
 
@@ -113,7 +118,7 @@ document.addEventListener('click', guard(async (e) => {
     el.id.value = g.id; el.court_id.value = g.court_id ?? ''; el.division.value = g.division ?? '';
     el.scheduled_at.value = g.scheduled_at ? new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: leagueTz }).slice(0, 16).replace(' ', 'T') : '';
     el.home_team_id.value = g.home_team_id; el.away_team_id.value = g.away_team_id; el.swap_colors.checked = !!g.swap_colors;
-    for (const k of ['home_cheer', 'away_cheer', 'home_cheer_logo_url', 'away_cheer_logo_url']) el[k].value = g[k] ?? '';
+    for (const k of ['cheer', 'cheer_logo_url']) el[k].value = g[k] ?? '';
     el.homeName.value = g.theme?.homeName ?? ''; el.awayName.value = g.theme?.awayName ?? '';
     $('#game-save').textContent = 'Save game'; f.scrollIntoView({ behavior: 'smooth' });
   }
@@ -122,7 +127,7 @@ document.addEventListener('click', guard(async (e) => {
   if (b.dataset.delCourt && confirm('Delete this court?')) { await api(`/api/courts/${b.dataset.delCourt}`, { method: 'DELETE' }); await load(); }
   if (b.dataset.editTeam) {
     const t = teams.find((x) => x.id === Number(b.dataset.editTeam)); const f = $('#team-form');
-    for (const k of ['id', 'name', 'short_name', 'grade', 'logo_url']) f.elements[k].value = t[k] ?? '';
+    for (const k of ['id', 'name', 'short_name', 'grade', 'gender', 'logo_url']) f.elements[k].value = t[k] ?? '';
     $('#team-save').textContent = 'Save team'; f.scrollIntoView({ behavior: 'smooth' });
   }
 }));
@@ -131,7 +136,7 @@ const fileToDataUrl = (file) => new Promise((ok, bad) => { const r = new FileRea
 
 $('#team-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;
-  const body = Object.fromEntries(['name', 'short_name', 'grade', 'logo_url'].map((k) => [k, f.elements[k].value]));
+  const body = Object.fromEntries(['name', 'short_name', 'grade', 'gender', 'logo_url'].map((k) => [k, f.elements[k].value]));
   const file = f.elements.logo_file.files[0];
   if (file && file.size > 1024 * 1024) throw new Error(`Logo is ${(file.size / 1048576).toFixed(1)} MB; the limit is 1 MB. Please use a smaller image.`);
   if (file) body.logo_data_url = await fileToDataUrl(file);
@@ -156,16 +161,15 @@ $('#game-form').addEventListener('submit', guard(async (e) => {
     court_id: Number(el.court_id.value), home_team_id: Number(el.home_team_id.value), away_team_id: Number(el.away_team_id.value),
     scheduled_at: el.scheduled_at.value || null /* naive local time, interpreted in league TZ by Postgres */, division: el.division.value, theme,
     swap_colors: el.swap_colors.checked,
-    home_cheer: el.home_cheer.value, away_cheer: el.away_cheer.value, home_cheer_logo_url: el.home_cheer_logo_url.value, away_cheer_logo_url: el.away_cheer_logo_url.value,
+    cheer: el.cheer.value, cheer_logo_url: el.cheer_logo_url.value,
   };
-  for (const side of ['home', 'away']) {
-    const file = el[`${side}_cheer_logo_file`].files[0];
-    if (file && file.size > 1024 * 1024) throw new Error(`${side === 'home' ? 'Home' : 'Away'} cheer logo is ${(file.size / 1048576).toFixed(1)} MB; the limit is 1 MB.`);
-    if (file) body[`${side}_cheer_logo_data_url`] = await fileToDataUrl(file);
-  }
-  if (el.id.value) await api(`/api/games/${el.id.value}`, { method: 'PUT', body: JSON.stringify(body) });
-  else await api('/api/games', { method: 'POST', body: JSON.stringify(body) });
-  const wasEdit = !!el.id.value; f.reset(); msg(wasEdit ? 'Game saved' : 'Game added'); await load();
+  const cfile = el.cheer_logo_file.files[0];
+  if (cfile && cfile.size > 1024 * 1024) throw new Error(`Cheer logo is ${(cfile.size / 1048576).toFixed(1)} MB; the limit is 1 MB.`);
+  if (cfile) body.cheer_logo_data_url = await fileToDataUrl(cfile);
+  const r = el.id.value ? await api(`/api/games/${el.id.value}`, { method: 'PUT', body: JSON.stringify(body) })
+    : await api('/api/games', { method: 'POST', body: JSON.stringify(body) });
+  const wasEdit = !!el.id.value; f.reset();
+  msg(`${wasEdit ? 'Game saved' : 'Game added'}${r.warnings?.length ? ` · ⚠ warning: ${r.warnings.join('; ')}` : ''}`, !!r.warnings?.length); await load();
 }));
 $('#game-form').addEventListener('reset', () => { $('#game-form').elements.id.value = ''; $('#game-save').textContent = 'Add game'; });
 
@@ -196,7 +200,7 @@ for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-
   $(id).addEventListener('change', guard(async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const r = await api(path, { method: 'POST', body: await file.text(), headers: { 'content-type': 'text/csv' } });
-    msg(`${file.name}: ${r.created} created, ${r.updated} updated, ${r.skipped} unchanged/skipped${r.errors.length ? ` · ${r.errors.length} problem(s): ${r.errors.slice(0, 5).join('; ')}${r.errors.length > 5 ? '; …' : ''}` : ''}`, r.errors.length > 0);
+    msg(`${file.name}: ${r.created} created, ${r.updated} updated, ${r.skipped} unchanged/skipped${r.errors.length ? ` · ${r.errors.length} problem(s): ${r.errors.slice(0, 5).join('; ')}${r.errors.length > 5 ? '; …' : ''}` : ''}${r.warnings?.length ? ` · ⚠ ${r.warnings.length} warning(s): ${r.warnings.slice(0, 5).join('; ')}${r.warnings.length > 5 ? '; …' : ''}` : ''}`, r.errors.length > 0 || !!r.warnings?.length);
     e.target.value = ''; await load();
   }));
 }

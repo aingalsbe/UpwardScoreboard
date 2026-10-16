@@ -14,7 +14,7 @@ export function courtFromPath() {
 // catches half-open sockets after a silent Wi-Fi drop. window offline/online events speed it up.
 const PING_MS = 1000, DEAD_MS = 3000;
 
-export function connect({ court, role, onState, onStatus, onMessage }) {
+export function connect({ court, role, onState, onStatus, onMessage, query = '' }) {
   let ws = null, backoff = 500, offset = 0, bestRtt = Infinity, closedByUs = false;
   let pingTimer = null, watchdog = null, retryTimer = null, lastMsgAt = 0, offlineAt = 0, state = 'connecting';
   const status = (s) => { if (s === state) return; state = s; onStatus && onStatus(s); };
@@ -38,7 +38,7 @@ export function connect({ court, role, onState, onStatus, onMessage }) {
     detach(ws);
     if (!navigator.onLine) { status('offline'); return; } // the 'online' event will call us
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const sock = new WebSocket(`${proto}://${location.host}/ws?court=${encodeURIComponent(court)}&role=${role}`);
+    const sock = new WebSocket(`${proto}://${location.host}/ws?court=${encodeURIComponent(court)}&role=${role}${query ? '&' + query : ''}`);
     ws = sock;
     if (state !== 'offline') queueMicrotask(() => status('connecting'));
     sock.onopen = () => {

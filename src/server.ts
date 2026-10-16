@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { pool, migrate, seedIfEmpty, seedDemo } from './db.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, dayLabel, LEAGUE_TZ, WarnGame } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
@@ -163,11 +163,10 @@ async function loadSeason() {
 }
 /** Relative luminance (WCAG) for server-side season validation. */
 const lum = (h: string) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
-function cheerView(r: any, side: 'home' | 'away') {
-  const name = r[`${side}_cheer`];
-  if (!name) return null;
-  const logo = r[`${side}_cheer_has_logo`] ? `/logos/cheer/${r.id}/${side}` : r[`${side}_cheer_logo_url`] || null;
-  return { name, logo };
+/** The game's cheer squad (one per game, not per side): { name, logo } or null. */
+function cheerView(r: any) {
+  if (!r.cheer) return null;
+  return { name: r.cheer, logo: r.cheer_has_logo ? `/logos/cheer/${r.id}` : r.cheer_logo_url || null };
 }
 function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
   const id = r[`${prefix}_id`];
@@ -185,12 +184,12 @@ function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
 
 const GAME_SELECT = `
   SELECT g.*, c.slug AS court_slug, c.name AS court_name,
-    h.grade AS home_grade, a.grade AS away_grade,
+    h.grade AS home_grade, a.grade AS away_grade, h.gender AS home_gender, a.gender AS away_gender,
     h.name AS home_name, h.short_name AS home_short, h.primary_color AS home_primary, h.secondary_color AS home_secondary,
     h.logo_url AS home_logo_url, (h.logo_data IS NOT NULL) AS home_has_logo,
     a.name AS away_name, a.short_name AS away_short, a.primary_color AS away_primary, a.secondary_color AS away_secondary,
     a.logo_url AS away_logo_url, (a.logo_data IS NOT NULL) AS away_has_logo,
-    (g.home_cheer_logo_data IS NOT NULL) AS home_cheer_has_logo, (g.away_cheer_logo_data IS NOT NULL) AS away_cheer_has_logo
+    (g.cheer_logo_data IS NOT NULL) AS cheer_has_logo
   FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
   LEFT JOIN courts c ON c.id=g.court_id`;
 
@@ -212,15 +211,18 @@ async function courtSnapshot(slug: string) {
   const game = active ? await gameViewNorm(active.id) : null;
   const lite = `SELECT g.id, g.status, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today,
-      COALESCE(h.grade, a.grade) AS grade, h.name AS home, a.name AS away, g.final_home, g.final_away
+      COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, h.name AS home, a.name AS away, g.final_home, g.final_away
     FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.court_id=$1`;
   const nextUp = (await pool.query(`${lite} AND g.status='scheduled' AND g.scheduled_at >= date_trunc('day', now()) ORDER BY g.scheduled_at, g.id LIMIT 1`, [c.id])).rows[0] || null;
   const lastFinal = (await pool.query(`${lite} AND g.status='complete' AND g.scheduled_at::date = now()::date ORDER BY g.updated_at DESC LIMIT 1`, [c.id])).rows[0] || null;
-  // Scorekeeper game picker: today's games on this court that aren't complete.
-  const today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = now()::date ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
+  // Scorekeeper game picker: today's games on this court that aren't complete. With none today, the court's next
+  // game day within a week (e.g. the demo weekend on a weekday); those rows carry is_today=false + day.
+  let today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = now()::date ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
+  if (!today.length) today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = (SELECT min(x.scheduled_at::date) FROM games x
+      WHERE x.court_id=$1 AND x.status <> 'complete' AND x.scheduled_at::date > now()::date AND x.scheduled_at < now() + interval '7 days') ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
   const upNext = (await pool.query(
     `SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
-       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade
+       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label
      FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
      WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
      ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
@@ -238,25 +240,40 @@ async function gameViewNorm(gameId: number) {
     id: r.id, division: r.division, scheduledAt: r.scheduled_at,
     court: r.court_slug ? { slug: r.court_slug, name: r.court_name } : null,
     homeSide: sideOf(r.swap_colors, 'home'), swapped: !!r.swap_colors, grade: r.home_grade || r.away_grade || null,
-    home: { ...teamView(r, 'home_team', theme, 'home'), bonus: isBonus(s, 'home'), cheer: cheerView(r, 'home') },
-    away: { ...teamView(r, 'away_team', theme, 'away'), bonus: isBonus(s, 'away'), cheer: cheerView(r, 'away') },
+    gender: r.home_gender || r.away_gender || null, label: divisionLabel(r.home_grade || r.away_grade, r.home_gender || r.away_gender),
+    cheer: cheerView(r),
+    home: { ...teamView(r, 'home_team', theme, 'home'), bonus: isBonus(s, 'home') },
+    away: { ...teamView(r, 'away_team', theme, 'away'), bonus: isBonus(s, 'away') },
     state: s, canUndo: rt.history.past.length > 0, canRedo: rt.history.future.length > 0,
   };
 }
 
 // -------------------------------------------------------------- websockets
-interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer'; authed: boolean; qrVer?: number | null; }
+interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule'; authed: boolean; qrVer?: number | null; date?: string; }
 const clients = new Set<Client>();
 
 /** Scorekeepers never get cheer squad data (TV/overlay only). */
 function forRole(c: Client, msg: any) {
   if (c.role !== 'score' || msg?.type !== 'state' || !msg.game) return msg;
-  const strip = ({ cheer, ...t }: any) => t;
-  return { ...msg, game: { ...msg.game, home: strip(msg.game.home), away: strip(msg.game.away) } };
+  const { cheer, ...game } = msg.game;
+  return { ...msg, game };
 }
 function send(c: Client, msg: unknown) { if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(forRole(c, msg))); }
 
+// Schedule screens subscribe to every court: any court broadcast (score, status, load/complete) or schedule
+// change (import, edit, delete, season) refreshes them, coalesced to one snapshot per day every 150 ms.
+let scheduleTimer: NodeJS.Timeout | null = null;
+function scheduleChanged() {
+  if (scheduleTimer || ![...clients].some((c) => c.role === 'schedule')) return;
+  scheduleTimer = setTimeout(async () => {
+    scheduleTimer = null;
+    const byDate = new Map<string, Client[]>();
+    for (const c of clients) if (c.role === 'schedule' && c.date) byDate.set(c.date, [...(byDate.get(c.date) || []), c]);
+    for (const [date, list] of byDate) { try { const snap = await scheduleSnapshot(date); for (const c of list) send(c, snap); } catch (e) { console.error(e); } }
+  }, 150);
+}
 async function broadcastCourt(slug: string) {
+  scheduleChanged();
   const targets = [...clients].filter((c) => c.court === slug);
   if (!targets.length) return;
   const snap = await courtSnapshot(slug);
@@ -275,8 +292,9 @@ function attachWs(server: http.Server) {
   wss.on('connection', (ws, req) => {
     const u = new URL(req.url || '/', 'http://x');
     const court = u.searchParams.get('court') || '';
-    const role = (['tv', 'overlay', 'score'].includes(u.searchParams.get('role') || '') ? u.searchParams.get('role') : 'viewer') as Client['role'];
+    const role = (['tv', 'overlay', 'score', 'schedule'].includes(u.searchParams.get('role') || '') ? u.searchParams.get('role') : 'viewer') as Client['role'];
     const client: Client = { ws, court, role, authed: false };
+    if (role === 'schedule') client.date = resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now());
     if (role === 'score' && validToken(tokenFrom(req))) client.authed = true; // admin may score any court
     clients.add(client);
     // Heartbeat: ping every 2s; if nothing (pong or message) for ~3.5s the peer is gone
@@ -293,14 +311,15 @@ function attachWs(server: http.Server) {
       ws.ping();
       send(client, { type: 'time', serverNow: Date.now() }); // also feeds the client-side watchdog
     }, 2000);
-    ws.on('close', () => { clearInterval(hb); clients.delete(client); void broadcastCourt(court); });
+    ws.on('close', () => { clearInterval(hb); clients.delete(client); if (role !== 'schedule') void broadcastCourt(court); });
     ws.on('message', async (raw) => {
       lastSeen = Date.now();
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return send(client, { type: 'error', error: 'bad json' }); }
       try {
         if (msg.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
-        if (msg.type === 'resync') { const s = await courtSnapshot(court); return s && send(client, s); }
+        if (msg.type === 'resync') { const s = role === 'schedule' ? await scheduleSnapshot(client.date!) : await courtSnapshot(court); return s && send(client, s); }
+        if (role === 'schedule') return send(client, { type: 'error', error: 'read-only schedule screen' });
         if (msg.type === 'auth') {
           // Displays are read-only: an auth attempt there is refused but never counted.
           if (role !== 'score') return send(client, { type: 'auth', ok: false, error: 'This is a read-only display link.' });
@@ -383,6 +402,7 @@ function attachWs(server: http.Server) {
       } catch (e: any) { send(client, { type: 'error', id: msg?.id, error: String(e?.message || e) }); }
     });
     void (async () => {
+      if (role === 'schedule') return send(client, await scheduleSnapshot(client.date!));
       const s = await courtSnapshot(court);
       if (!s) { send(client, { type: 'error', error: `unknown court "${court}"` }); return; }
       await broadcastCourt(court); // full snapshot on (re)connect = resync
@@ -422,6 +442,7 @@ function color(v: any, d: string, field: string): string {
   return s.toLowerCase();
 }
 
+const genderOf = (v: unknown) => { try { return normalizeGender(v); } catch (e: any) { throw new HttpError(400, e.message); } };
 const gradeOf = (v: unknown) => { try { return normalizeGrade(v); } catch (e: any) { throw new HttpError(400, e.message); } };
 function teamValues(b: any) {
   const name = String(b.name || '').trim();
@@ -430,17 +451,23 @@ function teamValues(b: any) {
   // Team colors are no longer used (season colors apply); kept only when a valid one is sent.
   const opt = (v: any) => (HEX.test(String(v ?? '').trim()) ? String(v).trim().toLowerCase() : null);
   return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), opt(b.primary_color),
-    opt(b.secondary_color), safeLogoUrl(b.logo_url), gradeOf(b.grade)] as const;
+    opt(b.secondary_color), safeLogoUrl(b.logo_url), gradeOf(b.grade), genderOf(b.gender)] as const;
 }
 /** Resolve a team by name (+ optional grade). Without a grade the name must be unambiguous. */
-async function findTeam(name: string, grade: string | null): Promise<{ id: number; grade: string | null } | { error: string } | null> {
-  const { rows } = await pool.query('SELECT id, grade FROM teams WHERE lower(name)=lower($1) ORDER BY grade_order, grade', [name]);
-  if (grade) return rows.find((t) => (t.grade ?? null) === grade) ?? (rows.length === 1 ? rows[0] : null); // single team in another grade: the grade check explains the mismatch
-  if (rows.length > 1) return { error: `"${name}" exists in ${rows.map((t) => t.grade || 'no grade').join(' and ')}; fill the grade column` };
+async function findTeam(name: string, grade: string | null, gender: string | null = null): Promise<{ id: number; grade: string | null; gender: string | null } | { error: string } | null> {
+  let { rows } = await pool.query('SELECT id, grade, gender FROM teams WHERE lower(name)=lower($1) ORDER BY grade_order, grade, gender', [name]);
+  const all = rows;
+  if (gender) { const g = rows.filter((t) => t.gender === gender || t.gender == null); rows = g.length ? g : rows; }
+  if (grade) {
+    const inGrade = rows.filter((t) => (t.grade ?? null) === grade);
+    if (inGrade.length > 1) return { error: `"${name}" exists in ${grade} ${inGrade.map((t) => t.gender || 'no gender').join(' and ')}; fill the gender column` };
+    return inGrade[0] ?? (all.length === 1 ? all[0] : null); // single team elsewhere: the grade/gender check explains the mismatch
+  }
+  if (rows.length > 1) return { error: `"${name}" exists in ${rows.map((t) => divisionLabel(t.grade, t.gender) || 'no grade').join(' and ')}; fill the grade (and gender) column` };
   return rows[0] ?? null;
 }
-const dupTeam = (e: any, b: any) => /teams_grade_name_uk|teams_name_key/.test(e.message)
-  ? new HttpError(409, `A team named "${String(b.name || '').trim()}" already exists${gradeOf(b.grade) ? ' in ' + gradeOf(b.grade) : ''}. Team names must be unique within a grade.`) : e;
+const dupTeam = (e: any, b: any) => /teams_grade_gender_name_uk|teams_grade_name_uk|teams_name_key/.test(e.message)
+  ? new HttpError(409, `A team named "${String(b.name || '').trim()}" already exists${divisionLabel(gradeOf(b.grade), genderOf(b.gender)) ? ' in ' + divisionLabel(gradeOf(b.grade), genderOf(b.gender)) : ''}. Team names must be unique within a grade and gender.`) : e;
 async function upsertTeam(b: any, id?: number) {
   try { return await upsertTeamRaw(b, id); } catch (e: any) { throw dupTeam(e, b); }
 }
@@ -448,13 +475,14 @@ async function upsertTeamRaw(b: any, id?: number) {
   const vals = teamValues(b);
   const logo = decodeLogo(b.logo_data_url);
   if (id) {
-    await pool.query('UPDATE teams SET name=$2, short_name=$3, primary_color=COALESCE($4, primary_color), secondary_color=COALESCE($5, secondary_color), logo_url=$6' + ('grade' in b ? ', grade=$7, grade_order=$8' : '') + ' WHERE id=$1',
-      'grade' in b ? [id, ...vals, gradeOrder(vals[5])] : [id, ...vals.slice(0, 5)]);
+    await pool.query('UPDATE teams SET name=$2, short_name=$3, primary_color=COALESCE($4, primary_color), secondary_color=COALESCE($5, secondary_color), logo_url=$6 WHERE id=$1', [id, ...vals.slice(0, 5)]);
+    if ('grade' in b) await pool.query('UPDATE teams SET grade=$2, grade_order=$3 WHERE id=$1', [id, vals[5], gradeOrder(vals[5])]);
+    if ('gender' in b) await pool.query('UPDATE teams SET gender=$2 WHERE id=$1', [id, vals[6]]);
     if (logo) await pool.query('UPDATE teams SET logo_data=$2, logo_mime=$3 WHERE id=$1', [id, logo.data, logo.mime]);
     if (b.remove_logo) await pool.query('UPDATE teams SET logo_data=NULL, logo_mime=NULL WHERE id=$1', [id]);
     return id;
   }
-  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7,$8,$9) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5])]);
+  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order, gender) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7,$8,$9,$10) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6]]);
   return r.rows[0].id as number;
 }
 
@@ -498,38 +526,75 @@ const cheerName = (v: unknown): string | null => {
   if (t.length > 40) throw new HttpError(400, `cheer squad name "${t.slice(0, 20)}…" is longer than 40 characters`);
   return t;
 };
-const EXTRA_COLS = ['swap_colors', 'home_cheer', 'away_cheer', 'home_cheer_logo_url', 'away_cheer_logo_url'];
+const EXTRA_COLS = ['swap_colors', 'cheer', 'cheer_logo_url'];
 /** Write the optional per-game fields that are present in `extra` (swap, cheer names, cheer logo URLs). */
 async function setGameExtras(id: number, extra: Record<string, any>) {
   const keys = Object.keys(extra).filter((k) => EXTRA_COLS.includes(k));
   if (!keys.length) return;
   await pool.query(`UPDATE games SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')} WHERE id=$1`, [id, ...keys.map((k) => extra[k])]);
   // a cheer squad removed -> drop its uploaded logo too; a URL set -> it replaces an uploaded logo
-  for (const side of ['home', 'away']) {
-    if (`${side}_cheer` in extra && !extra[`${side}_cheer`]) await pool.query(`UPDATE games SET ${side}_cheer_logo_url=NULL, ${side}_cheer_logo_data=NULL, ${side}_cheer_logo_mime=NULL WHERE id=$1`, [id]);
-    if (extra[`${side}_cheer_logo_url`]) await pool.query(`UPDATE games SET ${side}_cheer_logo_data=NULL, ${side}_cheer_logo_mime=NULL WHERE id=$1`, [id]);
-  }
+  if ('cheer' in extra && !extra.cheer) await pool.query(`UPDATE games SET cheer_logo_url=NULL, cheer_logo_data=NULL, cheer_logo_mime=NULL WHERE id=$1`, [id]);
+  if (extra.cheer_logo_url) await pool.query(`UPDATE games SET cheer_logo_data=NULL, cheer_logo_mime=NULL WHERE id=$1`, [id]);
 }
 /** Admin JSON body -> extras (+ uploaded cheer logos, same validation as team logos). */
 async function gameExtrasFromBody(id: number, b: any) {
   const extra: Record<string, any> = {};
   if ('swap_colors' in b) extra.swap_colors = !!b.swap_colors;
-  for (const side of ['home', 'away']) {
-    if (`${side}_cheer` in b) extra[`${side}_cheer`] = cheerName(b[`${side}_cheer`]);
-    if (`${side}_cheer_logo_url` in b) extra[`${side}_cheer_logo_url`] = safeLogoUrl(String(b[`${side}_cheer_logo_url`] || '').trim() || null);
-  }
-  const logos = ['home', 'away'].map((side) => [side, decodeLogo(b[`${side}_cheer_logo_data_url`])] as const);
+  // One squad per game. Legacy clients sending home_cheer/away_cheer: whichever is set (home if both).
+  const legacy = cheerName(b.home_cheer) || cheerName(b.away_cheer);
+  if ('cheer' in b) extra.cheer = cheerName(b.cheer); else if ('home_cheer' in b || 'away_cheer' in b) extra.cheer = legacy;
+  if ('cheer_logo_url' in b) extra.cheer_logo_url = safeLogoUrl(String(b.cheer_logo_url || '').trim() || null);
+  const logo = decodeLogo(b.cheer_logo_data_url);
   await setGameExtras(id, extra);
-  for (const [side, logo] of logos) if (logo) await pool.query(`UPDATE games SET ${side}_cheer_logo_data=$2, ${side}_cheer_logo_mime=$3, ${side}_cheer_logo_url=NULL WHERE id=$1`, [id, logo.data, logo.mime]);
-  for (const side of ['home', 'away']) if (b[`remove_${side}_cheer_logo`]) await pool.query(`UPDATE games SET ${side}_cheer_logo_data=NULL, ${side}_cheer_logo_mime=NULL, ${side}_cheer_logo_url=NULL WHERE id=$1`, [id]);
+  if (logo) await pool.query(`UPDATE games SET cheer_logo_data=$2, cheer_logo_mime=$3, cheer_logo_url=NULL WHERE id=$1`, [id, logo.data, logo.mime]);
+  if (b.remove_cheer_logo) await pool.query(`UPDATE games SET cheer_logo_data=NULL, cheer_logo_mime=NULL, cheer_logo_url=NULL WHERE id=$1`, [id]);
 }
 
 /** Grade rule for a game (import + admin): both teams in the same grade, and matching an optional stated grade. */
-async function gradeCheck(homeId: number, awayId: number, stated: string | null): Promise<string | null> {
-  const { rows } = await pool.query('SELECT id, name, grade FROM teams WHERE id = ANY($1)', [[homeId, awayId]]);
+async function gradeCheck(homeId: number, awayId: number, stated: string | null, statedGender: string | null = null): Promise<string | null> {
+  const { rows } = await pool.query('SELECT id, name, grade, gender FROM teams WHERE id = ANY($1)', [[homeId, awayId]]);
   const h = rows.find((t) => t.id === Number(homeId)), a = rows.find((t) => t.id === Number(awayId));
   if (!h || !a) throw new HttpError(400, 'unknown team');
-  return gradeMismatch(h, a, stated);
+  return gradeMismatch(h, a, stated) || genderMismatch(h, a, statedGender);
+}
+
+/** All schedule warnings (team twice in a weekend, cheer rules, split-court hours), computed in league time. */
+async function loadWarnings() {
+  const { rows } = await pool.query(`SELECT g.id, to_char(g.scheduled_at AT TIME ZONE $1, 'YYYY-MM-DD') AS date,
+      (EXTRACT(HOUR FROM g.scheduled_at AT TIME ZONE $1) * 60 + EXTRACT(MINUTE FROM g.scheduled_at AT TIME ZONE $1))::int AS start_min,
+      COALESCE(g.duration_min, $2)::int AS dur, c.slug AS court, COALESCE(h.grade, a.grade) AS grade,
+      concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label,
+      g.home_team_id, g.away_team_id, h.name AS home, a.name AS away, (g.cheer IS NOT NULL) AS has_cheer
+    FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id`, [LEAGUE_TZ, GAME_MINUTES]);
+  return scheduleWarnings(rows.map((r): WarnGame => ({ id: r.id, date: r.date, startMin: r.start_min, durMin: r.dur, court: r.court, grade: r.grade, label: r.label || null,
+    homeId: r.home_team_id, awayId: r.away_team_id, home: r.home, away: r.away, hasCheer: r.has_cheer })));
+}
+const warningsFor = async (id: number) => (await loadWarnings()).filter((w) => w.gameId === id).map((w) => w.message);
+
+/**
+ * Lobby schedule screen for one league-local day: every game with court, time, state, teams (home first, in
+ * season colors respecting swap), grade + gender label, cheer squads, and live score/clock for active games.
+ */
+async function scheduleSnapshot(date: string) {
+  const { rows } = await pool.query(`${GAME_SELECT}
+    WHERE (g.scheduled_at AT TIME ZONE $1)::date = $2::date ORDER BY g.scheduled_at, c.id, g.id`, [LEAGUE_TZ, date]);
+  const games = [];
+  for (const raw of rows) {
+    const r = normalizeRow(raw), theme = r.theme || {};
+    const live = r.status === 'active' ? await gameViewNorm(r.id) : null;
+    const t = await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS hm`, [r.scheduled_at, LEAGUE_TZ]);
+    const s = live?.state;
+    games.push({
+      id: r.id, court: r.court_slug, courtName: r.court_name, time: t.rows[0].hm, status: r.status,
+      grade: r.home_grade || r.away_grade || null, gender: r.home_gender || r.away_gender || null,
+      label: divisionLabel(r.home_grade || r.away_grade, r.home_gender || r.away_gender), swapped: !!r.swap_colors,
+      cheer: cheerView(r),
+      home: { ...teamView(r, 'home_team', theme, 'home'), score: s ? s.home.score : r.final_home },
+      away: { ...teamView(r, 'away_team', theme, 'away'), score: s ? s.away.score : r.final_away },
+      ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
+    });
+  }
+  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, dayLabel: dayLabel(date), title: 'LBC Upward', church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, games };
 }
 
 /**
@@ -581,7 +646,7 @@ async function courtQr(c: any, req: http.IncomingMessage) {
   return { court_id: c.id, slug: c.slug, name: c.name, version: c.qr_version, expires: new Date(exp).toISOString(), url, svg };
 }
 
-type ImportResult = { created: number; updated: number; skipped: number; errors: string[] };
+type ImportResult = { created: number; updated: number; skipped: number; errors: string[]; warnings?: string[] };
 function requireColumns(headers: string[], need: string[], file: string) {
   if (!headers.length) throw new HttpError(400, `${file} is empty`);
   const missing = need.filter((c) => !headers.includes(c));
@@ -595,12 +660,16 @@ async function importTeams(text: string): Promise<ImportResult> {
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
     try {
-      const v = teamValues(r); const hasGrade = headers.includes('grade'); const key = `${hasGrade ? v[5] ?? '' : '*'}|${v[0].toLowerCase()}`;
+      const v = teamValues(r); const hasGrade = headers.includes('grade'), hasGender = headers.includes('gender');
+      const key = `${hasGrade ? v[5] ?? '' : '*'}|${hasGender ? v[6] ?? '' : '*'}|${v[0].toLowerCase()}`;
       if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (skipped)`); continue; }
       seen.set(key, line);
       // Match on grade + name. Old files without a grade column match by name (must be unambiguous).
       // A team that has no grade yet is adopted by a row naming it with a grade (instead of creating a twin).
-      const sameName = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
+      let sameName = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade, gender FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
+      // With a gender column: match grade + gender + name; a team without a gender yet is adopted (no twin).
+      if (hasGender) { const exact = sameName.filter((t) => t.gender === v[6]); sameName = exact.length ? exact : sameName.filter((t) => t.gender == null); }
+      else delete (r as any).gender;
       let ex;
       if (hasGrade) ex = sameName.find((t) => (t.grade ?? null) === v[5]) ?? (v[5] ? sameName.find((t) => t.grade == null && sameName.length === 1) : undefined);
       else {
@@ -608,7 +677,7 @@ async function importTeams(text: string): Promise<ImportResult> {
         ex = sameName[0]; delete (r as any).grade; // keep the team's grade
       }
       if (!ex) { await upsertTeam(r); out.created++; continue; }
-      const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]); // color columns are ignored (season colors)
+      const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]) && (!hasGender || (ex.gender ?? null) === v[6]); // color columns are ignored (season colors)
       if (same) { out.skipped++; continue; }
       await upsertTeam(r, ex.id); out.updated++;
     } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
@@ -645,16 +714,17 @@ async function importSchedule(text: string): Promise<ImportResult> {
   const FULL = ['date', 'time', 'court', 'home', 'away'];
   // With an id column, rows can be partial (e.g. id + status); rows without an id still need the full set.
   requireColumns(headers, headers.includes('id') ? ['id'] : FULL, 'schedule.csv');
-  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
+  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [], warnings: [] }; const seen = new Map<string, number>();
+  const touched = new Set<number>();
   const team = async (n: string, col: string) => {
     if (!n) throw new HttpError(400, `${col} team is empty`);
     return n.trim();
   };
   /** Resolve home + away by grade + name: stated grade, else unambiguous name, else the other team's grade. */
-  const resolvePair = async (hn: string, an: string, stated: string | null) => {
-    let h = await findTeam(hn, stated), a = await findTeam(an, stated);
-    if (h && 'error' in h && a && !('error' in a)) h = await findTeam(hn, a.grade);
-    if (a && 'error' in a && h && !('error' in h)) a = await findTeam(an, h.grade);
+  const resolvePair = async (hn: string, an: string, stated: string | null, sg: string | null = null) => {
+    let h = await findTeam(hn, stated, sg), a = await findTeam(an, stated, sg);
+    if (h && 'error' in h && a && !('error' in a)) h = await findTeam(hn, a.grade, a.gender);
+    if (a && 'error' in a && h && !('error' in h)) a = await findTeam(an, h.grade, h.gender);
     for (const [t, n, col] of [[h, hn, 'home'], [a, an, 'away']] as const) {
       if (!t) throw new HttpError(400, `unknown ${col} team "${n}"${stated ? ' in ' + stated : ''} (import teams.csv first)`);
       if ('error' in t) throw new HttpError(400, `${col} team ${t.error}`);
@@ -699,19 +769,26 @@ async function importSchedule(text: string): Promise<ImportResult> {
       const court = slug ? (await pool.query('SELECT id FROM courts WHERE slug=lower($1)', [slug])).rows[0] : { id: null };
       if (!court) throw new HttpError(400, `unknown court "${r.court}" (use a slug from courts.csv, e.g. west)`);
       const stated = headers.includes('grade') ? gradeOf(r.grade) : null;
-      const [home, away] = await resolvePair(await team(r.home, 'home'), await team(r.away, 'away'), stated);
+      const statedGender = headers.includes('gender') ? genderOf(r.gender) : null;
+      const [home, away] = await resolvePair(await team(r.home, 'home'), await team(r.away, 'away'), stated, statedGender);
       if (home === away) throw new HttpError(400, 'home and away are the same team');
-      const gm = await gradeCheck(home, away, stated);
+      const gm = await gradeCheck(home, away, stated, statedGender);
       if (gm) throw new HttpError(400, gm);
       const when = date ? `${date} ${time}` : null; const division = (r.division || '').trim() || null;
       const hasMin = headers.includes('minutes'); const minutes = hasMin ? parseMinutes(r.minutes) : null;
       // Optional columns (old CSVs without them still import; absent column = keep the game's current value).
       const extra: Record<string, any> = {};
       if (headers.includes('swap_colors')) extra.swap_colors = parseBool(r.swap_colors, 'swap_colors');
-      for (const side of ['home', 'away']) {
-        if (headers.includes(`${side}_cheer`)) extra[`${side}_cheer`] = cheerName(r[`${side}_cheer`]);
-        if (headers.includes(`${side}_cheer_logo`)) extra[`${side}_cheer_logo_url`] = safeLogoUrl((r[`${side}_cheer_logo`] || '').trim() || null);
+      // One cheer squad per game: cheer + cheer_logo. Legacy home_cheer/away_cheer columns: whichever is set; both -> home + warning.
+      if (headers.includes('cheer')) extra.cheer = cheerName(r.cheer);
+      else if (headers.includes('home_cheer') || headers.includes('away_cheer')) {
+        const hc = cheerName(r.home_cheer), ac = cheerName(r.away_cheer);
+        if (hc && ac) out.warnings!.push(`row ${line}: two cheer squads (home_cheer "${hc}", away_cheer "${ac}"); one squad per game, kept "${hc}"`);
+        extra.cheer = hc || ac;
       }
+      const logoCol = headers.includes('cheer_logo') ? 'cheer_logo' : headers.includes('home_cheer') || headers.includes('away_cheer')
+        ? ((r.home_cheer || '').trim() || !headers.includes('away_cheer_logo') ? 'home_cheer_logo' : 'away_cheer_logo') : null;
+      if (logoCol && headers.includes(logoCol)) extra.cheer_logo_url = safeLogoUrl((r[logoCol] || '').trim() || null);
       const id = (r.id || '').trim();
       const ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date | null;
       const key = `${court.id}|${ts?.getTime() ?? ''}|${home}|${away}`;
@@ -728,23 +805,24 @@ async function importSchedule(text: string): Promise<ImportResult> {
       // Cheer logo cells: this game's own exported upload URL keeps the upload; a URL to ANOTHER game's upload
       // (copied row) is not carried over (warning, no logo); a cleared cell removes an uploaded logo.
       const clearLogo: string[] = [];
-      for (const side of ['home', 'away']) {
-        const k = `${side}_cheer_logo_url`;
-        const mm = typeof extra[k] === 'string' ? /\/logos\/cheer\/(\d+)\/(home|away)$/.exec(extra[k]) : null;
+      { // (older exports wrote /logos/cheer/<id>/home|away; both forms are recognized)
+        const k = 'cheer_logo_url';
+        const mm = typeof extra[k] === 'string' ? /\/logos\/cheer\/(\d+)(?:\/(?:home|away))?$/.exec(extra[k]) : null;
         if (mm) {
-          if (ex && Number(mm[1]) === ex.id && mm[2] === side) { if (ex[`${side}_cheer_logo_data`]) delete extra[k]; else extra[k] = null; }
-          else { extra[k] = null; out.errors.push(`row ${line}: warning: ${side}_cheer_logo points to the uploaded logo of game #${mm[1]}; it was not copied (row imported without that logo; upload it for this game in Admin)`); }
+          if (ex && Number(mm[1]) === ex.id) { if (ex.cheer_logo_data) delete extra[k]; else extra[k] = null; }
+          else { extra[k] = null; out.errors.push(`row ${line}: warning: cheer_logo points to the uploaded logo of game #${mm[1]}; it was not copied (row imported without that logo; upload it for this game in Admin)`); }
         }
-        if (ex && k in extra && extra[k] === null && ex[`${side}_cheer_logo_data`]) clearLogo.push(side);
+        if (ex && k in extra && extra[k] === null && ex.cheer_logo_data) clearLogo.push('cheer');
       }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
       if (!ex) {
         const clash = await floorConflict(court.id, ts, dur, null);
         if (clash) throw new HttpError(409, clash);
         const nid = (await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, duration_min) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [court.id, home, away, ts, division, dur])).rows[0].id;
-        await setGameExtras(nid, extra);
+        await setGameExtras(nid, extra); touched.add(nid);
         out.created++; continue;
       }
+      touched.add(ex.id);
       const st = await applyStatus(ex, r);
       if (st === 'updated') { out.updated++; continue; }
       const extrasSame = Object.entries(extra).every(([k, v]) => (ex[k] ?? null) === v);
@@ -754,12 +832,14 @@ async function importSchedule(text: string): Promise<ImportResult> {
       if (clash) throw new HttpError(409, clash);
       await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, home_team_id=$4, away_team_id=$5, division=$6, duration_min=$7 WHERE id=$1', [ex.id, court.id, ts, home, away, division, dur]);
       await setGameExtras(ex.id, extra);
-      for (const side of clearLogo) await pool.query(`UPDATE games SET ${side}_cheer_logo_data=NULL, ${side}_cheer_logo_mime=NULL WHERE id=$1`, [ex.id]);
+      if (clearLogo.length) await pool.query(`UPDATE games SET cheer_logo_data=NULL, cheer_logo_mime=NULL WHERE id=$1`, [ex.id]);
       out.updated++;
     } catch (e: any) {
       out.errors.push(`row ${line}: ${/duplicate key/.test(e.message) ? 'another game already has this court, time and teams' : e.message}`);
     }
   }
+  // Warnings (not errors) for the games in this file, checked against the whole schedule (e.g. a team twice in a weekend).
+  out.warnings = [...new Set([...out.warnings!, ...(await loadWarnings()).filter((w) => touched.has(w.gameId)).map((w) => w.message)])];
   return out;
 }
 
@@ -790,13 +870,16 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     const s = await courtSnapshot(seg[3]);
     return s ? json(res, 200, s) : json(res, 404, { error: 'unknown court' });
   }
+  if (p === '/api/public/schedule') {
+    return json(res, 200, await scheduleSnapshot(resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now())));
+  }
   // ---- everything below needs the admin session
   if (!validToken(tokenFrom(req))) return json(res, 401, { error: 'admin login required' });
   if (p === '/api/me') return json(res, 200, { role: 'admin', tz: process.env.TZ || 'UTC' });
 
   if (seg[1] === 'teams') {
     const id = seg[2] ? Number(seg[2]) : undefined;
-    if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, grade, grade_order, primary_color, secondary_color, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY grade_order, grade NULLS LAST, lower(name)')).rows);
+    if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, grade, grade_order, gender, primary_color, secondary_color, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)')).rows);
     if (m === 'POST') return json(res, 201, { id: await upsertTeam(await readJson(req)) });
     if (m === 'PUT' && id) { await upsertTeam(await readJson(req), id); await refreshAllCourts(); return json(res, 200, { id }); }
     if (m === 'DELETE' && id) {
@@ -853,13 +936,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     const id = seg[2] ? Number(seg[2]) : undefined;
     if (m === 'GET' && !id) {
       const { rows } = await pool.query(`SELECT g.id, g.court_id, c.name AS court, g.scheduled_at, g.division, g.status, g.theme,
-        g.home_team_id, h.name AS home, g.away_team_id, a.name AS away, COALESCE(h.grade, a.grade) AS grade, LEAST(h.grade_order, a.grade_order) AS grade_order,
+        g.home_team_id, h.name AS home, g.away_team_id, a.name AS away, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, LEAST(h.grade_order, a.grade_order) AS grade_order,
         COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int, 0) AS home_score,
         COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int, 0) AS away_score,
-        (c.current_game_id = g.id) AS on_court, g.duration_min, g.swap_colors, g.home_cheer, g.away_cheer,
-        g.home_cheer_logo_url, g.away_cheer_logo_url, (g.home_cheer_logo_data IS NOT NULL) AS home_cheer_has_logo, (g.away_cheer_logo_data IS NOT NULL) AS away_cheer_has_logo
+        (c.current_game_id = g.id) AS on_court, g.duration_min, g.swap_colors, g.cheer, g.cheer_logo_url, (g.cheer_logo_data IS NOT NULL) AS cheer_has_logo
         FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
         ORDER BY g.scheduled_at NULLS LAST, g.id`);
+      const warn = await loadWarnings();
+      for (const r of rows) r.warnings = warn.filter((w) => w.gameId === r.id).map((w) => w.message);
       return json(res, 200, rows);
     }
     if (m === 'POST' && !id) {
@@ -881,7 +965,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       }
       // Validate cheer logos before anything else is written? decodeLogo throws HttpError(400/413) on bad input.
       try { await gameExtrasFromBody(r.rows[0].id, b); } catch (e) { await pool.query('DELETE FROM games WHERE id=$1', [r.rows[0].id]); throw e; }
-      return json(res, 201, { id: r.rows[0].id });
+      scheduleChanged();
+      return json(res, 201, { id: r.rows[0].id, warnings: await warningsFor(r.rows[0].id) });
     }
     if (m === 'PUT' && id && seg.length === 3) {
       const b = await readJson(req);
@@ -906,7 +991,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         await pool.query('UPDATE games SET home_team_id=$2, away_team_id=$3 WHERE id=$1', [id, b.home_team_id, b.away_team_id]);
       }
       await gameExtrasFromBody(id, b);
-      await broadcastGame(id); return json(res, 200, { id });
+      await broadcastGame(id); scheduleChanged(); return json(res, 200, { id, warnings: await warningsFor(id) });
     }
     if (m === 'DELETE' && id) { runtimes.delete(id); await pool.query('DELETE FROM games WHERE id=$1', [id]); await refreshAllCourts(); return json(res, 200, { ok: true }); }
     if (m === 'POST' && id && seg[3] === 'start') { // admin "Start on court" (force = start anyway despite the shared floor)
@@ -930,22 +1015,22 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       return json(res, 200, (await pool.query('SELECT seq, actor, command, created_at FROM game_events WHERE game_id=$1 ORDER BY id', [id])).rows);
     }
   }
+  if (p === '/api/warnings' && m === 'GET') return json(res, 200, await loadWarnings());
   if (p === '/api/export/teams.csv') {
-    const { rows } = await pool.query('SELECT name, short_name, grade, logo_url FROM teams ORDER BY grade_order, grade NULLS LAST, lower(name)');
-    return csvOut(res, 'teams.csv', toCsv(['name', 'short_name', 'grade', 'logo_url'], rows));
+    const { rows } = await pool.query('SELECT name, short_name, grade, gender, logo_url FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)');
+    return csvOut(res, 'teams.csv', toCsv(['name', 'short_name', 'grade', 'gender', 'logo_url'], rows));
   }
   if (p === '/api/export/schedule.csv') {
     const { rows } = await pool.query(`SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'YYYY-MM-DD') AS date,
       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'HH24:MI') AS time, COALESCE(c.slug,'') AS court, g.division,
       h.name AS home, a.name AS away,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int) END AS home_score,
-      CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int) END AS away_score, g.status, g.duration_min AS minutes, COALESCE(h.grade, a.grade) AS grade,
-      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.home_cheer,
-      CASE WHEN g.home_cheer_logo_data IS NOT NULL THEN $1 || '/logos/cheer/' || g.id || '/home' ELSE g.home_cheer_logo_url END AS home_cheer_logo, g.away_cheer,
-      CASE WHEN g.away_cheer_logo_data IS NOT NULL THEN $1 || '/logos/cheer/' || g.id || '/away' ELSE g.away_cheer_logo_url END AS away_cheer_logo
+      CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int) END AS away_score, g.status, g.duration_min AS minutes, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender,
+      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.cheer,
+      CASE WHEN g.cheer_logo_data IS NOT NULL THEN $1 || '/logos/cheer/' || g.id ELSE g.cheer_logo_url END AS cheer_logo
       FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
       ORDER BY g.scheduled_at NULLS LAST, g.id`, [baseUrl(req)]);
-    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'swap_colors', 'home_cheer', 'home_cheer_logo', 'away_cheer', 'away_cheer_logo'], rows));
+    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'gender', 'swap_colors', 'cheer', 'cheer_logo'], rows));
   }
   if (p === '/api/import/teams.csv' && m === 'POST') { const r = await importTeams(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   if (p === '/api/export/courts.csv') {
@@ -975,6 +1060,8 @@ function csvOut(res: http.ServerResponse, name: string, body: string) {
 
 const PAGES: [RegExp, string][] = [
   [/^\/$/, 'index.html'], [/^\/admin\/?$/, 'admin.html'],
+  // Lobby schedule screen (all courts, one day): /upwardbasketballscores/schedule, alias /schedule. Before the <slug>court rule.
+  [/^\/upwardbasketballscores\/schedule\/?$/, 'schedule.html'], [/^\/schedule\/?$/, 'schedule.html'],
   [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/upwardbasketballscores\/split\/?$/, 'split.html'],
   // Fixed TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt}[/overlay] (any court: <slug>court)
   [/^\/upwardbasketballscores\/[\w-]+\/overlay\/?$/, 'overlay.html'], [/^\/upwardbasketballscores\/[\w-]+\/?$/, 'tv.html'], [/^\/tv\/[\w-]+\/?$/, 'tv.html'], [/^\/overlay\/[\w-]+\/?$/, 'overlay.html'],
@@ -984,9 +1071,9 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url || '/', 'http://x');
   try {
     if (u.pathname.startsWith('/api/')) return await api(req, res, u);
-    const cm = /^\/logos\/cheer\/(\d+)\/(home|away)$/.exec(u.pathname);
+    const cm = /^\/logos\/cheer\/(\d+)(?:\/(?:home|away))?$/.exec(u.pathname); // one squad per game; old /home|/away links still work
     if (cm) {
-      const r = (await pool.query(`SELECT ${cm[2]}_cheer_logo_data AS d, ${cm[2]}_cheer_logo_mime AS m FROM games WHERE id=$1`, [Number(cm[1])])).rows[0];
+      const r = (await pool.query(`SELECT cheer_logo_data AS d, cheer_logo_mime AS m FROM games WHERE id=$1`, [Number(cm[1])])).rows[0];
       if (!r?.d || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(r.m)) { res.writeHead(404); return res.end(); }
       res.writeHead(200, { 'content-type': r.m, 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
       return res.end(r.d);

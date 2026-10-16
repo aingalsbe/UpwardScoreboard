@@ -18,7 +18,7 @@ function dots(el, left, total) {
   el.innerHTML = Array.from({ length: total }, (_, i) => `<span class="${i < left ? 'on' : 'off'}"></span>`).join('');
 }
 
-/** Image binds (church-logo, home-cheer-logo, away-cheer-logo): set src, hidden when there's no value. */
+/** Image binds (church-logo, cheer-logo): set src, hidden when there's no value. */
 function img(key, src) {
   document.querySelectorAll(`img[data-bind="${key}"]`).forEach((el) => {
     if (src) { if (el.getAttribute('src') !== src) el.src = src; el.hidden = false; } else { el.removeAttribute('src'); el.hidden = true; }
@@ -30,9 +30,10 @@ function render() {
   const g = snap.game, s = g?.state;
   if (snap.season) { root.style.setProperty('--season-dark', snap.season.dark); root.style.setProperty('--season-light', snap.season.light); }
   img('church-logo', snap.church?.logo);
-  const hc = g?.home.cheer, ac = g?.away.cheer;
-  root.classList.toggle('has-home-cheer', !!hc); root.classList.toggle('has-away-cheer', !!ac);
-  img('home-cheer-logo', hc?.logo); img('away-cheer-logo', ac?.logo);
+  // One cheer squad per game (not per side): .cheer in section.center, root class has-cheer.
+  const ch = g?.cheer;
+  root.classList.toggle('has-cheer', !!ch);
+  img('cheer-logo', ch?.logo);
   if (g) { root.dataset.homeSide = g.homeSide || 'light'; root.dataset.swapped = String(!!g.swapped); }
   // Idle screen (no active game): next scheduled game, else church branding; plus today's last final.
   const nx = snap.nextUp, lf = snap.lastFinal;
@@ -41,12 +42,12 @@ function render() {
   root.classList.toggle('no-game', !g);
   const view = {
     league: snap.league, court: snap.court?.name,
-    'church-name': snap.church?.name || '', 'home-cheer': hc?.name || '', 'away-cheer': ac?.name || '',
-    gameInfo: g ? [snap.court?.name, g.grade || g.division, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ') : 'Waiting for the next game',
-    grade: g?.grade || '',
-    next: nx ? { time: nx.is_today ? nx.time : `${nx.day} ${nx.time}`, grade: nx.grade || '', matchup: `${nx.home} vs ${nx.away}` } : { time: '', grade: '', matchup: '' },
-    lastFinal: lf ? `Final: ${lf.grade ? lf.grade + ' · ' : ''}${lf.home} ${lf.final_home ?? ''} – ${lf.final_away ?? ''} ${lf.away}` : '', matchup: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
-    upNext: (snap.upNext || []).map((u) => `${u.is_today === false && u.day ? u.day + ' · ' : ''}${u.time || ''}  ${u.grade ? u.grade + ' · ' : ''}${u.home} vs ${u.away}`).join('   ·   ') || 'Thanks for coming!',
+    'church-name': snap.church?.name || '', cheer: ch?.name || '',
+    gameInfo: g ? [snap.court?.name, g.label || g.grade || g.division, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ') : 'Waiting for the next game',
+    grade: g?.label || g?.grade || '',
+    next: nx ? { time: nx.is_today ? nx.time : `${nx.day} ${nx.time}`, grade: nx.label || nx.grade || '', matchup: `${nx.home} vs ${nx.away}` } : { time: '', grade: '', matchup: '' },
+    lastFinal: lf ? `Final: ${lf.label || lf.grade ? (lf.label || lf.grade) + ' · ' : ''}${lf.home} ${lf.final_home ?? ''} – ${lf.final_away ?? ''} ${lf.away}` : '', matchup: g ? `${[g.label || g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
+    upNext: (snap.upNext || []).map((u) => `${u.is_today === false && u.day ? u.day + ' · ' : ''}${u.time || ''}  ${u.label || u.grade ? (u.label || u.grade) + ' · ' : ''}${u.home} vs ${u.away}`).join('   ·   ') || 'Thanks for coming!',
   };
   if (g) {
     Object.assign(view, {

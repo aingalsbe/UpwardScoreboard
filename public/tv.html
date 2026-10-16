@@ -19,7 +19,6 @@
       <div class="bar"></div>
       <div class="logo" data-logo="home"></div>
       <div class="name" data-bind="home.name"></div>
-      <div class="cheer home-cheer"><img class="cheer-logo" data-bind="home-cheer-logo" alt="" hidden><span class="cheer-name" data-bind="home-cheer"></span></div>
       <div class="score" data-bind="home.score"></div>
       <div class="stats">
         <div><span class="lbl">FOULS</span><span class="val" data-bind="home.fouls"></span></div>
@@ -34,6 +33,7 @@
       <div class="period-lbl">PERIOD</div>
       <div class="period" data-bind="period"></div>
       <div class="poss"><span class="arrow-home">◀</span> POSSESSION <span class="arrow-away">▶</span></div>
+      <div class="cheer"><img class="cheer-logo" data-bind="cheer-logo" alt="" hidden><span class="cheer-name" data-bind="cheer"></span></div>
     </section>
 
     <section class="team away">
@@ -41,7 +41,6 @@
       <div class="bar"></div>
       <div class="logo" data-logo="away"></div>
       <div class="name" data-bind="away.name"></div>
-      <div class="cheer away-cheer"><img class="cheer-logo" data-bind="away-cheer-logo" alt="" hidden><span class="cheer-name" data-bind="away-cheer"></span></div>
       <div class="score" data-bind="away.score"></div>
       <div class="stats">
         <div><span class="lbl">FOULS</span><span class="val" data-bind="away.fouls"></span></div>

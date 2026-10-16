@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { demoWeekend, demoSeedPlan, gradeOrder } from './schedule.js';
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -59,7 +60,12 @@ END $$;
 ALTER TABLE teams ADD COLUMN IF NOT EXISTS grade TEXT, ADD COLUMN IF NOT EXISTS grade_order INT NOT NULL DEFAULT 100;
 -- Team names are unique per grade (2nd Grade Eagles and 5th Grade Eagles can both exist), case-insensitive.
 -- Safe on old data: the old global unique already guarantees no duplicates; the old constraint is dropped after the new index exists.
-CREATE UNIQUE INDEX IF NOT EXISTS teams_grade_name_uk ON teams (COALESCE(grade, ''), lower(name));
+-- Gender / division (2026-10): Boys or Girls. Names are unique per grade + gender + name (case-insensitive).
+-- Safe migration: the new key is a superset of the old ones (global name, then grade + name), so existing rows
+-- always satisfy it; it is created first and only then the older, stricter constraints are dropped.
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS gender TEXT CHECK (gender IS NULL OR gender IN ('Boys', 'Girls'));
+CREATE UNIQUE INDEX IF NOT EXISTS teams_grade_gender_name_uk ON teams (COALESCE(grade, ''), COALESCE(gender, ''), lower(name));
+DROP INDEX IF EXISTS teams_grade_name_uk;
 ALTER TABLE teams DROP CONSTRAINT IF EXISTS teams_name_key;
 -- Season colors (one dark + one light for every team) and other league settings.
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -70,6 +76,10 @@ ALTER TABLE games ADD COLUMN IF NOT EXISTS home_cheer TEXT, ADD COLUMN IF NOT EX
   ADD COLUMN IF NOT EXISTS home_cheer_logo_url TEXT, ADD COLUMN IF NOT EXISTS away_cheer_logo_url TEXT,
   ADD COLUMN IF NOT EXISTS home_cheer_logo_data BYTEA, ADD COLUMN IF NOT EXISTS away_cheer_logo_data BYTEA,
   ADD COLUMN IF NOT EXISTS home_cheer_logo_mime TEXT, ADD COLUMN IF NOT EXISTS away_cheer_logo_mime TEXT;
+-- One cheer squad per GAME (2026-10, replaces home_cheer/away_cheer): name + optional logo URL or upload.
+-- The legacy per-side columns are migrated once in migrateCheer() and then cleared (kept so old builds still start).
+ALTER TABLE games ADD COLUMN IF NOT EXISTS cheer TEXT, ADD COLUMN IF NOT EXISTS cheer_logo_url TEXT,
+  ADD COLUMN IF NOT EXISTS cheer_logo_data BYTEA, ADD COLUMN IF NOT EXISTS cheer_logo_mime TEXT;
 -- Scorekeeping flow: statuses scheduled / active / complete (older builds: live / final).
 UPDATE games SET status='active' WHERE status='live';
 UPDATE games SET status='complete' WHERE status='final';
@@ -91,6 +101,25 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 export async function migrate(): Promise<void> {
   await pool.query(SCHEMA);
   await migrateFloorCourts();
+  await migrateCheer();
+}
+
+/**
+ * Per-side cheer squads -> one per game. Takes whichever side is set (with its logo); if both are set, keeps HOME
+ * and logs the dropped away squad. Then clears the legacy columns so this runs once per row. Safe to repeat.
+ */
+export async function migrateCheer(): Promise<number> {
+  const { rows } = await pool.query(`SELECT id, home_cheer, away_cheer FROM games WHERE home_cheer IS NOT NULL OR away_cheer IS NOT NULL`);
+  for (const r of rows) {
+    if (r.home_cheer && r.away_cheer) console.log(`Cheer migration: game #${r.id} had two squads ("${r.home_cheer}" home, "${r.away_cheer}" away); kept "${r.home_cheer}" (home).`);
+    const side = r.home_cheer ? 'home' : 'away';
+    await pool.query(`UPDATE games SET cheer=COALESCE(cheer, ${side}_cheer), cheer_logo_url=CASE WHEN cheer IS NULL THEN ${side}_cheer_logo_url ELSE cheer_logo_url END,
+      cheer_logo_data=CASE WHEN cheer IS NULL THEN ${side}_cheer_logo_data ELSE cheer_logo_data END, cheer_logo_mime=CASE WHEN cheer IS NULL THEN ${side}_cheer_logo_mime ELSE cheer_logo_mime END,
+      home_cheer=NULL, away_cheer=NULL, home_cheer_logo_url=NULL, away_cheer_logo_url=NULL, home_cheer_logo_data=NULL, away_cheer_logo_data=NULL, home_cheer_logo_mime=NULL, away_cheer_logo_mime=NULL
+      WHERE id=$1`, [r.id]);
+  }
+  if (rows.length) console.log(`Cheer migration: ${rows.length} game(s) moved to one squad per game.`);
+  return rows.length;
 }
 
 /**
@@ -146,49 +175,46 @@ export async function seedIfEmpty(): Promise<boolean> {
       [court, await id(h), await id(a), when, div]);
   }
   // Some games have a cheer squad for a team, some don't.
-  await pool.query(`UPDATE games SET home_cheer='Eagles Cheer', away_cheer='Lions Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Eagles'), await id('Lions')]);
-  await pool.query(`UPDATE games SET home_cheer='Knights Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Knights'), await id('Saints')]);
+  await pool.query(`UPDATE games SET cheer='Eagles Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Eagles'), await id('Lions')]);
+  await pool.query(`UPDATE games SET cheer='Knights Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Knights'), await id('Saints')]);
   return true;
 }
 
 /**
- * Demo seed for a laptop demo (SEED=demo on start, or `node dist/src/seed-demo.js`). Today's date in
- * America/Chicago regardless of the server TZ. Season 2026–27 Upward Maroon/Gold, Lenexa Baptist Church.
- * West + East block at 9:00 and 10:00, Full block at 11:00 and 12:00 (no overlaps). The 9:00 West game has a
- * cheer squad and stays scheduled so it is ready to load.
- * mode 'if-needed': seeds only when no game is scheduled for today (wipes stale demo data from another day).
+ * Demo seed for a laptop demo (SEED=demo on start, or `node dist/src/seed-demo.js`). Season 2026–27 Upward,
+ * Maroon/Gold, Lenexa Baptist Church. The demo weekend is chosen relative to today (America/Chicago): today if
+ * it's Friday, yesterday's Friday if it's Saturday, else the upcoming Friday (see demoWeekend). The games come
+ * from demoSeedPlan (schedule.ts): Fri Full Court 17:30/18:30/19:30, Sat West+East 08:00–15:00 (16 games,
+ * 2nd–4th), Sat Full Court 16:30/17:30/18:30 (5th–6th). Every team plays exactly once. All games stay scheduled.
+ * mode 'if-needed': seeds only when no game is scheduled in the demo weekend (wipes stale demo data).
  * mode 'reset': always wipes teams, courts, games and events, then seeds.
  */
-export async function seedDemo(mode: 'if-needed' | 'reset'): Promise<boolean> {
-  const today = `(date_trunc('day', now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago')`;
+export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()): Promise<boolean> {
+  const w = demoWeekend(nowMs, 'America/Chicago');
   if (mode === 'if-needed') {
-    const n = (await pool.query(`SELECT count(*)::int AS n FROM games WHERE scheduled_at >= ${today} AND scheduled_at < ${today} + interval '1 day'`)).rows[0].n;
+    const n = (await pool.query(`SELECT count(*)::int AS n FROM games WHERE (scheduled_at AT TIME ZONE 'America/Chicago')::date BETWEEN $1::date AND $2::date`, [w.fri, w.sat])).rows[0].n;
     if (n > 0) return false;
   }
-  await pool.query('BEGIN');
+  const plan = demoSeedPlan(w);
+  const client = await pool.connect();
   try {
-    await pool.query('TRUNCATE game_events, games, teams, courts RESTART IDENTITY CASCADE');
+    await client.query('BEGIN');
+    await client.query('TRUNCATE game_events, games, teams, courts RESTART IDENTITY CASCADE');
     for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
-      await pool.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
+      await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
     }
-    for (const [name, short, grade, order] of SEED_TEAMS) {
-      await pool.query('INSERT INTO teams(name, short_name, grade, grade_order) VALUES ($1,$2,$3,$4)', [name, short, grade, order]);
-    }
-    await pool.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
+    await client.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
       ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')`);
-    const games: [string, string, string, number, string][] = [
-      ['west', 'Bears', 'Dolphins', 9, '2nd Grade'], ['east', 'Hawks', 'Tigers', 9, '3rd Grade'],
-      ['west', 'Rams', 'Knights', 10, '4th Grade'], ['east', 'Saints', 'Warriors', 10, '4th Grade'],
-      ['full', 'Eagles', 'Lions', 11, '5th Grade'], ['full', 'Knights', 'Saints', 12, '4th Grade'],
-    ];
-    for (const [court, h, a, hour, div] of games) {
-      await pool.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division)
-        VALUES ((SELECT id FROM courts WHERE slug=$1), (SELECT id FROM teams WHERE name=$2), (SELECT id FROM teams WHERE name=$3), ${today} + make_interval(hours => $4), $5)`,
-      [court, h, a, hour, div]);
+    const team = async (name: string, grade: string, gender: string) => (await client.query(
+      'INSERT INTO teams(name, short_name, grade, grade_order, gender) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [name, name.slice(0, 3).toUpperCase(), grade, gradeOrder(grade), gender])).rows[0].id;
+    for (const g of plan) {
+      const h = await team(g.home, g.grade, g.gender), a = await team(g.away, g.grade, g.gender);
+      await client.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, cheer)
+        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, ($4 || ' ' || $5)::timestamp AT TIME ZONE 'America/Chicago', $6, $7)`,
+      [g.court, h, a, g.date, g.time, `${g.grade} ${g.gender}`, g.cheer ?? null]);
     }
-    await pool.query(`UPDATE games SET home_cheer='Bears Cheer' WHERE home_team_id=(SELECT id FROM teams WHERE name='Bears') AND away_team_id=(SELECT id FROM teams WHERE name='Dolphins')`);
-    await pool.query(`UPDATE games SET home_cheer='Eagles Cheer', away_cheer='Lions Cheer' WHERE home_team_id=(SELECT id FROM teams WHERE name='Eagles')`);
-    await pool.query('COMMIT');
-  } catch (e) { await pool.query('ROLLBACK'); throw e; }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   return true;
 }

@@ -135,7 +135,7 @@ function confirmBox(text, okLabel) {
   d.dataset.kind = okLabel === 'Load' ? 'load' : 'complete';
   return new Promise((res) => { d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }); d.returnValue = ''; d.showModal(); });
 }
-const matchup = (x) => `${x.grade ? x.grade + ' ' : ''}${x.home} vs ${x.away}`;
+const matchup = (x) => `${x.label || x.grade ? (x.label || x.grade) + ' · ' : ''}${x.home} vs ${x.away}`;
 $('#picker-list').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-game-id]'); if (!b) return;
   const x = (snap?.today || []).find((t) => String(t.id) === b.dataset.gameId); if (!x) return;
@@ -169,11 +169,11 @@ function renderMode() {
   root.dataset.view = mode;
   $('#picker').hidden = mode !== 'picker'; $('#resume').hidden = mode !== 'resume';
   $('main.grid').hidden = mode !== 'game'; $('footer.foot').hidden = mode !== 'game';
-  if (mode === 'resume') $('#resume-text').textContent = `${matchup({ grade: g.grade, home: g.home.name, away: g.away.name })} is active on ${snap.court.name} Court.`;
+  if (mode === 'resume') $('#resume-text').textContent = `${matchup({ grade: g.grade, label: g.label, home: g.home.name, away: g.away.name })} is active on ${snap.court.name} Court.`;
   if (mode === 'picker') {
     const list = snap?.today || [];
     const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const html = list.map((x) => `<li><button type="button" class="pick" data-game-id="${x.id}" data-status="${x.status}"><span class="pick-time">${esc(x.time)}</span> <span class="pick-grade">${esc(x.grade || '')}</span> <span class="pick-matchup">${esc(x.home)} vs ${esc(x.away)}</span> <span class="status-badge" data-status="${x.status}">${STATUS_LABEL[x.status] || esc(x.status)}</span></button></li>`).join('');
+    const html = list.map((x) => `<li><button type="button" class="pick" data-game-id="${x.id}" data-status="${x.status}"><span class="pick-time">${x.is_today === false && x.day ? esc(x.day) + ' · ' : ''}${esc(x.time)}</span> <span class="pick-grade">${esc(x.label || x.grade || '')}</span> <span class="pick-matchup">${esc(x.home)} vs ${esc(x.away)}</span> <span class="status-badge" data-status="${x.status}">${STATUS_LABEL[x.status] || esc(x.status)}</span></button></li>`).join('');
     if ($('#picker-list').innerHTML !== html) $('#picker-list').innerHTML = html;
     $('#picker-empty').hidden = list.length > 0;
   }
@@ -188,8 +188,8 @@ function render() {
   const p = $('#pending'); p.hidden = pending.size === 0; p.textContent = `${pending.size} tap${pending.size === 1 ? '' : 's'} sending…`;
   const view = {
     court: snap?.court?.name || court,
-    title: g ? `${[g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
-    grade: g?.grade || '',
+    title: g ? `${[g.label || g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
+    grade: g?.label || g?.grade || '',
     connText: online ? '● Online' : '● Offline · reconnecting…',
     // Presence is stale while this phone is offline: don't show a green "TV connected" from before the drop.
     tvText: !online ? '○ TV status unknown (reconnecting)' : presence.displays ? `● TV connected${presence.controllers > 1 ? ` · ${presence.controllers} scorekeepers` : ''}` : '○ No TV connected',

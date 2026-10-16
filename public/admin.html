@@ -49,12 +49,13 @@
         <label>Short (3–4) <input name="short_name" maxlength="4"></label>
         <label>Grade <input name="grade" maxlength="30" placeholder="5th Grade" list="grade-list"></label>
         <datalist id="grade-list"></datalist>
+        <label>Gender <select name="gender"><option value="">—</option><option>Boys</option><option>Girls</option></select></label>
         <label>Logo URL <input name="logo_url" placeholder="https://… (optional)"></label>
         <label>…or upload logo <input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"></label>
         <div class="actions"><button class="primary" id="team-save">Add team</button><button type="reset" class="link">Clear</button></div>
       </form>
       <label class="grade-filter">Grade <select id="team-grade-filter" data-grade-filter="teams"><option value="">All grades</option></select></label>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Grade</th><th>Name</th><th>Short</th><th></th></tr></thead><tbody id="team-rows"></tbody></table></div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Grade</th><th>Gender</th><th>Name</th><th>Short</th><th></th></tr></thead><tbody id="team-rows"></tbody></table></div>
     </section>
 
     <section id="courts" class="view">
@@ -83,13 +84,11 @@
         <label>Away <select name="away_team_id" required></select></label>
         <label class="swap-toggle"><input type="checkbox" name="swap_colors" id="swap-colors"> Swap colors (home wears dark, away wears light)</label>
         <fieldset class="cheer-fields full" id="cheer-fields">
-          <legend>Cheer squads (optional)</legend>
-          <label>Home cheer squad <input name="home_cheer" maxlength="40" placeholder="e.g. Lions Cheer"></label>
-          <label>Home cheer logo URL <input name="home_cheer_logo_url" placeholder="https://… (optional)"></label>
-          <label>…or upload <input type="file" name="home_cheer_logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
-          <label>Away cheer squad <input name="away_cheer" maxlength="40"></label>
-          <label>Away cheer logo URL <input name="away_cheer_logo_url" placeholder="https://… (optional)"></label>
-          <label>…or upload <input type="file" name="away_cheer_logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+          <legend>Cheer squad (optional, one per game)</legend>
+          <label>Cheer squad <input name="cheer" maxlength="40" placeholder="e.g. LBC Spirit Cheer"></label>
+          <label>Cheer logo URL <input name="cheer_logo_url" placeholder="https://… (optional)"></label>
+          <label>…or upload <input type="file" name="cheer_logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+          <p class="muted full">For 2nd–4th grade Saturday West/East games (08:00–16:00); other games get a warning.</p>
         </fieldset>
         <details class="full advanced"><summary>Advanced: matchup overrides (display names, alternate colors instead of the season colors)</summary>
           <div class="form">
@@ -103,6 +102,7 @@
         </details>
         <div class="actions"><button class="primary" id="game-save">Add game</button><button type="reset" class="link">Clear</button></div>
       </form>
+      <div class="schedule-warnings" id="schedule-warnings" role="status" aria-live="polite" hidden></div>
       <h2>All games</h2>
       <label class="grade-filter">Grade <select id="game-grade-filter" data-grade-filter="games"><option value="">All grades</option></select></label>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Grade</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="game-rows"></tbody></table></div>
@@ -113,7 +113,7 @@
       <div class="cards">
         <div class="card">
           <h3>Teams</h3>
-          <p class="muted">Columns: <code>name, short_name, grade, logo_url</code>. Existing names are updated. Old files with color columns still import; the colors are ignored (season colors apply).</p>
+          <p class="muted">Columns: <code>name, short_name, grade, gender, logo_url</code> (gender: Boys or Girls; names are unique per grade + gender). Existing names are updated. Old files with color columns still import; the colors are ignored (season colors apply).</p>
           <p><a class="button" href="/api/export/teams.csv">Export teams.csv</a></p>
           <input type="file" id="import-teams" accept=".csv,text/csv">
         </div>
@@ -125,7 +125,7 @@
         </div>
         <div class="card">
           <h3>Schedule</h3>
-          <p class="muted">Columns: <code>id, date (YYYY-MM-DD), time (HH:MM), court (slug), division, home, away</code>, optional <code>grade, minutes, swap_colors, home_cheer, home_cheer_logo, away_cheer, away_cheer_logo</code>. Keep the id column when editing an export. Times are league-local (TZ). Unknown courts and teams are rejected. A Full game can't overlap a West or East game. Export adds home_score, away_score, status (ignored on import).</p>
+          <p class="muted">Columns: <code>id, date (YYYY-MM-DD), time (HH:MM), court (slug), division, home, away</code>, optional <code>grade, gender, minutes, swap_colors, cheer, cheer_logo</code> (older files with home_cheer/away_cheer still import: one squad per game). Keep the id column when editing an export. Times are league-local (TZ). Unknown courts and teams are rejected. A Full game can't overlap a West or East game. Export adds home_score, away_score, status (ignored on import).</p>
           <p><a class="button" href="/api/export/schedule.csv">Export schedule.csv</a></p>
           <input type="file" id="import-schedule" accept=".csv,text/csv">
         </div>

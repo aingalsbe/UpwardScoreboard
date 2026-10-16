@@ -52,3 +52,125 @@ export const sideColors = (season: { dark: string; light: string }, swap: boolea
   const wear = sideOf(swap, side);
   return { side: wear, color: season[wear], accent: season[wear === 'light' ? 'dark' : 'light'] };
 };
+
+// ---- Gender / division: Boys or Girls. A game must be within one grade AND one gender.
+/** "boys"/"b"/"m"/"male" -> "Boys"; "girls"/"g"/"f"/"female" -> "Girls"; empty -> null; anything else throws (400). */
+export function normalizeGender(v: unknown): 'Boys' | 'Girls' | null {
+  const t = String(v ?? '').trim().toLowerCase(); if (!t) return null;
+  if (['boys', 'boy', 'b', 'm', 'male', 'men'].includes(t)) return 'Boys';
+  if (['girls', 'girl', 'g', 'f', 'female', 'women'].includes(t)) return 'Girls';
+  throw Object.assign(new Error(`gender "${String(v).slice(0, 20)}" must be Boys or Girls (or empty)`), { status: 400 });
+}
+/** "3rd Grade" + "Girls" -> "3rd Grade Girls". */
+export const divisionLabel = (grade: string | null | undefined, gender: string | null | undefined) => [grade, gender].filter(Boolean).join(' ') || null;
+/** null if OK, else a message. Teams without a gender are allowed (legacy data). */
+export function genderMismatch(home: { name: string; gender?: string | null }, away: { name: string; gender?: string | null }, stated?: string | null): string | null {
+  if (home.gender && away.gender && home.gender !== away.gender) return `a game must be within one gender: ${home.name} is ${home.gender}, ${away.name} is ${away.gender}`;
+  const g = home.gender || away.gender;
+  if (stated && g && stated !== g) return `gender "${stated}" doesn't match the teams (${g})`;
+  return null;
+}
+
+// ---- League-local dates (America/Chicago by default) without a date library.
+export const LEAGUE_TZ = process.env.TZ || 'America/Chicago';
+/** YYYY-MM-DD of an instant in a time zone. */
+export function localDate(ms: number, tz = LEAGUE_TZ): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+}
+/** Calendar math on YYYY-MM-DD strings (UTC noon, so DST never shifts the day). */
+export const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T12:00:00Z') + n * 86400_000).toISOString().slice(0, 10);
+export const dowOf = (d: string) => new Date(d + 'T12:00:00Z').getUTCDay(); // 0 Sun .. 5 Fri, 6 Sat
+/** "2026-10-17" -> "Saturday, Oct 17". */
+export const dayLabel = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'long', month: 'short', day: 'numeric' });
+/**
+ * Demo weekend relative to today (league time): today if it's Friday, yesterday if it's Saturday,
+ * otherwise the upcoming Friday. Returns { fri, sat }.
+ */
+export function demoWeekend(nowMs: number, tz = LEAGUE_TZ): { fri: string; sat: string } {
+  const today = localDate(nowMs, tz), dow = dowOf(today);
+  const fri = dow === 5 ? today : dow === 6 ? addDays(today, -1) : addDays(today, (5 - dow + 7) % 7);
+  return { fri, sat: addDays(fri, 1) };
+}
+/** Schedule screen day: ?date=YYYY-MM-DD wins, then ?day=fri|sat (demo weekend), else today. */
+export function resolveScheduleDay(q: { day?: string | null; date?: string | null }, nowMs: number, tz = LEAGUE_TZ): string {
+  const d = String(q.date || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T12:00:00Z')) && addDays(d, 0) === d) return d;
+  const day = String(q.day || '').trim().toLowerCase();
+  if (day === 'fri' || day === 'sat') return demoWeekend(nowMs, tz)[day];
+  return localDate(nowMs, tz);
+}
+
+// ---- Schedule validation warnings (import + Admin). Warnings, not errors.
+export const SPLIT_COURTS = ['west', 'east'];
+export const SPLIT_START_MIN = 8 * 60, SPLIT_END_MIN = 16 * 60;
+export type WarnGame = {
+  id: number; date: string | null; startMin: number | null; durMin: number; court: string | null;
+  grade: string | null; label: string | null; homeId: number; awayId: number; home: string; away: string; hasCheer: boolean;
+};
+export type Warning = { gameId: number; code: 'team-twice-weekend' | 'cheer-not-allowed' | 'split-outside-hours'; message: string };
+const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+/** Friday date of a Fri/Sat game (its weekend), else null. */
+const weekendOf = (d: string) => (dowOf(d) === 5 ? d : dowOf(d) === 6 ? addDays(d, -1) : null);
+export function scheduleWarnings(games: WarnGame[]): Warning[] {
+  const out: Warning[] = [];
+  const byTeam = new Map<string, WarnGame[]>();
+  for (const g of games) {
+    const wk = g.date ? weekendOf(g.date) : null;
+    if (wk) for (const t of [g.homeId, g.awayId]) { const k = `${wk}|${t}`; byTeam.set(k, [...(byTeam.get(k) || []), g]); }
+  }
+  for (const [k, list] of byTeam) {
+    if (list.length < 2) continue;
+    const tid = Number(k.split('|')[1]);
+    const name = list[0].homeId === tid ? list[0].home : list[0].away;
+    const when = list.map((g) => `#${g.id} ${dayLabel(g.date!).split(',')[0].slice(0, 3)} ${g.startMin != null ? hhmm(g.startMin) : ''}`.trim()).join(', ');
+    for (const g of list) out.push({ gameId: g.id, code: 'team-twice-weekend', message: `${g.label ? g.label + ' ' : ''}${name} plays ${list.length} times this weekend (${when})` });
+  }
+  for (const g of games) {
+    const split = !!g.court && SPLIT_COURTS.includes(g.court);
+    const inHours = g.startMin != null && g.startMin >= SPLIT_START_MIN && g.startMin + g.durMin <= SPLIT_END_MIN;
+    if (split && g.startMin != null && !inHours) out.push({ gameId: g.id, code: 'split-outside-hours', message: `game #${g.id} on ${g.court} at ${hhmm(g.startMin)}–${hhmm(g.startMin + g.durMin)} is outside the split-court hours 08:00–16:00` });
+    if (g.hasCheer) {
+      const go = gradeOrder(g.grade);
+      const why = !(go >= 2 && go <= 4) ? `cheer squads are for 2nd–4th grade (this is ${g.grade || 'no grade'})`
+        : !(g.date && dowOf(g.date) === 6 && split && inHours) ? 'cheer squads are only on Saturday split-court games (West/East, 08:00–16:00)' : null;
+      if (why) out.push({ gameId: g.id, code: 'cheer-not-allowed', message: `game #${g.id} (${g.home} vs ${g.away}): ${why}` });
+    }
+  }
+  return out.sort((a, b) => a.gameId - b.gameId || a.code.localeCompare(b.code));
+}
+
+// ---- Demo seed plan (pure, so tests can check the invariants without a database).
+export type SeedGame = { date: string; time: string; court: 'full' | 'west' | 'east'; grade: string; gender: 'Boys' | 'Girls'; home: string; away: string; cheer?: string };
+const BOYS = ['Eagles', 'Lions', 'Bears', 'Hawks', 'Tigers', 'Rams', 'Knights', 'Warriors', 'Panthers', 'Falcons', 'Wildcats', 'Mustangs'];
+const GIRLS = ['Stars', 'Comets', 'Lightning', 'Sparks', 'Hornets', 'Cardinals', 'Blaze', 'Jaguars', 'Storm', 'Thunder', 'Doves', 'Bluebirds'];
+/**
+ * The demo weekend: Friday Full Court 17:30/18:30/19:30; Saturday West + East hourly 08:00–15:00 (16 games,
+ * 2nd grade 08–10, 3rd 11–13, 4th 14–15), then Full Court 16:30/17:30/18:30. Full Court = grades 5–6.
+ * Each slot has one Boys and one Girls game (West Boys/East Girls, swapped every other slot). Every team plays
+ * exactly once (2 teams per game, names unique per grade + gender). One cheer squad on a few Saturday split games.
+ */
+export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
+  const used = new Map<string, number>();
+  const pair = (grade: string, gender: 'Boys' | 'Girls') => {
+    const k = `${grade}|${gender}`, i = used.get(k) ?? 0, pool = gender === 'Boys' ? BOYS : GIRLS;
+    used.set(k, i + 2); return [pool[i], pool[i + 1]] as const;
+  };
+  const games: SeedGame[] = [];
+  const add = (date: string, time: string, court: SeedGame['court'], grade: string, gender: 'Boys' | 'Girls', cheer?: string) => {
+    const [home, away] = pair(grade, gender);
+    games.push({ date, time, court, grade, gender, home, away, ...(cheer ? { cheer } : {}) });
+  };
+  // Friday night: Full Court, grades 5–6.
+  add(w.fri, '17:30', 'full', '5th Grade', 'Boys'); add(w.fri, '18:30', 'full', '5th Grade', 'Girls'); add(w.fri, '19:30', 'full', '6th Grade', 'Boys');
+  // Saturday split block.
+  const gradeAt = (h: number) => (h <= 10 ? '2nd Grade' : h <= 13 ? '3rd Grade' : '4th Grade');
+  // One cheer squad per game (not per side), on a few Saturday split games, 2nd–4th grade.
+  const cheers: Record<string, string> = { '09:00 west': 'Lenexa Lil Cheer', '11:00 east': 'LBC Sparkle Squad', '12:00 west': 'Joyful Noise Cheer', '14:00 east': 'LBC Spirit Cheer' };
+  for (let h = 8; h <= 15; h++) {
+    const t = `${String(h).padStart(2, '0')}:00`, boysWest = h % 2 === 0;
+    add(w.sat, t, 'west', gradeAt(h), boysWest ? 'Boys' : 'Girls', cheers[`${t} west`]);
+    add(w.sat, t, 'east', gradeAt(h), boysWest ? 'Girls' : 'Boys', cheers[`${t} east`]);
+  }
+  add(w.sat, '16:30', 'full', '6th Grade', 'Girls'); add(w.sat, '17:30', 'full', '6th Grade', 'Boys'); add(w.sat, '18:30', 'full', '5th Grade', 'Girls');
+  return games;
+}
