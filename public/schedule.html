@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en" data-conn="connecting" data-day="">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UpwardScoreboard · Schedule</title>
+  <!-- Lobby schedule TV (1920x1080): all courts for one day, live over WebSocket. Functional markup that follows
+       Sage's docs/mockups/schedule-structure.md exactly; the look lives in schedule.css (Sage). schedule.js fills it. -->
+  <link rel="stylesheet" href="/schedule.css">
+</head>
+<body data-role="schedule">
+  <header class="top">
+    <div class="brand"><span data-bind="brand">LBC Upward</span><small data-bind="church-name"></small></div>
+    <div class="day" data-bind="day"></div>
+    <span class="conn" data-bind="connText"></span>
+  </header>
+  <div class="split heads"><h2 class="court-head">West Court</h2><h2 class="court-head">East Court</h2></div>
+  <div class="earlier" data-bind="earlier"></div>
+  <main class="sched-view">
+    <div class="sched-track" data-page="0" style="--offset: 0px"></div>
+  </main>
+  <footer class="foot"></footer>
+
+  <!-- One game. Home is ALWAYS first/left; data-wear (light|dark) on the chips carries the season color (swap = colors only). -->
+  <template id="tpl-game">
+    <article class="game" data-state="upcoming" data-winner="">
+      <span class="time" data-bind="time"></span>
+      <div class="body">
+        <div class="grade-label" data-bind="grade-label"></div>
+        <div class="teams">
+          <span class="chip home" data-bind="home-name"></span>
+          <span class="score"><b data-bind="home-score"></b><i>–</i><b data-bind="away-score"></b></span>
+          <span class="chip away" data-bind="away-name"></span>
+        </div>
+        <div class="cheer"><img class="cheer-logo" data-bind="cheer-logo" alt="" hidden><span class="cheer-name" data-bind="cheer"></span></div>
+      </div>
+      <div class="side"><span class="status-tag" data-bind="status-tag"></span>
+        <span class="pc"><span data-bind="period"></span> <span data-bind="clock"></span></span></div>
+    </article>
+  </template>
+  <script type="module" src="/schedule.js"></script>
+</body>
+</html>

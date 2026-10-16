@@ -1,0 +1,24 @@
+/* Lobby schedule screen. OWNED BY SAGE: deliberately minimal functional placeholder so the screen is usable
+   until Sage styles it from docs/mockups/schedule-mockup.html. Hooks: see docs/mockups/schedule-structure.md. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { --season-light: #ffc72c; --season-dark: #800000; font-size: min(1vw, 1.78vh); }
+body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: #0d1018; color: #f4f1ea; font-family: Arial, sans-serif; cursor: none; }
+.top { display: flex; justify-content: space-between; align-items: center; padding: 1.4rem 2.6rem; font-size: 2.4rem; font-weight: 800; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.6rem; }
+.heads { padding: 0 2rem; font-size: 1.4rem; text-align: center; }
+.earlier { font-size: 1.4rem; text-align: center; } .earlier:empty { display: none; }
+.sched-view { flex: 1; overflow: hidden; padding: 0 2rem; }
+.sched-track { transform: translateY(var(--offset, 0px)); transition: transform .8s ease; }
+@media (prefers-reduced-motion: reduce) { .sched-track { transition: none; } }
+.slot { margin-bottom: .5rem; min-height: 6rem; }
+.game { display: grid; grid-template-columns: 6.4rem minmax(0, 1fr) auto; align-items: center; gap: 1rem; padding: .5rem 1.2rem; min-height: 6rem; border-radius: 1.2rem; background: #171c2e; font-size: 1.7rem; }
+.game[data-state="active"] { outline: .3rem solid #fff; }
+.teams { display: flex; gap: 1rem; align-items: center; }
+.chip { padding: 0 .8rem; border-radius: .6rem; font-weight: 900; }
+.chip[data-wear="light"] { background: var(--season-light); color: #111; }
+.chip[data-wear="dark"] { background: var(--season-dark); color: #fff; }
+.grade-label, .cheer { font-size: 1.2rem; }
+.foot { display: flex; justify-content: center; gap: 1rem; padding: .8rem; }
+.foot i { width: 1rem; height: 1rem; border-radius: 50%; border: .2rem solid #c5c8d4; } .foot i.on { background: #f4f1ea; }
+[data-conn="offline"] .sched-view, [data-conn="connecting"] .sched-view { outline: .3rem dashed #6b7080; outline-offset: -.6rem; }
+[hidden] { display: none !important; }
