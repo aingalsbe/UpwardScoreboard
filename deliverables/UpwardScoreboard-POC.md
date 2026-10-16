@@ -9,7 +9,7 @@ Prepared by Devon (lead developer) with Sage (UI/UX), Avery (QA) and Morgan (PM)
 - Approach: custom build, fully cloud-hosted. There is no computer at the gym; it needs only a TV device with a browser and the scorekeeper's phone or tablet.
 - Three modules: Score (bench controller), Display (TV board plus stream overlay), Admin (teams, courts, schedule).
 - Stack: one TypeScript Node 20 container that serves the web pages, the API and live WebSocket updates, plus managed Postgres.
-- Status: a working POC runs with docker compose. After QA round 4 fixes, on a freshly rebuilt container: unit tests 18/18, browser offline test 13/13, browser lockout test 8/8, browser flow test 19/19, and the end-to-end smoke test 144/144 run twice in a row on the same used database.
+- Status: a working POC runs with docker compose. After QA round 4 fixes, on a freshly rebuilt container: unit tests 18/18, browser offline test 11/11 (14/14 with the optional server-freeze check, E2E_PAUSE_CMD), browser lockout test 8/8, browser flow test 19/19, and the end-to-end smoke test 144/144 run twice in a row on the same used database.
 - Courts: Full (whole floor), West and East (half courts). Full cannot run at the same time as West or East; West and East can run together. See section 3.4.
 - Recommended host: Render, about $13 per month including managed Postgres.
 
@@ -203,7 +203,7 @@ Recommendation: A, with C on the main site for a friendly link. Set PUBLIC_BASE_
 
 Migration. No wipe is needed. On start the server renames an existing court-1 to west and court-2 to east (keeping their games), adds full with its floor rule, maps old statuses (live to active, final to complete; if a court had more than one live game, the extra ones are completed), and adds the new columns with defaults. This was tested on a copy of a database from the previous version and is safe to run repeatedly. Update COURT_PINS to full, west and east. For a clean demo with today's sample games, reset the dev database with docker compose down -v.
 
-Test counts (after the QA round 4 fixes, freshly rebuilt container): unit 18/18; browser offline 13/13; browser lockout 8/8; browser flow 19/19 (QR sign-in, picker, complete lock, resume, TV switching, sign-out on Regenerate, QR lockout wording, idle cleanup); smoke 144/144 (including team names per grade, cheer logo export, QR session invalidation, the shared-IP spare phone case and the round 4 CSV fixes), run twice in a row on the same used database (covers floor overlap in CSV and Admin, grades, season colors, cheer squads, QR tokens, one active game per court, complete locking and the status export and import).
+Test counts (after the QA round 4 fixes, freshly rebuilt container): unit 18/18; browser offline 11/11 (14/14 with the optional server-freeze check); browser lockout 8/8; browser flow 19/19 (QR sign-in, picker, complete lock, resume, TV switching, sign-out on Regenerate, QR lockout wording, idle cleanup); smoke 144/144 (including team names per grade, cheer logo export, QR session invalidation, the shared-IP spare phone case and the round 4 CSV fixes), run twice in a row on the same used database (covers floor overlap in CSV and Admin, grades, season colors, cheer squads, QR tokens, one active game per court, complete locking and the status export and import).
 
 Markup added for Sage (functional only, unstyled where noted): church logo and name on the TV and overlay; cheer squad slots on the TV; grade spans on the TV, overlay and scorekeeper; idle screen #idle with #next-up and .last-final (unstyled); scorekeeper #picker with .pick items and .status-badge, #resume prompt, dialog#confirm-dialog and #complete-game; Admin #season-form with the .contrast-warn box, #swap-colors, #cheer-fields, grade filters, status badges, Start/Complete/Reopen buttons and the QR print panel #qr-panel (print-friendly .qr-card, .no-print buttons); public/split.html with split.css (Sage owns it).
 
@@ -399,7 +399,11 @@ From QA round 1 (Avery). Fixed in round 1: silent network drops (#1), duplicate 
 | QA round 4: id + status rows failed with "home team is empty" | Fixed (round 4) | Partial rows update only the status |
 | QA round 4: Up next listed later-day games with the time only | Fixed (round 4) | Later days show the date, for example "Sat Oct 24 · 10:00" |
 | QA round 4: leftover team color class on the idle TV | Fixed (round 4) | The idle screen clears every per-game class and color |
-| Offline dimming on the idle, picker, resume and confirm screens | Backlog (Sage) | Every screen now carries data-conn; the dim style is CSS |
+| Offline dimming on the idle, picker, resume and confirm screens | Fixed (Sage) | Every screen carries data-conn; dashed frame and "Reconnecting…" label |
+| QA final F3: "TV connected" pill stayed green while the phone was offline | Fixed (JS) | Shows "TV status unknown (reconnecting)"; hooks html.presence-stale and .pill.tv[data-stale] for a grey style |
+| QA final F4: scanning an old printed QR got the generic error style | Fixed (JS) | Now data-cause="revoked", same as a signed-out phone |
+| QA final F1 and F2: TV offline label clips the Next up matchup (idle) and covers the grade chip (live, split) | Backlog (Sage, CSS) | Fix before the trial |
+| QA final F5: Admin Today table scrolls sideways at 390 px | Backlog (Sage, CSS) | Admin is used on a laptop |
 | Maroon text directly on the dark TV background is 1.41:1 | Handled (Sage) | contrast.js lightens it automatically; worth a look on the real TV |
 
 ## 13. On-site test checklist for Aaron
