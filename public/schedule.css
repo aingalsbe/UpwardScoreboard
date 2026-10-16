@@ -68,17 +68,21 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 .cheer-name::before { content: "📣 "; }
 .cheer:has(.cheer-logo:not([hidden])) .cheer-name::before { content: ""; }
 
-/* status column */
-/* The body spans under the status column; the label line (grade + cheer) runs full width while the tag sits on
-   the teams line, so a wide tag (UP NEXT) never squeezes the cheer. Active games keep tag + clock centered and
-   the body stops before them. Row height and alignment are unchanged. */
-.body { grid-column: 2 / 4; grid-row: 1; }
-.side { grid-column: 3; grid-row: 1; align-self: end; padding-bottom: .15rem; display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
-.teams { padding-right: 9rem; }                                   /* ✓ FINAL / 🕒 time tags (≈ 8.3rem) */
-.game[data-next="true"] .teams { padding-right: 11.6rem; }          /* 🕒 UP NEXT (≈ 10.7rem) */
-.game[data-state="active"] .body { grid-column: 2; }
-.game[data-state="active"] .side { align-self: center; padding-bottom: 0; }
-.game[data-state="active"] .teams { padding-right: 0; }
+/* status column: a real grid track (auto = the tag's own width), never overlaid. .body is display:contents so its
+   children sit on the game grid:   time | grade | cheer ........ (over the tag column) |
+                                    time | teams .............. | status tag (own width)
+   The cheer line runs above the tag (737778b fix); team names end where the tag's column starts, so no tag
+   (FINAL, FINAL · TIE, UP NEXT, time, LIVE) can ever cover them. Active: tag + clock span both lines; cheer stops before them. */
+.game { grid-template-columns: var(--time-w) auto minmax(0,1fr) auto; grid-template-rows: auto auto; align-content: center;
+  column-gap: .9rem; row-gap: .15rem; }
+.body { display: contents; }
+.time { grid-column: 1; grid-row: 1 / 3; margin-right: .2rem; }
+.grade-label { grid-column: 2; grid-row: 1; }
+.cheer { grid-column: 3 / 5; grid-row: 1; }
+.teams { grid-column: 2 / 4; grid-row: 2; }
+.side { grid-column: 4; grid-row: 2; align-self: center; display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; min-width: max-content; }
+.game[data-state="active"] .side { grid-row: 1 / 3; }
+.game[data-state="active"] .cheer { grid-column: 3; }
 .status-tag { font-size: 1.3rem; font-weight: 900; letter-spacing: .05rem; padding: .25rem .8rem; border-radius: 2rem; white-space: nowrap;
   background: #262d45; color: #e8eaf2; border: .2rem solid #4a5272; }
 .pc { font-size: 1.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff8a80; white-space: nowrap; } /* 7.6:1 */
@@ -114,3 +118,27 @@ body { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direct
 [data-conn="offline"] .conn, [data-conn="connecting"] .conn { background: #262d45; color: #e8eaf2; border-style: dashed; border-color: #6b7080; }
 [data-conn="offline"] .sched-view, [data-conn="connecting"] .sched-view { filter: saturate(.75); outline: .3rem dashed #6b7080; outline-offset: -.6rem; }
 [data-conn="offline"] .pc { color: var(--muted); }
+
+/* ---- Pinned live/next + compact finals (pre-styled for Devon's hooks; harmless when absent) ----
+   .sched-pinned: live + UP NEXT, above the paged frame, never translated (only .sched-track gets --offset).
+   .game[data-compact]: a final in the leftover space, one line, ~72px row; score + winner ★ stay full size-ish.
+   root [data-phase=early|midday|end]: only small tweaks. */
+html { --row-compact: 3.75rem; }                                     /* 72px at 1920x1080 */
+.sched-pinned { flex: none; padding: .4rem 2rem .5rem; margin-bottom: .5rem; border-bottom: .2rem solid #2a3150;
+  background: linear-gradient(rgba(255,255,255,.025), transparent); transform: none !important; }
+.sched-pinned:empty { display: none; }
+.sched-pinned .slot:last-child { margin-bottom: 0; }
+.sched-pinned .full-row:first-child { margin-top: 0; }
+[data-phase="end"] .sched-pinned { border-bottom: 0; }                 /* day done: nothing pinned stands out */
+.sched-track > .earlier { padding: 0 0 .4rem; }
+/* compact final rows (whole block shrinks so West/East stay aligned, incl. empty slots) */
+.split:has(.game[data-compact]) .slot, .full-row:has(.game[data-compact]) .slot, .slot:has(> .game[data-compact]) { height: var(--row-compact); margin-bottom: .35rem; }
+.game[data-compact] { grid-template-rows: auto; padding: .2rem .9rem; row-gap: 0; }
+.game[data-compact] .time { grid-row: 1; font-size: 1.6rem; }
+.game[data-compact] .grade-label, .game[data-compact] .cheer { display: none; }
+.game[data-compact] .teams { grid-column: 2 / 4; grid-row: 1; }
+.game[data-compact] .side { grid-row: 1; }
+.game[data-compact] .chip { font-size: 1.4rem; }
+.game[data-compact] .score { font-size: 1.9rem; }                     /* score stays the largest thing in the row */
+.game[data-compact] .status-tag { font-size: 1.15rem; padding: .15rem .7rem; }
+[data-conn="offline"] .sched-pinned, [data-conn="connecting"] .sched-pinned { filter: saturate(.75); outline: .3rem dashed #6b7080; outline-offset: -.4rem; }
