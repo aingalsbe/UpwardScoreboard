@@ -54,6 +54,8 @@ ok(f1 && f1.result === 'final' && f1.score === '21–17 ✓ FINAL' && f1.winner 
 ok(a1 && a1.result === 'live' && a1.score === '2–0 ● LIVE', `active game shows LIVE with the live score ("${a1?.score}")`);
 const order = await page.evaluate(() => [...document.querySelectorAll('#today-games tr[data-game-id]')].map((r) => Number(r.dataset.gameId)));
 ok(order.indexOf(fin.id) < order.indexOf(act.id), 'order: 05:00 before 06:00');
+const mu = await page.evaluate((id) => { const td = document.querySelector(`#today-games tr[data-game-id="${id}"] td.matchup`); return { home: td.querySelector('span.home')?.textContent, away: td.querySelector('span.away')?.textContent, text: td.textContent.replace(/\s+/g, ' ').trim() }; }, fin.id);
+ok(mu.home === `Admn-${RUN}` && mu.away === `Bdmn-${RUN}` && mu.text.startsWith(`3rd Grade Boys · Admn-${RUN} vs Bdmn-${RUN}`), `matchup hook: span.home + span.away, home first, text unchanged ("${mu.text}")`);
 const t0 = Date.now();
 await send({ type: 'cmd', cmd: { type: 'SCORE', team: 'away', pts: 3 } });
 const live = await page.waitForFunction((id) => document.querySelector(`#today-games tr[data-game-id="${id}"] .score-cell`)?.textContent.includes('2–3'), act.id, { timeout: 5000 }).then(() => true).catch(() => false);
@@ -85,6 +87,17 @@ await page.evaluate(() => document.querySelector('#today-games').closest('.tbl-w
 await page.screenshot({ path: `${OUT}/admin-today-390-live.png` });
 await page.evaluate(() => scrollTo(0, 0));
 await page.setViewportSize({ width: 1440, height: 900 }); await sleep(400);
+// A2: Schedule > Edit > change Away; a 10 s refresh and a WebSocket push must not reset it (it used to jump back).
+await page.evaluate(() => { location.hash = '#schedule'; });
+await page.click(`#game-rows button[data-edit-game="${fin.id}"]`);
+const pick = await page.evaluate(() => { const s = document.querySelector('#game-form').elements.away_team_id; const cur = s.value; const o = [...s.options].find((x) => x.value !== cur && x.value !== document.querySelector('#game-form').elements.home_team_id.value); s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true })); return { from: cur, to: o.value, home: document.querySelector('#game-form').elements.home_team_id.value, id: document.querySelector('#game-form').elements.id.value }; });
+ok(pick.id === String(fin.id) && pick.from === String(tB), `edit form filled (game ${pick.id}, away ${pick.from})`);
+await send({ type: 'cmd', cmd: { type: 'SCORE', team: 'home', pts: 1 } }); // a WebSocket push
+await sleep(11_000);                                                   // and the 10 s full refresh
+const after = await page.evaluate(() => { const el = document.querySelector('#game-form').elements; return { away: el.away_team_id.value, home: el.home_team_id.value, id: el.id.value }; });
+ok(after.away === pick.to && after.home === pick.home && after.id === pick.id, `A2: after a push + a 10 s refresh the edit form keeps Away ${pick.to} (originally ${pick.from}) and Home`);
+await page.click('#game-form button[type="reset"]').catch(() => page.evaluate(() => document.querySelector('#game-form').reset()));
+await page.evaluate(() => { location.hash = '#today'; }); await sleep(300);
 await page.screenshot({ path: `${OUT}/admin-today-1440.png` });
 ok(await page.evaluate(() => window.__noReload === true), 'no reload during the whole run');
 ws.close(); await browser.close();

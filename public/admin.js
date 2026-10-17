@@ -47,7 +47,7 @@ const tvPath = (slug) => `/upwardbasketballscores/${encodeURIComponent(slug)}cou
 function gameRow(g, x = {}) {
   const lbl = g.label || g.grade, warn = (g.warnings || []).length ? ` <span class="tag warn-tag" title="${esc(g.warnings.join('\n'))}">⚠ ${g.warnings.length}</span>` : '';
   return `<tr class="${g.on_court ? 'live' : ''}${warn ? ' has-warning' : ''}${x.cls ? ` ${x.cls}` : ''}" data-grade="${esc(g.grade || '')}" data-gender="${esc(g.gender || '')}"${x.data ? ` ${x.data}` : ''}><td class="when">${when(g.scheduled_at)}</td><td class="court">${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(lbl || '—')}</td>` : ''}
-    <td class="matchup">${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${esc(g.home)} vs ${esc(g.away)}${warn}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
+    <td class="matchup">${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${x.cls ? `<span class="home">${esc(g.home)}</span> vs <span class="away">${esc(g.away)}</span>` : `${esc(g.home)} vs ${esc(g.away)}`}${warn}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
     <td class="score-cell">${x.res ?? `${g.home_score}–${g.away_score}`}</td><td><span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status] || esc(g.status)}</span></td>
     <td class="right">${g.status === 'scheduled' ? `<button class="primary sm" data-start="${g.id}">Start on court</button>`
       : g.status === 'active' ? `<button class="sm" data-complete="${g.id}">Complete</button>` : `<button class="link sm" data-reopen="${g.id}">Reopen</button>`}
@@ -93,14 +93,17 @@ function render() {
     <td><a href="/tv/${esc(c.slug)}" target="_blank">TV</a> · <a href="/score/${esc(c.slug)}" target="_blank">Score</a> · <a href="/overlay/${esc(c.slug)}" target="_blank">Overlay</a></td>
     <td class="right"><button class="link sm" data-del-court="${c.id}">Delete</button></td></tr>`).join('');
   const f = $('#game-form');
+  // A2: the 10 s refresh rebuilds these selects; keep what's selected (an edit in progress), defaults only when empty.
+  const keep = Object.fromEntries(['court_id', 'home_team_id', 'away_team_id'].map((k) => [k, f.elements[k].value]));
   f.elements.court_id.innerHTML = opt(courts, (c) => c.name);
   f.elements.home_team_id.innerHTML = opt(teams, (t) => [t.grade, t.gender, t.name].filter(Boolean).join(' '));
   f.elements.away_team_id.innerHTML = opt(teams, (t) => [t.grade, t.gender, t.name].filter(Boolean).join(' '));
+  for (const [k, v] of Object.entries(keep)) if (v && [...f.elements[k].options].some((o) => o.value === v)) f.elements[k].value = v;
   // Schedule warnings (not errors): team twice in a weekend, cheer squad rules, split-court hours.
   const warns = games.flatMap((g) => g.warnings || []), wbox = $('#schedule-warnings');
   wbox.hidden = !warns.length;
   wbox.innerHTML = warns.length ? `<b>⚠ ${warns.length} schedule warning${warns.length === 1 ? '' : 's'}</b><ul>${[...new Set(warns)].map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '';
-  if (teams[1]) f.elements.away_team_id.value = teams[1].id;
+  if (teams[1] && !keep.away_team_id) f.elements.away_team_id.value = teams[1].id;
 }
 
 document.addEventListener('click', guard(async (e) => {
@@ -190,7 +193,8 @@ $('#game-form').addEventListener('submit', guard(async (e) => {
   const wasEdit = !!el.id.value; f.reset();
   msg(`${wasEdit ? 'Game saved' : 'Game added'}${r.warnings?.length ? ` · ⚠ warning: ${r.warnings.join('; ')}` : ''}`, !!r.warnings?.length); await load();
 }));
-$('#game-form').addEventListener('reset', () => { $('#game-form').elements.id.value = ''; $('#game-save').textContent = 'Add game'; });
+$('#game-form').addEventListener('reset', () => { $('#game-form').elements.id.value = ''; $('#game-save').textContent = 'Add game';
+  setTimeout(() => { const el = $('#game-form').elements; if (teams[1] && !el.id.value) el.away_team_id.value = teams[1].id; }); }); // fresh-form default (not when Edit just filled it)
 
 // Season colors: one dark + one light for every team. Checked here with Sage's window.Contrast helpers.
 function seasonCheck() {

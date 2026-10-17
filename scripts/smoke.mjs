@@ -651,6 +651,18 @@ console.log('19. Gender / division, schedule warnings, schedule screen (route + 
   ok(emp.games.length === 0 && emp.isToday === false && emp.dayLabel === 'Monday, Jan 6' && /class="empty"/.test(page19) && view.includes('No games scheduled today'), 'empty day: no games, isToday=false, .empty element + text');
   ok((await api('/api/public/schedule')).body.isToday === true, 'default day is today (isToday=true)');
   ok(/<script src="\/contrast.js"><\/script>/.test(page19), 'schedule page loads contrast.js (chip --team-fg)');
+  // A3: a game completed by CSV import (never ran here) reopens with its stored final, not 0–0.
+  for (const g of (await api('/api/games')).body.filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
+  const a3 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away\n2031-01-07,09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN}\n` });
+  const a3g = (await api('/api/games')).body.find((g) => g.home_team_id === gb.body.id && g.away_team_id === b2.body.id && g.court === 'West' && g.status === 'scheduled');
+  await api('/api/import/schedule.csv', { method: 'POST', body: `id,status,home_score,away_score\n${a3g.id},complete,10,16\n` });
+  const ro = await api(`/api/games/${a3g.id}/reopen`, { method: 'POST', body: JSON.stringify({ force: true }) });
+  const a3r = (await api('/api/games')).body.find((g) => g.id === a3g.id);
+  ok(a3.body.created === 1 && ro.status === 200 && a3r.status === 'active' && a3r.home_score === 10 && a3r.away_score === 16, `A3: CSV final 10–16 -> Reopen -> active ${a3r.home_score}–${a3r.away_score}`);
+  const a3pub = (await api('/api/public/court/west')).body.game;
+  ok(a3pub?.state?.home.score === 10 && a3pub.state.away.score === 16 && a3pub.state.status === 'active', 'A3: the West TV shows 10–16 live after the reopen');
+  await api(`/api/games/${a3g.id}/complete`, { method: 'POST' });
+  ok((await api('/api/games')).body.find((g) => g.id === a3g.id).home_score === 10, 'A3: completing again keeps 10–16');
   sc.ws.close(); sc2.ws.close(); sk19.ws.close();
   for (const g of (await api('/api/games')).body.filter((g) => [gb.body.id, gg.body.id, b2.body.id].includes(g.home_team_id))) await api(`/api/games/${g.id}`, { method: 'DELETE' });
   for (const t of (await api('/api/teams')).body.filter((t) => t.name.endsWith(`x-${RUN}`))) await api(`/api/teams/${t.id}`, { method: 'DELETE' });

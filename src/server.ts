@@ -102,11 +102,14 @@ const runtimes = new Map<number, Runtime>();
 async function getRuntime(gameId: number): Promise<Runtime> {
   let rt = runtimes.get(gameId);
   if (rt) return rt;
-  const { rows } = await pool.query('SELECT history, rules, status FROM games WHERE id=$1', [gameId]);
+  const { rows } = await pool.query('SELECT history, rules, status, final_home, final_away FROM games WHERE id=$1', [gameId]);
   if (!rows.length) throw new Error('game not found');
   rt = runtimes.get(gameId); // another caller may have loaded it meanwhile
   if (rt) return rt;
-  const h: History = normalizeStatus(rows[0].history) ?? newHistory(initialState(rows[0].rules || {}));
+  // A3: a game that never ran here (e.g. completed by CSV import) has no history, only final_home/final_away. Start its
+  // state from that stored final, so Reopen continues 10–16 LIVE instead of 0–0.
+  const fresh = () => { const st = initialState(rows[0].rules || {}); if (rows[0].final_home != null) st.home.score = rows[0].final_home; if (rows[0].final_away != null) st.away.score = rows[0].final_away; return newHistory(st); };
+  const h: History = normalizeStatus(rows[0].history) ?? fresh();
   h.present.status = rows[0].status; // the games.status column is authoritative (imports, migrations)
   rt = { history: h, queue: Promise.resolve(), seen: [] };
   runtimes.set(gameId, rt);
