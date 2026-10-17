@@ -160,19 +160,55 @@ tr.has-warning > td { background: rgba(255,199,44,.06); }
 .cheer-fields input[type=file] { min-height: 44px; padding: 6px; }
 .cheer-fields input[type=file]::file-selector-button { min-height: 32px; padding: 6px 14px; margin-right: 10px; border-radius: 8px; border: 1px solid #4a5272; background: #262d45; color: #fff; font: inherit; cursor: pointer; }
 
-/* ---- Today list (Devon, A1; minimal, for Sage to restyle) ----
-   Rows: tr.today-row[data-status][data-result=final|tie|live|''][data-winner][data-game-id]; cells td.when, td.court,
-   td.matchup, td.score-cell (b.result-score + .tag.result-tag: .live "● LIVE", .final "✓ FINAL", .final.tie "TIE").
-   Phones (≤ 600px): each row becomes a card, no table min-width, so the page never scrolls sideways. */
-#today td.score-cell { white-space: nowrap; }                   /* "21–17 ✓ FINAL" stays on one line */
+/* ---- Today list (Sage; hooks from Devon bb2be61) ----
+   tr.today-row[data-status=scheduled|active|complete][data-result=final|tie|live|''][data-winner=home|away|tie];
+   td.when, td.court, td.matchup ("Home vs Away": home always first, from the markup), td.score-cell
+   (b.result-score + .tag.result-tag: .live "● LIVE", .final "✓ FINAL", .final.tie "TIE"). Root data-live = WS state.
+   Status is always text (● LIVE / ✓ FINAL / TIE); color only reinforces it. */
+#today tr.today-row td { vertical-align: middle; }
+#today td.when { font-variant-numeric: tabular-nums; white-space: nowrap; color: #c9cee0; }
+#today td.score-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* score: fixed-width tabular box so live updates (9–9 → 10–9) never reflow the row */
+#today .result-score { display: inline-block; min-width: 5.6ch; text-align: left; font-size: 17px; font-weight: 900; color: #fff;
+  font-variant-numeric: tabular-nums; margin-right: 6px; }
+#today .tag.result-tag { display: inline-flex; align-items: center; min-height: 24px; font-size: 12px; font-weight: 800; letter-spacing: .5px; border: 2px solid transparent; vertical-align: middle; }
+#today .tag.live.result-tag { background: #1b8842; color: #fff; }                         /* 4.52:1 */
+#today .tag.final.result-tag { background: transparent; color: #e8eaf2; border-color: #6b7080; }  /* outline, 14:1 on bg */
+#today .tag.final.tie.result-tag { border-style: dashed; color: #ffe08a; border-color: #8a6d1f; margin-left: 4px; }  /* 12:1 */
+/* winner: subtle, in text: "✓ FINAL · HOME" / "· AWAY" (ties already say TIE) */
+#today tr[data-winner="home"] .tag.final.result-tag:not(.tie)::after { content: "\00a0· HOME"; font-weight: 700; color: #c9cee0; }
+#today tr[data-winner="away"] .tag.final.result-tag:not(.tie)::after { content: "\00a0· AWAY"; font-weight: 700; color: #c9cee0; }
+/* scheduled: score not started yet, quieter */
+#today tr[data-status="scheduled"] td.score-cell { color: #9aa1b8; }                      /* 6.9:1 */
+/* completed rows recede a touch (still ≥ 4.5:1); active row highlighted with a bar + tint */
+#today tr[data-status="complete"] td.matchup, #today tr[data-status="complete"] td.court { color: #c9cee0; }
+#today tr[data-status="active"] { background: #13301f; }
+#today tr[data-status="active"] > td:first-child { box-shadow: inset 5px 0 0 #5be37d; }
+#today tr[data-status="active"] td.matchup { font-weight: 800; color: #fff; }
+/* offline / connecting: live scores frozen (dimmed, dashed tag, "paused" word), same language as the TV */
+[data-live="offline"] #today tr[data-result="live"] .result-score,
+[data-live="connecting"] #today tr[data-result="live"] .result-score { color: #9aa1b8; }
+[data-live="offline"] #today .tag.live.result-tag, [data-live="connecting"] #today .tag.live.result-tag { background: #262d45; color: #e8eaf2; border: 2px dashed #6b7080; }
+[data-live="offline"] #today .tag.live.result-tag::after { content: "\00a0· paused"; font-weight: 700; }
+[data-live="offline"] #today tr[data-status="active"] > td:first-child { box-shadow: inset 5px 0 0 #6b7080; }
+
+/* Phones (≤ 600px): each row is a card; no table min-width, so the page never scrolls sideways. 44px targets. */
 @media (max-width: 600px) {
-  #today td.score-cell { white-space: normal; }
   #today .tbl-wrap .tbl { min-width: 0; }
   #today .tbl thead { display: none; }
-  #today .tbl, #today .tbl tbody, #today .tbl tr.today-row { display: block; width: 100%; }
-  #today .tbl tr.today-row { padding: 8px 4px; border-bottom: 1px solid #222840; }
-  #today .tbl tr.today-row td { display: block; border: 0; padding: 2px 4px; overflow-wrap: anywhere; }
-  #today .tbl tr.today-row td.when, #today .tbl tr.today-row td.court { display: inline-block; color: #8890aa; font-size: 13px; }
-  #today .tbl tr.today-row td.right { text-align: left; }
-  .result-score { font-size: 18px; margin-right: 4px; }
+  #today .tbl, #today .tbl tbody { display: block; width: 100%; }
+  #today .tbl tr.today-row { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "when court" "match match" "score score" "status actions";
+    gap: 4px 10px; align-items: center; margin: 0 0 10px; padding: 12px; border: 1px solid #2a3150; border-radius: 12px; background: #141a2c; }
+  #today .tbl tr.today-row td { display: block; border: 0; padding: 0; overflow-wrap: anywhere; }
+  #today .tbl tr.today-row td.when { grid-area: when; display: block; font-size: 13px; font-weight: 700; }
+  #today .tbl tr.today-row td.court { grid-area: court; display: block; font-size: 13px; color: #c9cee0; }
+  #today .tbl tr.today-row td.matchup { grid-area: match; font-size: 16px; font-weight: 700; color: #fff; }
+  #today .tbl tr.today-row td.score-cell { grid-area: score; white-space: normal; }
+  #today .tbl tr.today-row td:has(> .status-badge) { grid-area: status; }
+  #today .tbl tr.today-row td.right { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; text-align: left; }
+  #today .tbl tr.today-row td.right button { min-height: 44px; min-width: 44px; }
+  #today .result-score { font-size: 22px; }
+  #today tr[data-status="active"] { background: #13301f; border-color: #2c6b3c; box-shadow: inset 5px 0 0 #5be37d; }
+  #today tr[data-status="active"] > td:first-child { box-shadow: none; }
+  [data-live="offline"] #today tr[data-status="active"] { box-shadow: inset 5px 0 0 #6b7080; border-style: dashed; }
 }
