@@ -30,7 +30,7 @@ button.sm { padding: 6px 10px; font-size: 13px; }
 .swatch { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 4px solid; vertical-align: middle; }
 img.mini { width: 30px; height: 30px; object-fit: contain; border-radius: 50%; background: #fff; }
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #262d45; text-transform: uppercase; letter-spacing: .5px; }
-.tag.live { background: #1b8842; color: #fff; } .tag.final { background: #555; }
+.tag.live { background: #167a3a; color: #fff; }   /* 5.41:1 */ .tag.final { background: #555; }
 .muted { color: #8890aa; } .bad, .err { color: #ff6b6b; }
 .msg { min-height: 1.4em; margin: 8px 0; } .msg.ok { color: #5be37d; } .msg.bad { color: #ff6b6b; }
 code { background: #222840; padding: 1px 5px; border-radius: 4px; }
@@ -43,7 +43,7 @@ code { background: #222840; padding: 1px 5px; border-radius: 4px; }
 .contrast-warn code { background: #171c2e; color: #fff; }
 .contrast-warn button.sm { background: #ffe08a; color: #111; font-weight: 700; }
 /* Admin status message (#msg, role=alert) incl. import created/updated/skipped results. */
-.msg:empty { display: none; }
+.msg:empty, .msg.ok:empty, .msg.bad:empty { display: none; }   /* .ok/.bad set display:flex; an empty message never shows a bar */
 .msg.ok, .msg.bad { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-weight: 600; overflow-wrap: anywhere; }
 .msg.ok { background: #13301f; color: #a6f4bb; border: 1px solid #2c6b3c; }
 .msg.bad { background: #3a1518; color: #ffc4c4; border: 1px solid #7a2c33; border-left-width: 5px; }
@@ -172,12 +172,16 @@ tr.has-warning > td { background: rgba(255,199,44,.06); }
 #today .result-score { display: inline-block; min-width: 5.6ch; text-align: left; font-size: 17px; font-weight: 900; color: #fff;
   font-variant-numeric: tabular-nums; margin-right: 6px; }
 #today .tag.result-tag { display: inline-flex; align-items: center; min-height: 24px; font-size: 12px; font-weight: 800; letter-spacing: .5px; border: 2px solid transparent; vertical-align: middle; }
-#today .tag.live.result-tag { background: #1b8842; color: #fff; }                         /* 4.52:1 */
+#today .tag.live.result-tag { background: #167a3a; color: #fff; }                         /* 5.41:1 (offline: #e8eaf2 on #262d45, 12:1) */
 #today .tag.final.result-tag { background: transparent; color: #e8eaf2; border-color: #6b7080; }  /* outline, 14:1 on bg */
 #today .tag.final.tie.result-tag { border-style: dashed; color: #ffe08a; border-color: #8a6d1f; margin-left: 4px; }  /* 12:1 */
 /* winner: subtle, in text: "✓ FINAL · HOME" / "· AWAY" (ties already say TIE) */
 #today tr[data-winner="home"] .tag.final.result-tag:not(.tie)::after { content: "\00a0· HOME"; font-weight: 700; color: #c9cee0; }
 #today tr[data-winner="away"] .tag.final.result-tag:not(.tie)::after { content: "\00a0· AWAY"; font-weight: 700; color: #c9cee0; }
+/* winner emphasis on finals (span.home / span.away from 868a155): winner bolder + white, the other muted (#a9afc3 ≥ 6.5:1
+   on every row/card background). Ties, scheduled and live rows stay neutral (selectors need data-winner=home|away). */
+#today tr.today-row[data-winner="home"] td.matchup .home, #today tr.today-row[data-winner="away"] td.matchup .away { font-weight: 800; color: #fff; }
+#today tr.today-row[data-winner="home"] td.matchup .away, #today tr.today-row[data-winner="away"] td.matchup .home { font-weight: 500; color: #a9afc3; }
 /* scheduled: score not started yet, quieter */
 #today tr[data-status="scheduled"] td.score-cell { color: #9aa1b8; }                      /* 6.9:1 */
 /* completed rows recede a touch (still ≥ 4.5:1); active row highlighted with a bar + tint */
@@ -197,15 +201,15 @@ tr.has-warning > td { background: rgba(255,199,44,.06); }
   #today .tbl-wrap .tbl { min-width: 0; }
   #today .tbl thead { display: none; }
   #today .tbl, #today .tbl tbody { display: block; width: 100%; }
-  #today .tbl tr.today-row { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "when court" "match match" "score score" "status actions";
+  #today .tbl tr.today-row { display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "when court" "match match" "score score" "status actions";
     gap: 4px 10px; align-items: center; margin: 0 0 10px; padding: 12px; border: 1px solid #2a3150; border-radius: 12px; background: #141a2c; }
   #today .tbl tr.today-row td { display: block; border: 0; padding: 0; overflow-wrap: anywhere; }
   #today .tbl tr.today-row td.when { grid-area: when; display: block; font-size: 13px; font-weight: 700; }
-  #today .tbl tr.today-row td.court { grid-area: court; display: block; font-size: 13px; color: #c9cee0; }
+  #today .tbl tr.today-row td.court { grid-area: court; justify-self: end; display: block; font-size: 13px; color: #c9cee0; }
   #today .tbl tr.today-row td.matchup { grid-area: match; font-size: 16px; font-weight: 700; color: #fff; }
   #today .tbl tr.today-row td.score-cell { grid-area: score; white-space: normal; }
-  #today .tbl tr.today-row td:has(> .status-badge) { grid-area: status; }
-  #today .tbl tr.today-row td.right { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; text-align: left; }
+  #today .tbl tr.today-row td:has(> .status-badge) { grid-area: status; justify-self: start; white-space: nowrap; }
+  #today .tbl tr.today-row td.right { grid-area: actions; display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: 4px; text-align: left; }  /* one row of actions */
   #today .tbl tr.today-row td.right button { min-height: 44px; min-width: 44px; }
   #today .result-score { font-size: 22px; }
   #today tr[data-status="active"] { background: #13301f; border-color: #2c6b3c; box-shadow: inset 5px 0 0 #5be37d; }
