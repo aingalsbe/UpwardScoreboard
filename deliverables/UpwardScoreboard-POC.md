@@ -472,6 +472,39 @@ From QA round 1 (Avery). Fixed in round 1: silent network drops (#1), duplicate 
 | QA final F5: Admin Today table scrolls sideways at 390 px | Backlog (Sage, CSS) | Admin is used on a laptop |
 | Maroon text directly on the dark TV background is 1.41:1 | Handled (Sage) | contrast.js lightens it automatically; worth a look on the real TV |
 
+### Next feature: season schedule by weekend (recorded, not built yet)
+
+Aaron approved the functional rules below on Oct 17, 2026, and asked to record this as the next step. Nothing is built on main. Early exploratory work is parked on the local branch `wip/season-weekends` and can be reused or thrown away.
+
+**Weekends**
+- The season is organized by weekend: a Friday and Saturday pair, such as Oct 16–17 and then Oct 23–24.
+- Each weekend is identified by its Friday date in league time (America/Chicago).
+- A game on Sunday belongs to the weekend before it. A game on Monday through Thursday belongs to the coming weekend.
+- Admin can manage games on every weekend of the season, not just today.
+
+**Admin Schedule screen**
+- Opens on the current weekend. On Friday or Saturday that is the weekend in progress; from Sunday through Thursday it is the next one.
+- Also shows the upcoming weekend.
+- A Weekend selector sits before the Grade selector. Each weekend is labelled like "Oct 16–17 (this weekend)".
+- The "Schedule a Game" panel is hidden behind a toggle, collapsed by default. Editing a game opens it.
+
+**Close Weekend** (admin only, with a confirm dialog that shows how many games are completed, live and not started)
+- Every game that weekend becomes locked: no scorekeeper can load, score or reopen it, the server enforces this, and the scorekeeper's game list hides locked games.
+- Results are recorded on each game.
+- Imports skip locked games with a warning, so they are never silently changed.
+
+**Aaron's approved rules**
+1. A game still live when the weekend is closed becomes final at its current score, and it counts in team records.
+2. A game that never started is marked "Not played". It has no score and doesn't count in records. An admin can set it back to scheduled to reschedule it.
+3. Reopen Weekend is admin only. It unlocks the weekend and keeps existing finals as they are.
+4. Locked games stay editable by an admin, with a warning, for score corrections.
+
+**Team records**
+- Each team's win-loss record is built from completed games only. A tie is shown only if the team has one, for example 3-2 or 3-2-1. "Not played" games don't count.
+- The record is shown only on the Admin Teams screen. It never appears on the scorekeeper, TV, overlay, split or lobby Schedule screens, or in their data, and a test must check this.
+
+**Existing rules still apply:** the home team is listed first, Full Court conflicts with West and East, only one game per court can be active, and imports stay idempotent.
+
 ## 13. On-site test checklist for Aaron
 
 Do this at the gym about a week before the pilot, with the real TV devices and the scorekeepers' phones.
