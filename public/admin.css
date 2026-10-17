@@ -159,3 +159,20 @@ tr.has-warning > td { background: rgba(255,199,44,.06); }
 .cheer-fields label:has(input[name="cheer"]) { grid-column: 1 / -1; }
 .cheer-fields input[type=file] { min-height: 44px; padding: 6px; }
 .cheer-fields input[type=file]::file-selector-button { min-height: 32px; padding: 6px 14px; margin-right: 10px; border-radius: 8px; border: 1px solid #4a5272; background: #262d45; color: #fff; font: inherit; cursor: pointer; }
+
+/* ---- Today list (Devon, A1; minimal, for Sage to restyle) ----
+   Rows: tr.today-row[data-status][data-result=final|tie|live|''][data-winner][data-game-id]; cells td.when, td.court,
+   td.matchup, td.score-cell (b.result-score + .tag.result-tag: .live "● LIVE", .final "✓ FINAL", .final.tie "TIE").
+   Phones (≤ 600px): each row becomes a card, no table min-width, so the page never scrolls sideways. */
+#today td.score-cell { white-space: nowrap; }                   /* "21–17 ✓ FINAL" stays on one line */
+@media (max-width: 600px) {
+  #today td.score-cell { white-space: normal; }
+  #today .tbl-wrap .tbl { min-width: 0; }
+  #today .tbl thead { display: none; }
+  #today .tbl, #today .tbl tbody, #today .tbl tr.today-row { display: block; width: 100%; }
+  #today .tbl tr.today-row { padding: 8px 4px; border-bottom: 1px solid #222840; }
+  #today .tbl tr.today-row td { display: block; border: 0; padding: 2px 4px; overflow-wrap: anywhere; }
+  #today .tbl tr.today-row td.when, #today .tbl tr.today-row td.court { display: inline-block; color: #8890aa; font-size: 13px; }
+  #today .tbl tr.today-row td.right { text-align: left; }
+  .result-score { font-size: 18px; margin-right: 4px; }
+}

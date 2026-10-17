@@ -31,7 +31,9 @@ const localDay = (iso) => new Date(iso).toLocaleString('sv-SE', { timeZone: 'Ame
 for (const g of (await api('/api/games')).filter((g) => g.scheduled_at && localDay(g.scheduled_at) === DATE)) await api(`/api/games/${g.id}`, { method: 'DELETE' });
 for (const g of (await api('/api/games')).filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
 const sat = await api('/api/public/schedule?day=sat');
-const games0 = (await api('/api/games')).filter((g) => g.scheduled_at && localDay(g.scheduled_at) === sat.date);
+// Demo games only (08:00 onwards): when today is the demo Saturday, the other e2e/smoke runs leave games "now" (e.g. 02:41).
+const games0 = (await api('/api/games')).filter((g) => g.scheduled_at && localDay(g.scheduled_at) === sat.date
+  && new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(11, 16) >= '08:00');
 const rows = games0.map((g) => [DATE, new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(11, 16), g.court.toLowerCase(), g.grade, g.gender, g.home, g.away, g.cheer || ''].join(','));
 // One long-named team (30 chars, the maximum; short name LWT) replaces the 3:00 West home team (a half-width compact
 // final at end of day): its name must fall back to the short name.

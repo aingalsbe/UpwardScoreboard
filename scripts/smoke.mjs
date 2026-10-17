@@ -623,9 +623,13 @@ console.log('19. Gender / division, schedule warnings, schedule screen (route + 
   await sk19.cmd({ type: 'SCORE', team: 'home', pts: 2 });
   const sl = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.home.score === 2).catch(() => null);
   ok(sl && sl.games.find((g) => g.id === satW.id).clock && sl.games.find((g) => g.id === satW.id).period === 1, 'live score + clock + period reach the schedule screen');
+  const ag = (await api('/api/games')).body.find((g) => g.id === satW.id);
+  ok(ag.status === 'active' && ag.home_score === 2 && ag.away_score === 0 && ag.on_court === true, 'A1: Admin games payload has the active game with its live score (2–0)');
   await api(`/api/games/${satW.id}/complete`, { method: 'POST' });
   const fin = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.status === 'complete').catch(() => null);
   ok(fin && fin.games.find((g) => g.id === satW.id).home.score === 2, 'complete shows the final score on the schedule');
+  const cg = (await api('/api/games')).body.find((g) => g.id === satW.id);
+  ok(cg.status === 'complete' && cg.home_score === 2 && cg.away_score === 0 && cg.court === 'West' && cg.scheduled_at, 'A1: Admin games payload keeps the completed game with its final score (2–0), court and time');
   const sc2 = client('*', 'schedule&date=2031-01-05'); await sc2.open;
   const other = await sc2.wait((m) => m.kind === 'schedule');
   ok(other.games.every((g) => g.id !== satW.id) && other.dayLabel === 'Sunday, Jan 5', 'a schedule screen only gets its own day');
@@ -639,6 +643,8 @@ console.log('19. Gender / division, schedule warnings, schedule screen (route + 
   const tg = tie.games.find((g) => g.id === tieG.id);
   const view = await fetch(BASE + '/schedule-view.js').then((r) => r.text());
   ok(tg && tg.status === 'complete' && tg.home.score === tg.away.score && view.includes("'tie'") && view.includes('✓ FINAL · TIE'), `tie: complete ${tg?.home.score}–${tg?.away.score} reaches the schedule; view module marks it FINAL · TIE`);
+  const tieRow = (await api('/api/games')).body.find((g) => g.id === tieG.id);
+  ok(tieRow.status === 'complete' && tieRow.home_score === tieRow.away_score, `A1: Admin games payload: tied final ${tieRow.home_score}–${tieRow.away_score} (Today shows FINAL + TIE)`);
   // Empty day: no games -> empty list, isToday flag, and the page has the .empty element.
   const emp = (await api('/api/public/schedule?date=2031-01-06')).body;
   const page19 = await fetch(BASE + '/schedule').then((r) => r.text());

@@ -1,4 +1,6 @@
 // Admin logic: CRUD via REST, no framework. Styles live in admin.css.
+import { todayGames, resultOf } from './admin-today.js';
+import { connect } from './common.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let teams = [], courts = [], games = [];
@@ -42,27 +44,44 @@ async function load() {
 
 const STATUS = { scheduled: 'Scheduled', active: 'Active', complete: 'Complete' };
 const tvPath = (slug) => `/upwardbasketballscores/${encodeURIComponent(slug)}court`;
-function gameRow(g) {
+function gameRow(g, x = {}) {
   const lbl = g.label || g.grade, warn = (g.warnings || []).length ? ` <span class="tag warn-tag" title="${esc(g.warnings.join('\n'))}">⚠ ${g.warnings.length}</span>` : '';
-  return `<tr class="${g.on_court ? 'live' : ''}${warn ? ' has-warning' : ''}" data-grade="${esc(g.grade || '')}" data-gender="${esc(g.gender || '')}"><td>${when(g.scheduled_at)}</td><td>${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(lbl || '—')}</td>` : ''}
-    <td>${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${esc(g.home)} vs ${esc(g.away)}${warn}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
-    <td>${g.home_score}–${g.away_score}</td><td><span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status] || esc(g.status)}</span></td>
+  return `<tr class="${g.on_court ? 'live' : ''}${warn ? ' has-warning' : ''}${x.cls ? ` ${x.cls}` : ''}" data-grade="${esc(g.grade || '')}" data-gender="${esc(g.gender || '')}"${x.data ? ` ${x.data}` : ''}><td class="when">${when(g.scheduled_at)}</td><td class="court">${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(lbl || '—')}</td>` : ''}
+    <td class="matchup">${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${esc(g.home)} vs ${esc(g.away)}${warn}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
+    <td class="score-cell">${x.res ?? `${g.home_score}–${g.away_score}`}</td><td><span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status] || esc(g.status)}</span></td>
     <td class="right">${g.status === 'scheduled' ? `<button class="primary sm" data-start="${g.id}">Start on court</button>`
       : g.status === 'active' ? `<button class="sm" data-complete="${g.id}">Complete</button>` : `<button class="link sm" data-reopen="${g.id}">Reopen</button>`}
     <button class="link sm" data-edit-game="${g.id}">Edit</button><button class="link sm" data-del-game="${g.id}">Delete</button></td></tr>`;
 }
 
-function render() {
-  const opt = (arr, label) => arr.map((x) => `<option value="${x.id}">${esc(label(x))}</option>`).join('');
+/** Today list row: result inline (complete: final score home first + FINAL [+ TIE]; active: live score + LIVE). */
+function todayRow(g) {
+  const r = resultOf(g);
+  const res = r.kind === 'live' ? `<b class="result-score">${r.score}</b> <span class="tag live result-tag">● LIVE</span>`
+    : r.kind ? `<b class="result-score">${r.score}</b> <span class="tag final result-tag">✓ FINAL</span>${r.kind === 'tie' ? ' <span class="tag final tie result-tag">TIE</span>' : ''}`
+    : `${g.home_score}–${g.away_score}`;
+  return gameRow(g, { res, cls: 'today-row', data: `data-status="${esc(g.status)}" data-result="${r.kind}" data-game-id="${g.id}"${r.winner ? ` data-winner="${r.winner}"` : ''}` });
+}
+const leagueDate = (iso) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: leagueTz });
+/** The live parts of the page (court cards, Today list, all-games table): safe to re-render on every push. */
+function renderLive() {
   $('#court-cards').innerHTML = courts.map((c) => {
     const g = games.find((x) => x.court_id === c.id && x.status === 'active');
     const s = encodeURIComponent(c.slug);
     return `<div class="card"><h3>${esc(c.name)}</h3><p>${g ? `<b>${esc(g.home)} ${g.home_score} – ${g.away_score} ${esc(g.away)}</b> <span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status]}</span>` : '<span class="muted">No active game (TV shows Next up)</span>'}</p>
       <p class="links"><a href="${tvPath(c.slug)}" target="_blank">TV</a> · <a href="/score/${s}" target="_blank">Scorekeeper</a> · <a href="${tvPath(c.slug)}/overlay" target="_blank">Overlay</a></p></div>`;
   }).join('');
-  $('#today-games').innerHTML = games.filter((g) => g.status !== 'complete').map(gameRow).join('') || '<tr><td colspan="6" class="muted">No games</td></tr>';
-  const gf = $('#game-grade-filter').value, tf = $('#team-grade-filter').value;
+  // Bug A1: this used to drop complete games (filter status !== 'complete'), so a finished game vanished instead of
+  // showing its result. Now: today's finals stay, with the result inline.
+  $('#today-games').innerHTML = todayGames(games, courts, leagueDate(Date.now()), leagueDate).map(todayRow).join('') || '<tr><td colspan="6" class="muted">No games</td></tr>';
+  const gf = $('#game-grade-filter').value;
   $('#game-rows').innerHTML = games.filter((g) => !gf || g.grade === gf).map((g) => gameRow({ ...g, __full: true })).join('') || '<tr><td colspan="7" class="muted">No games</td></tr>';
+}
+
+function render() {
+  const opt = (arr, label) => arr.map((x) => `<option value="${x.id}">${esc(label(x))}</option>`).join('');
+  renderLive();
+  const tf = $('#team-grade-filter').value;
   // Grade filters + datalist (teams come sorted by grade, then name, from the server).
   const grades = [...new Set(teams.map((t) => t.grade).filter(Boolean))];
   for (const sel of document.querySelectorAll('[data-grade-filter]')) { const v = sel.value; sel.innerHTML = '<option value="">All grades</option>' + grades.map((g) => `<option>${esc(g)}</option>`).join(''); sel.value = grades.includes(v) ? v : ''; }
@@ -205,7 +224,22 @@ for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-
   }));
 }
 
-async function boot() { $('#app').hidden = false; route(); await load(); setInterval(() => !document.hidden && load().catch(() => {}), 10000); }
+async function boot() { $('#app').hidden = false; route(); await load(); setInterval(() => !document.hidden && load().catch(() => {}), 10000); live(); }
+/**
+ * Live like the TVs: the same WebSocket push the schedule screen uses (role=schedule, every court). Every score,
+ * load, complete, reopen, edit, import or delete pushes a snapshot (coalesced 150 ms server-side); we then refetch
+ * /api/games and re-render only the live parts (forms keep what's being typed).
+ */
+let liveConn = null, liveTimer = null;
+function live() {
+  if (liveConn) return;
+  liveConn = connect({
+    court: '*', role: 'schedule',
+    onState: (m) => { if (m.kind !== 'schedule') return; clearTimeout(liveTimer); liveTimer = setTimeout(refreshLive, 100); },
+    onStatus: (st) => { document.documentElement.dataset.live = st; },
+  });
+}
+async function refreshLive() { try { games = await api('/api/games'); renderLive(); } catch {} }
 api('/api/me').then((me) => { leagueTz = me.tz; boot(); }).catch(() => {});
 
 for (const sel of document.querySelectorAll('[data-grade-filter]')) sel.addEventListener('change', () => render());
