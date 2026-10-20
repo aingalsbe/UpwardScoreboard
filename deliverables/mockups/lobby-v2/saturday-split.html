@@ -1,23 +1,28 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Lobby v2 mockup · SATURDAY (SAMPLE DATA)</title>
 <link rel="stylesheet" href="lobby.css"></head><body>
-<!-- Static mockup, SAMPLE DATA (all names illustrative). Lenexa Baptist Church Upward Basketball 2026–27. Hooks per docs/plans/locker-rooms-coaches.md. -->
-<header><h1 data-bind="header">SATURDAY 11:00 AM</h1><div class="sub">LENEXA BAPTIST CHURCH · UPWARD BASKETBALL</div></header><main>
-<div class="court" data-court="west"><div class="tab"><span>WEST COURT</span></div>
-<section class="game live" data-slot="now" data-state="live"><div class="status"><span class="tag live">● LIVE</span><span class="when">Q2</span><span class="clock" data-bind="clock">4:12</span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>CH</b></div>
-      <div class="who"><div class="name" data-bind="name">Knights</div><div class="coach" data-bind="coach">Coach Mike Reynolds</div></div><span class="score" data-bind="home-score">14</span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>5</b></div>
-      <div class="who"><div class="name" data-bind="name">Mustangs</div><div class="coach" data-bind="coach">Coach Dana Ortiz</div></div><span class="score" data-bind="away-score">10</span><span class="side">AWAY</span></div><div class="row cheer" data-row="cheer"><div class="locker" data-bind="locker"><small>Locker Room</small><b>1</b></div>
-      <div class="who"><div class="name" data-bind="name">Pep Power</div><div class="coach" data-bind="coach">Coach Tasha Wells</div></div><span></span><span class="side">CHEER</span></div></section>
-<div class="divider"></div>
-<section class="game next" data-slot="next" data-state="upcoming"><div class="status"><span class="tag next">🕒 UP NEXT</span><span class="when">Tip-off <span data-bind="time">12:00 PM</span></span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>2</b></div>
-      <div class="who"><div class="name" data-bind="name">Lady Bearcats</div><div class="coach" data-bind="coach">Coach Erin Walsh</div></div><span></span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>3</b></div>
-      <div class="who"><div class="name" data-bind="name">Lady Sparks</div><div class="coach" data-bind="coach">Coach Jen Park</div></div><span></span><span class="side">AWAY</span></div></section>
+<!-- Static mockup, SAMPLE DATA (all names illustrative). Lenexa Baptist Church Upward Basketball 2026–27. Hooks per docs/plans/locker-rooms-coaches.md + data-needs.md. -->
+<header><h1 data-bind="header">SATURDAY 11:00 AM</h1><div class="sub">LENEXA BAPTIST CHURCH · UPWARD BASKETBALL</div></header><main class="split">
+<div class="band now">
+<div class="court" data-court="west"><div class="tab"><span>WEST COURT</span></div><section class="game live" data-slot="now" data-state="live"><div class="status"><span class="tag live">● LIVE</span><span class="when">Q2</span><span class="clock" data-bind="clock">4:12</span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>CH</b></div>
+      <div class="who"><div class="name" data-bind="name">Knights</div><div class="coach" data-bind="coach">Coach Mike</div></div><span class="score" data-bind="home-score">14</span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>5</b></div>
+      <div class="who"><div class="name" data-bind="name">Mustangs</div><div class="coach" data-bind="coach">Coach Dana</div></div><span class="score" data-bind="away-score">10</span><span class="side">AWAY</span></div></section></div>
+<div class="court" data-court="east"><div class="tab"><span>EAST COURT</span></div><section class="game live" data-slot="now" data-state="live"><div class="status"><span class="tag live">● LIVE</span><span class="when">Q3</span><span class="clock" data-bind="clock">6:47</span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>2</b></div>
+      <div class="who"><div class="name" data-bind="name">Jaguars</div><div class="coach" data-bind="coach">Coach Brian</div></div><span class="score" data-bind="home-score">21</span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>3</b></div>
+      <div class="who"><div class="name" data-bind="name">Panthers</div><div class="coach" data-bind="coach">Coach Luis</div></div><span class="score" data-bind="away-score">18</span><span class="side">AWAY</span></div></section></div>
 </div>
-<div class="court" data-court="east"><div class="tab"><span>EAST COURT</span></div>
-<section class="game live" data-slot="now" data-state="live"><div class="status"><span class="tag live">● LIVE</span><span class="when">Q3</span><span class="clock" data-bind="clock">6:47</span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>2</b></div>
-      <div class="who"><div class="name" data-bind="name">Jaguars</div><div class="coach" data-bind="coach">Coach Brian Kessler</div></div><span class="score" data-bind="home-score">21</span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>3</b></div>
-      <div class="who"><div class="name" data-bind="name">Panthers</div><div class="coach" data-bind="coach">Coach Luis Moreno</div></div><span class="score" data-bind="away-score">18</span><span class="side">AWAY</span></div></section>
-<div class="divider"></div>
-<section class="game next" data-slot="next" data-state="upcoming"><div class="status"><span class="tag next">🕒 UP NEXT</span><span class="when">Tip-off <span data-bind="time">12:00 PM</span></span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>CH</b></div>
-      <div class="who"><div class="name" data-bind="name">Lady Cardinals</div><div class="coach" data-bind="coach">Coach Amy Fischer</div></div><span></span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>4</b></div>
-      <div class="who"><div class="name" data-bind="name">Lady Razorbacks</div><div class="coach" data-bind="coach">Coach Kim Haddad</div></div><span></span><span class="side">AWAY</span></div></section>
-</div></main><div class="sample">SAMPLE DATA · MOCKUP</div></body></html>
+<section class="cheer-band now" data-court="both" data-slot="now"><div class="status"><span>Cheering both courts · 11:00 AM</span></div>
+<div class="row cheer span" data-row="cheer"><div class="locker" data-bind="locker"><small>Locker Room</small><b>1</b></div>
+      <div class="who"><div class="name" data-bind="name">Pep Power</div><div class="coach" data-bind="coach">Coach Tasha</div></div><span class="side">CHEER</span></div></section>
+
+<div class="band next">
+<div class="court" data-court="west"><section class="game next" data-slot="next" data-state="upcoming"><div class="status"><span class="tag next">🕒 UP NEXT</span><span class="when">Tip-off <span data-bind="time">12:00 PM</span></span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>2</b></div>
+      <div class="who"><div class="name" data-bind="name">Lady Bearcats</div><div class="coach" data-bind="coach">Coach Erin</div></div><span></span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>3</b></div>
+      <div class="who"><div class="name" data-bind="name">Lady Sparks</div><div class="coach" data-bind="coach">Coach Jen</div></div><span></span><span class="side">AWAY</span></div></section></div>
+<div class="court" data-court="east"><section class="game next" data-slot="next" data-state="upcoming"><div class="status"><span class="tag next">🕒 UP NEXT</span><span class="when">Tip-off <span data-bind="time">12:00 PM</span></span></div><div class="row home" data-row="home"><div class="locker" data-bind="locker"><small>Locker Room</small><b>CH</b></div>
+      <div class="who"><div class="name" data-bind="name">Lady Cardinals</div><div class="coach" data-bind="coach">Coach Amy</div></div><span></span><span class="side">HOME</span></div><div class="row away" data-row="away"><div class="locker" data-bind="locker"><small>Locker Room</small><b>4</b></div>
+      <div class="who"><div class="name" data-bind="name">Lady Razorbacks</div><div class="coach" data-bind="coach">Coach Kim</div></div><span></span><span class="side">AWAY</span></div></section></div>
+</div>
+<section class="cheer-band next" data-court="both" data-slot="next"><div class="status"><span>Next cheer · 12:00 PM</span></div>
+<div class="row cheer span" data-row="cheer"><div class="locker" data-bind="locker"><small>Locker Room</small><b>1</b></div>
+      <div class="who"><div class="name" data-bind="name">Spirit Squad</div><div class="coach" data-bind="coach">Coach Megan</div></div><span class="side">CHEER</span></div></section>
+</main><div class="sample">SAMPLE DATA · MOCKUP</div></body></html>
