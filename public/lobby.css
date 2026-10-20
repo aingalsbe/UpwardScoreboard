@@ -139,11 +139,9 @@ main.split .next-bar { margin-top: 2rem; }
 /* (a) Full Court game inside a split day: its court spans both columns.
    Next on Full after West/East live: one full-width dimmed next row under the UP NEXT bar; the bar names the court (text). */
 .band .court[data-court="full"] { grid-column: 1 / -1; }
-.next-bar:has(+ .band.next .court[data-court="full"]) .nb-time::after { content: " · Full Court"; }
-/* Full live then West/East next: the next band has no tabs, so name each court in text (home-first order kept by markup) */
-main.split:has(.band.now .court[data-court="full"]) .band.next .court:not([data-court="full"])::before {
-  content: attr(data-court) " court"; text-transform: uppercase; align-self: flex-start; font: 800 2rem "Montserrat", sans-serif;
-  letter-spacing: .2rem; color: #fff; background: #000; border: .2rem solid #fff; border-radius: .6rem; padding: .2rem 1.2rem; }
+/* Mixed day: next courts carry a real label from the markup (span.court-label[data-bind=court]); white on black 21:1 */
+.court-label { align-self: flex-start; font: 800 2rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .2rem;
+  text-transform: uppercase; color: #fff; background: #000; border: .2rem solid #fff; border-radius: .6rem; padding: .2rem 1.2rem; }
 
 /* (b) data-state="empty": a court with nothing live / nothing next. Calm placeholder, same height as the other court's
    game (band stretches), text + muted dashed frame, no status color. #d6d9e0 on ~#141a26 ≈ 12:1. */
@@ -152,7 +150,7 @@ main.split:has(.band.now .court[data-court="full"]) .band.next .court:not([data-
 .game[data-state="empty"] { display: flex; align-items: center; justify-content: center; min-height: 14rem;
   background: rgba(10,14,22,.82); border: .3rem dashed #8a90a6; border-radius: 1.4rem; }
 .game.next[data-state="empty"] { min-height: 12rem; }
-.game[data-state="empty"] .empty-note { font: 700 3.2rem "Montserrat", sans-serif; color: #d6d9e0; text-align: center; letter-spacing: .1rem; }
+.game[data-state="empty"] .empty-note { padding: 0 2rem; overflow-wrap: anywhere; font: 700 3.2rem "Montserrat", sans-serif; color: #d6d9e0; text-align: center; letter-spacing: .1rem; }
 /* whole day done: one centered calm card */
 main.full > .court > .game[data-state="empty"] { min-height: 26rem; margin-top: 8rem; }
 main.full > .court > .game[data-state="empty"] .empty-note { font-size: 5.2rem; }
