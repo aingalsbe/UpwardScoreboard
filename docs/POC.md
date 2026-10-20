@@ -87,7 +87,9 @@ Courts are now full, west and east (Full shares the floor with West and East; GA
 - ✅ Home team always listed first, home on the left.
 - ✅ Demo weekend seed (Fri Full Court evening, Sat West/East 08–16 then Full Court). Details: deliverables/UpwardScoreboard-POC.md section 3.5.
 
-### Next feature: locker rooms, coaches, cheer by time slot (planned, not built)
+### Locker rooms, coaches, cheer by time slot (built 2026-10-20; was "Next feature")
+
+Lobby TV v2: /upwardbasketballscores/lobby (alias /lobby), live + exactly one next game per court. The full-day lobby schedule screen (/upwardbasketballscores/schedule) is unchanged.
 
 Plan: docs/plans/locker-rooms-coaches.md.
 - Cheer: one squad per time slot (date + start time), shared by West, East and Full. It is optional, and some slots have none. This replaces the one-squad-per-game rule above. New `cheer_squads` (name, coach, logo) and `cheer_slots` (date, start_time, squad, locker; unique date+start_time). `games.cheer*` stays read-only until it is dropped after the transition.

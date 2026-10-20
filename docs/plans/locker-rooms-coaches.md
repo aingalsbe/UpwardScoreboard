@@ -1,6 +1,6 @@
 # Plan: locker rooms, coaches, cheer by time slot, lobby TV "live + next"
 
-**Status (2026-10-20):** Phase 1 BUILT (schema, migration, API/snapshot, CSV + templates, tests). Phase 2 (Admin UI, lobby TV) not built.
+**Status (2026-10-20):** Phase 1 BUILT (schema, migration, API/snapshot, CSV + templates, tests). Phase 2 BUILT: Admin (Cheer tab: squads + cheer-by-hour editor, slot warnings with "Pick", coach on Teams, lockers in the game editor, CSV cards) and the lobby TV v2 at `/upwardbasketballscores/lobby` (alias `/lobby`; Sage's lobby-v2 mockup, selection in `public/lobby-view.js`). Screenshots: `docs/screenshots/lobby-v2-built/`.
 Morgan's rulings: a slot is the scheduled 1-hour block (date + start floored to the hour, `slot_start` on the hour); a migration conflict creates no slot and raises `cheer-slot-conflict` with the candidates; the payload carries only the coach's first name; with no live game, a court shows its next game.
 
 Owner: data/API/JS (me); look and CSS: Sage. Mockup: `/workspace/uploads/lobby/slide-01..15.png`. It shows the `FRIDAY 5:15 PM` header, WEST/EAST panels, a gold Home row and a black Away row, a Locker Room pill per team, and a pink CHEER row spanning both courts. The mockup has no coach.
