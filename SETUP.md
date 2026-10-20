@@ -69,6 +69,8 @@ powershell -ExecutionPolicy Bypass -File .\Stop-Demo.ps1 -Wipe       # stop and 
 ```
 
 `Start-Demo.ps1` checks Docker, runs `docker compose up -d --build`, waits for `/api/health`, runs `node dist/src/seed-demo.js` in the app container (restarts the app if it seeded), prints the URLs, and opens scorekeeper + TV Edge windows with a throwaway profile. Saturday uses West (PIN 2222), other days Full (PIN 1111). Other switches: `-NoBrowser`, `-WindowsOnly`.
+
+Demo locker rooms + coaches on an existing database (fills only empty fields, never overwrites, no wipe; safe to re-run): `docker compose exec -T app node dist/src/fill-demo.js`. A fresh `-Reseed` (seed-demo `--reset`) already includes them: rooms CH and 1–6, no room used twice in one hour slot (teams and the cheer squad), and a first-name coach on every team and cheer squad.
 `Stop-Demo.ps1` runs `docker compose down` (or `down -v` with `-Wipe`).
 
 Manual: `docker compose up -d --build`, `docker compose logs app`, `docker compose down`.

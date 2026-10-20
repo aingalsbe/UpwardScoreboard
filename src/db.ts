@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { demoWeekend, demoSeedPlan, gradeOrder, LEAGUE_TZ, hourSlot } from './schedule.js';
+import { demoWeekend, demoSeedPlan, gradeOrder, LEAGUE_TZ, hourSlot, DEMO_COACHES, slotRooms, slotSeed } from './schedule.js';
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -328,4 +328,50 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   return true;
+}
+
+/**
+ * Fill ONLY empty demo fields on an existing DB (never overwrites): team + cheer squad coaches (first names not
+ * already used, deterministic by id), game home/away lockers and cheer slot lockers per slot (date + hour, all
+ * courts) with the seed's rules: no room twice in a slot, including the cheer squad's room. Safe to re-run.
+ */
+export async function fillDemoLockers(): Promise<{ teamCoaches: number; squadCoaches: number; gameLockers: number; slotLockers: number }> {
+  const client = await pool.connect();
+  const out = { teamCoaches: 0, squadCoaches: 0, gameLockers: 0, slotLockers: 0 };
+  try {
+    await client.query('BEGIN');
+    await client.query('LOCK TABLE games, teams, cheer_squads, cheer_slots IN SHARE ROW EXCLUSIVE MODE');
+    const usedNames = new Set<string>((await client.query(`SELECT lower(coach) c FROM teams WHERE nullif(trim(coach),'') IS NOT NULL
+      UNION SELECT lower(coach) FROM cheer_squads WHERE nullif(trim(coach),'') IS NOT NULL`)).rows.map((r) => r.c));
+    let ci = 0;
+    const nextName = () => { // first unused name in list order; once all are used, cycle
+      for (let n = 0; n < DEMO_COACHES.length; n++) { const c = DEMO_COACHES[(ci + n) % DEMO_COACHES.length]; if (!usedNames.has(c.toLowerCase())) { ci = (ci + n + 1) % DEMO_COACHES.length; usedNames.add(c.toLowerCase()); return c; } }
+      return DEMO_COACHES[ci++ % DEMO_COACHES.length];
+    };
+    for (const t of (await client.query(`SELECT id FROM teams WHERE nullif(trim(coach),'') IS NULL ORDER BY id`)).rows)
+      out.teamCoaches += (await client.query(`UPDATE teams SET coach=$2 WHERE id=$1 AND nullif(trim(coach),'') IS NULL`, [t.id, nextName()])).rowCount ?? 0;
+    for (const q of (await client.query(`SELECT id FROM cheer_squads WHERE nullif(trim(coach),'') IS NULL ORDER BY id`)).rows)
+      out.squadCoaches += (await client.query(`UPDATE cheer_squads SET coach=$2 WHERE id=$1 AND nullif(trim(coach),'') IS NULL`, [q.id, nextName()])).rowCount ?? 0;
+    // slots: every (date, hour) with games, plus cheer slots
+    const games = (await client.query(`SELECT g.id, to_char(${slotDateSql('g.scheduled_at', '$1')}, 'YYYY-MM-DD') AS date, to_char(${slotStartSql('g.scheduled_at', '$1')}, 'HH24:MI') AS start,
+        nullif(trim(g.home_locker),'') AS hl, nullif(trim(g.away_locker),'') AS al
+      FROM games g JOIN courts c ON c.id = g.court_id WHERE g.scheduled_at IS NOT NULL ORDER BY g.scheduled_at, c.id, g.id`, [LEAGUE_TZ])).rows;
+    const slots = (await client.query(`SELECT id, to_char(date,'YYYY-MM-DD') AS date, to_char(slot_start,'HH24:MI') AS start, nullif(trim(locker),'') AS locker FROM cheer_slots ORDER BY date, slot_start`)).rows;
+    const keys = [...new Set([...games.map((g) => `${g.date} ${g.start}`), ...slots.map((s) => `${s.date} ${s.start}`)])].sort();
+    for (const key of keys) {
+      const [date, start] = key.split(' ');
+      const gs = games.filter((g) => g.date === date && g.start === start), cs = slots.find((s) => s.date === date && s.start === start);
+      const taken = [cs?.locker, ...gs.flatMap((g) => [g.hl, g.al])];
+      const need = (cs && !cs.locker ? 1 : 0) + gs.reduce((n, g) => n + (g.hl ? 0 : 1) + (g.al ? 0 : 1), 0);
+      if (!need) continue;
+      const rooms = slotRooms(taken, need, slotSeed(date, start));
+      if (cs && !cs.locker) out.slotLockers += (await client.query(`UPDATE cheer_slots SET locker=$2 WHERE id=$1 AND nullif(trim(locker),'') IS NULL`, [cs.id, rooms.shift()])).rowCount ?? 0;
+      for (const g of gs) {
+        if (!g.hl) out.gameLockers += (await client.query(`UPDATE games SET home_locker=$2 WHERE id=$1 AND nullif(trim(home_locker),'') IS NULL`, [g.id, rooms.shift()])).rowCount ?? 0;
+        if (!g.al) out.gameLockers += (await client.query(`UPDATE games SET away_locker=$2 WHERE id=$1 AND nullif(trim(away_locker),'') IS NULL`, [g.id, rooms.shift()])).rowCount ?? 0;
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  return out;
 }

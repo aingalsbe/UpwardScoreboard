@@ -174,9 +174,27 @@ export type SeedGame = { date: string; time: string; court: 'full' | 'west' | 'e
   /** Example data (2026-10): coach first names (season-long), locker rooms (per game), cheer squad coach + slot locker. */
   homeCoach: string; awayCoach: string; homeLocker: string; awayLocker: string; cheerCoach?: string; cheerLocker?: string };
 /** Example first names (one coach per team for the season; pages show "Coach <name>"). */
-export const DEMO_COACHES = ['Mike', 'Sarah', 'David', 'Rachel', 'Chris', 'Amy', 'Josh', 'Laura', 'Ben', 'Katie', 'Matt', 'Emily', 'Tyler', 'Megan', 'Ryan', 'Hannah'];
-/** Example locker rooms (they change every week): CH (church hall) and numbered rooms. */
-export const DEMO_ROOMS = ['CH', '1', '2', '3', '4', '5'];
+export const DEMO_COACHES = ['Mike', 'Sarah', 'David', 'Rachel', 'Chris', 'Amy', 'Josh', 'Laura', 'Ben', 'Katie', 'Matt', 'Emily',
+  'Tyler', 'Megan', 'Ryan', 'Hannah', 'Jason', 'Kristen', 'Brian', 'Lisa', 'Kevin', 'Jessica', 'Andy', 'Nicole', 'Steve', 'Heather', 'Mark',
+  'Amanda', 'Dan', 'Melissa', 'Greg', 'Jenny', 'Scott', 'Erin', 'Tim', 'Julie', 'Nate', 'Carrie', 'Luke', 'Beth', 'Adam', 'Kara', 'Eric',
+  'Dana', 'Jeff', 'Molly', 'Paul', 'Tara'];
+/** Example locker rooms (they change every week): CH (church hall) and rooms 1-6. */
+export const DEMO_ROOMS = ['CH', '1', '2', '3', '4', '5', '6'];
+/** Deterministic rotation for a slot (date + HH:00): the same slot always starts at the same room. */
+export function slotSeed(date: string, start: string): number {
+  const d = Math.round(Date.parse(`${date}T00:00:00Z`) / 86400000);
+  return d * 3 + Number(start.slice(0, 2));
+}
+/**
+ * `need` locker rooms for one slot, none of them in `taken` (rooms already used in that slot), in a rotation
+ * that starts at `seed`. If the slot needs more rooms than are free, the extra ones repeat (never happens in the demo).
+ */
+export function slotRooms(taken: (string | null | undefined)[], need: number, seed: number, rooms = DEMO_ROOMS): string[] {
+  const used = new Set(taken.filter((x): x is string => !!x)), out: string[] = [];
+  for (let i = 0; i < rooms.length && out.length < need; i++) { const r = rooms[(seed + i) % rooms.length]; if (!used.has(r)) { used.add(r); out.push(r); } }
+  while (out.length < need) out.push(rooms[(seed + out.length) % rooms.length]);
+  return out;
+}
 const BOYS = ['Eagles', 'Lions', 'Bears', 'Hawks', 'Tigers', 'Rams', 'Knights', 'Warriors', 'Panthers', 'Falcons', 'Wildcats', 'Mustangs'];
 const GIRLS = ['Stars', 'Comets', 'Lightning', 'Sparks', 'Hornets', 'Cardinals', 'Blaze', 'Jaguars', 'Storm', 'Thunder', 'Doves', 'Bluebirds'];
 /**
@@ -194,9 +212,9 @@ export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
   const games: SeedGame[] = [];
   const add = (date: string, time: string, court: SeedGame['court'], grade: string, gender: 'Boys' | 'Girls', cheer?: string) => {
     const [home, away] = pair(grade, gender);
-    const i = games.length, C = DEMO_COACHES, R = DEMO_ROOMS;
+    const i = games.length, C = DEMO_COACHES;
     games.push({ date, time, court, grade, gender, home, away, homeCoach: C[(2 * i) % C.length], awayCoach: C[(2 * i + 1) % C.length],
-      homeLocker: R[(2 * i) % R.length], awayLocker: R[(2 * i + 1) % R.length], ...(cheer ? { cheer } : {}) });
+      homeLocker: '', awayLocker: '', ...(cheer ? { cheer } : {}) });
   };
   // Friday night: Full Court, grades 5–6.
   add(w.fri, '17:30', 'full', '5th Grade', 'Boys'); add(w.fri, '18:30', 'full', '5th Grade', 'Girls'); add(w.fri, '19:30', 'full', '6th Grade', 'Boys');
@@ -210,7 +228,17 @@ export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
     add(w.sat, t, 'east', gradeAt(h), boysWest ? 'Girls' : 'Boys', cheers[`${t} east`]);
   }
   add(w.sat, '16:30', 'full', '6th Grade', 'Girls'); add(w.sat, '17:30', 'full', '6th Grade', 'Boys'); add(w.sat, '18:30', 'full', '5th Grade', 'Girls');
-  let k = 0; // cheer squad coach + the slot's locker room (example data)
-  for (const g of games) if (g.cheer) { g.cheerCoach = DEMO_COACHES[(k * 5 + 3) % DEMO_COACHES.length]; g.cheerLocker = DEMO_ROOMS[(k + 1) % DEMO_ROOMS.length]; k++; }
+  // Cheer squad coaches: the names after the team coaches, so every coach name in the demo is different.
+  let k = 0;
+  for (const g of games) if (g.cheer) { g.cheerCoach = DEMO_COACHES[(2 * games.length + k) % DEMO_COACHES.length]; k++; }
+  // Locker rooms per slot (date + hour, all courts): the cheer squad first, then home/away of each game; no room twice.
+  const bySlot = new Map<string, SeedGame[]>();
+  for (const g of games) { const key = `${g.date} ${hourSlot(g.time)}`; bySlot.set(key, [...(bySlot.get(key) || []), g]); }
+  for (const [key, list] of bySlot) {
+    const [date, start] = key.split(' '), cheer = list.find((g) => g.cheer);
+    const rooms = slotRooms([], list.length * 2 + (cheer ? 1 : 0), slotSeed(date, start));
+    if (cheer) { const c = rooms.shift()!; for (const g of list) if (g.cheer) g.cheerLocker = c; }
+    for (const g of list) { g.homeLocker = rooms.shift()!; g.awayLocker = rooms.shift()!; }
+  }
   return games;
 }

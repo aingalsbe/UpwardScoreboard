@@ -161,3 +161,35 @@ test('server: warnings, CRUD, CSV round-trip + legacy files, scorekeeper never g
   const sched2 = (await (await fetch(`${BASE}/api/public/schedule?date=2026-10-24`)).json()) as any;
   assert.deepEqual(sched2.cheerSlots.map((s: any) => s.start), ['09:00', '10:00', '11:00', '12:00', '13:00']);
 });
+
+test('fill-demo: fills only empty lockers + coaches with the seed rules; never overwrites; idempotent', { skip }, async () => {
+  const { pool } = db;
+  await db.seedDemo('reset');
+  // a used DB: wipe most demo fields, keep a few hand-entered values that must survive
+  await pool.query(`UPDATE teams SET coach = CASE WHEN id = 1 THEN 'Keepme' ELSE NULL END`);
+  await pool.query(`UPDATE cheer_squads SET coach = NULL`);
+  await pool.query(`UPDATE games SET home_locker = CASE WHEN id = 4 THEN 'CH' ELSE NULL END, away_locker = NULL`);
+  await pool.query(`UPDATE cheer_slots SET locker = NULL`);
+  const r = await db.fillDemoLockers();
+  const n = async (sql: string) => (await pool.query(sql)).rows[0].n as number;
+  assert.equal(r.teamCoaches, (await n('SELECT count(*)::int n FROM teams')) - 1);
+  assert.ok(r.squadCoaches > 0 && r.slotLockers > 0 && r.gameLockers > 0);
+  assert.equal(await n(`SELECT count(*)::int n FROM teams WHERE nullif(coach,'') IS NULL`), 0);
+  assert.equal(await n(`SELECT count(*)::int n FROM cheer_squads WHERE nullif(coach,'') IS NULL`), 0);
+  assert.equal(await n(`SELECT count(*)::int n FROM games WHERE nullif(home_locker,'') IS NULL OR nullif(away_locker,'') IS NULL`), 0);
+  assert.equal(await n(`SELECT count(*)::int n FROM cheer_slots WHERE nullif(locker,'') IS NULL`), 0);
+  assert.equal((await pool.query('SELECT coach FROM teams WHERE id=1')).rows[0].coach, 'Keepme');
+  assert.equal((await pool.query('SELECT home_locker FROM games WHERE id=4')).rows[0].home_locker, 'CH');
+  // no room twice per slot (teams + cheer)
+  const dup = await n(`WITH x AS (
+      SELECT date_trunc('hour', g.scheduled_at AT TIME ZONE 'America/Chicago') AS s, unnest(ARRAY[g.home_locker, g.away_locker]) AS room FROM games g
+      UNION ALL SELECT cs.date + cs.slot_start, cs.locker FROM cheer_slots cs)
+    SELECT count(*)::int n FROM (SELECT s, room FROM x GROUP BY 1, 2 HAVING count(*) > 1) d`);
+  assert.equal(dup, 0);
+  const again = await db.fillDemoLockers();
+  assert.deepEqual(again, { teamCoaches: 0, squadCoaches: 0, gameLockers: 0, slotLockers: 0 }, 'second run changes nothing');
+  // a fresh seed has the same no-duplicate property and every field set
+  await db.seedDemo('reset');
+  assert.deepEqual(await db.fillDemoLockers(), { teamCoaches: 0, squadCoaches: 0, gameLockers: 0, slotLockers: 0 }, 'seed already complete');
+});
+
