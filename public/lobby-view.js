@@ -47,5 +47,14 @@ export function planLobby(games, cheerSlots = []) {
   const cheerNow = slotAt(nowTime);
   let cheerNext = slotAt(nextTime);
   if (cheerNow && cheerNext && cheerNow.start === cheerNext.start) cheerNext = null; // same hour: one row
-  return { now, next, header: nowTime || nextTime, nextTime, cheer: { now: cheerNow, next: cheerNext }, empty: !now && !next };
+  // courts with anything still to play today (live or scheduled), for the empty-court text
+  const remaining = Object.fromEntries(['full', ...SPLIT].map((c) => [c, games.some((g) => g.court === c && (g.status === 'active' || g.status === 'scheduled'))]));
+  // mixed day: the next band's layout differs from the live band's, so its courts have no tabs and need a text label
+  const mixed = !!(now && next && now.layout !== next.layout);
+  return { now, next, header: nowTime || nextTime, nextTime, cheer: { now: cheerNow, next: cheerNext }, empty: !now && !next, remaining, mixed };
 }
+
+/** Court label text for next games on mixed days (a real element, not CSS attr()). */
+export const COURT_LABEL = { west: 'WEST', east: 'EAST', full: 'FULL COURT' };
+/** Text for an empty court: a later game exists -> "No game right now"; nothing left on that court today -> "No more games on this court". */
+export const emptyNote = (plan, court) => (plan.remaining?.[court] ? 'No game right now' : 'No more games on this court');

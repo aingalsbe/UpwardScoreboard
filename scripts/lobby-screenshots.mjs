@@ -36,4 +36,10 @@ await fetch(`${B}/api/games/${at(fri, '18:30', 'Full').id}/complete`, { method: 
 const wW = await live(at(sat, '11:00', 'West'), 'west', [['home', 2], ['away', 2], ['home', 3]]);
 const wE = await live(at(sat, '11:00', 'East'), 'east', [['away', 2], ['home', 2], ['away', 2]]);
 await shot(sat, 'saturday-split.png');
-wW.close(); wE.close(); await b.close();
+// Mixed day: West + East live at 15:00, next game on Full Court 16:30 (court label in the next band)
+for (const g of [at(sat, '11:00', 'West'), at(sat, '11:00', 'East')]) await fetch(`${B}/api/games/${g.id}/complete`, { method: 'POST', headers: H });
+wW.close(); wE.close();
+await fetch(B + '/api/import/schedule.csv', { method: 'POST', headers: { ...H, 'content-type': 'text/csv' }, body: 'id,status,home_score,away_score\n' + ['12:00', '13:00', '14:00'].flatMap((h) => [at(sat, h, 'West'), at(sat, h, 'East')]).map((g) => `${g.id},complete,10,8`).join('\n') + '\n' });
+const m1 = await live(at(sat, '15:00', 'West'), 'west', [['home', 2]]), m2 = await live(at(sat, '15:00', 'East'), 'east', [['away', 2]]);
+await shot(sat, 'saturday-split-live-full-next.png');
+m1.close(); m2.close(); await b.close();

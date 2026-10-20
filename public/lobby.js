@@ -1,7 +1,7 @@
 // Lobby TV v2 logic (no styling): picks live + next per court (lobby-view.js) and renders Sage's mockup markup
 // (deliverables/mockups/lobby-v2) with its hooks. Live clocks tick from server time like the TV.
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
-import { planLobby, headerText, ampm, quarter } from './lobby-view.js';
+import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL } from './lobby-view.js';
 
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search), query = new URLSearchParams();
@@ -23,8 +23,8 @@ function teamRow(g, side, live) {
       ${who(t.name, t.coach)}${score}<span class="side">${side.toUpperCase()}</span></div>`;
 }
 /** One game section. Home is always listed first. */
-function gameSection(g, slot) {
-  if (!g) return `<section class="game ${slot === 'now' ? 'live' : 'next'}" data-slot="${slot}" data-state="empty"><div class="empty-note">No game</div></section>`;
+function gameSection(g, slot, note = 'No game right now') {
+  if (!g) return `<section class="game ${slot === 'now' ? 'live' : 'next'}" data-slot="${slot}" data-state="empty"><div class="empty-note">${esc(note)}</div></section>`;
   const live = slot === 'now';
   const status = live ? `<div class="status"><span class="tag live">● LIVE</span><span class="when">${esc(quarter(g.period, g.periods))}</span><span class="clock" data-bind="clock" data-game-id="${g.id}">${esc(clockText(g))}</span></div>` : '';
   return `<section class="game ${live ? 'live' : 'next'}" data-slot="${slot}" data-state="${live ? 'live' : 'upcoming'}" data-game-id="${g.id}">${status}${teamRow(g, 'home', live)}${teamRow(g, 'away', live)}</section>`;
@@ -53,7 +53,9 @@ function render() {
   }
   // Split day: band.now (tabs + live per court), cheer for the live slot, UP NEXT bar, band.next, cheer for the next slot.
   main.className = 'split';
-  const band = (b, slot, withTabs) => `<div class="band ${slot}">\n${courtsOf(b).map((c) => `<div class="court" data-court="${c}">${withTabs ? tab(c) : ''}${gameSection(b.courts[c], slot)}</div>`).join('\n')}\n</div>`;
+  // Mixed day (Full Court and split): next courts have no tabs, so each gets a real text label (WEST / EAST / FULL COURT).
+  const label = (c) => `<span class="court-label" data-bind="court">${COURT_LABEL[c] || esc(c.toUpperCase())}</span>`;
+  const band = (b, slot, withTabs) => `<div class="band ${slot}">\n${courtsOf(b).map((c) => `<div class="court" data-court="${c}">${withTabs ? tab(c) : ''}${slot === 'next' && p.mixed ? label(c) : ''}${gameSection(b.courts[c], slot, emptyNote(p, c))}</div>`).join('\n')}\n</div>`;
   main.innerHTML = (p.now ? band(p.now, 'now', true) + cheerBand(p.cheer.now, 'now') : '')
     + (p.next ? '\n' + nextBar(p.nextTime) + '\n' + band(p.next, 'next', !p.now) + cheerBand(p.cheer.next, 'next') : '');
 }

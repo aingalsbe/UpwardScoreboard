@@ -424,7 +424,7 @@ function attachWs(server: http.Server) {
 }
 
 // ---------------------------------------------------------------- http
-const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
+const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8' };
 
 function json(res: http.ServerResponse, code: number, body: unknown, headers: Record<string, string> = {}) {
   res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });

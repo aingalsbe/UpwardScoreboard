@@ -66,3 +66,20 @@ test('nothing left today = empty; header and time formatting', { skip }, async (
   assert.equal(ampm('00:30'), '12:30 AM'); assert.equal(ampm('12:00'), '12:00 PM');
   assert.equal(quarter(2, 4), 'Q2'); assert.equal(quarter(5, 4), 'OT'); assert.equal(quarter(6, 4), 'OT2'); assert.equal(hourOf('09:59'), '09:00');
 });
+
+test('mixed days and empty-court text', { skip }, async () => {
+  const { planLobby, emptyNote, COURT_LABEL } = await load();
+  // West live, East already done, next game on Full: mixed; East has nothing left; Full has a later game
+  const w15 = G('west', '15:00', 'active'), e14 = G('east', '14:00', 'complete'), f16 = G('full', '16:30');
+  const p = planLobby([w15, e14, f16], []);
+  assert.equal(p.mixed, true);
+  assert.equal(emptyNote(p, 'east'), 'No more games on this court');
+  assert.equal(emptyNote(p, 'full'), 'No game right now');
+  // East has a later game but nothing live: "No game right now"
+  const e16 = G('east', '16:00'), w9 = G('west', '09:00', 'active');
+  const q = planLobby([w9, e16], []);
+  assert.equal(q.mixed, false); assert.equal(emptyNote(q, 'east'), 'No game right now');
+  assert.deepEqual(COURT_LABEL, { west: 'WEST', east: 'EAST', full: 'FULL COURT' });
+  // Full live then split next: mixed too
+  assert.equal(planLobby([G('full', '08:00', 'active'), G('west', '10:00')], []).mixed, true);
+});
