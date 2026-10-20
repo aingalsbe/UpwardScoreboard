@@ -36,8 +36,9 @@ export function planLobby(games, cheerSlots = []) {
   const fullNext = N.full ? { layout: 'full', courts: { full: N.full } } : null;
   const firstSplit = [N.west, N.east].filter(Boolean).map((g) => g.time).sort()[0];
   let next;
-  if (now?.layout === 'full') next = fullNext || splitNext;
-  else if (now?.layout === 'split') next = splitNext || fullNext;
+  // Split live: the floor is split, so its next split game(s) come first. Full live or nothing live: the soonest
+  // next game(s) across all courts (L1: a 7:00 Full live with 8:00 split games shows the 8:00 split games next).
+  if (now?.layout === 'split') next = splitNext || fullNext;
   else next = fullNext && (!firstSplit || N.full.time < firstSplit) ? fullNext : splitNext || fullNext;
 
   const times = (band) => (band ? Object.values(band.courts).filter(Boolean).map((g) => g.time).filter(Boolean).sort() : []);

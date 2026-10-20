@@ -83,3 +83,15 @@ test('mixed days and empty-court text', { skip }, async () => {
   // Full live then split next: mixed too
   assert.equal(planLobby([G('full', '08:00', 'active'), G('west', '10:00')], []).mixed, true);
 });
+
+test('L1: Full live at 7:00 AM, split games at 8:00, next Full at 5:30 PM -> UP NEXT is the 8:00 split games (mixed)', { skip }, async () => {
+  const { planLobby } = await load();
+  const f7 = G('full', '07:00', 'active'), w8 = G('west', '08:00'), e8 = G('east', '08:00'), w9 = G('west', '09:00'), f1730 = G('full', '17:30');
+  const p = planLobby([f1730, w9, e8, w8, f7]);
+  assert.deepEqual(ids(p.now), { full: f7.id }); assert.equal(p.now.layout, 'full');
+  assert.equal(p.next.layout, 'split'); assert.deepEqual(ids(p.next), { west: w8.id, east: e8.id });
+  assert.equal(p.nextTime, '08:00'); assert.equal(p.mixed, true);
+  // and when the next Full game is sooner than any split game, it stays the Full game
+  const q = planLobby([G('full', '07:00', 'active'), G('full', '08:00'), G('west', '09:00')]);
+  assert.equal(q.next.layout, 'full'); assert.equal(q.mixed, false);
+});
