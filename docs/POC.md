@@ -82,7 +82,17 @@ Courts are now full, west and east (Full shares the floor with West and East; GA
 - ✅ Lobby schedule screen: /upwardbasketballscores/schedule (alias /schedule), all courts for one day, live, fits one 1920x1080 screen (moves/pages to keep live + next in view, reduced-motion aware, offline like the TV).
 - ✅ Gender (Boys/Girls) on teams, CSVs, Admin and every display ("3rd Grade Girls · Eagles vs Lions"); names unique per grade + gender + name.
 - ✅ Schedule paging rule: live + UP NEXT pinned (never paged), later upcoming paged only when they overflow, most recent finals as compact rows in the leftover space, the rest "▲ N earlier finals"; root data-phase early|midday|end. Logic in public/schedule-view.js (unit-tested); browser e2e scripts/schedule-paging-e2e.mjs.
-- ✅ One cheer squad per game (was per side); shown on the TV and schedule, never on the scorekeeper.
+- ✅ One cheer squad per game (was per side); shown on the TV and schedule, never on the scorekeeper. **Superseded (planned):** cheer becomes one squad per time slot; see "Next feature" below.
 - ✅ Schedule warnings in import and Admin (team twice in a weekend, cheer rules, split-court hours).
 - ✅ Home team always listed first, home on the left.
 - ✅ Demo weekend seed (Fri Full Court evening, Sat West/East 08–16 then Full Court). Details: deliverables/UpwardScoreboard-POC.md section 3.5.
+
+### Next feature: locker rooms, coaches, cheer by time slot (planned, not built)
+
+Plan: docs/plans/locker-rooms-coaches.md.
+- Cheer: one squad per time slot (date + start time), shared by West, East and Full. It is optional, and some slots have none. This replaces the one-squad-per-game rule above. New `cheer_squads` (name, coach, logo) and `cheer_slots` (date, start_time, squad, locker; unique date+start_time). `games.cheer*` stays read-only until it is dropped after the transition.
+- Locker rooms: `home_locker`/`away_locker` per game, free text, no default (they change weekly). The cheer locker is set per slot.
+- Coaches: one per team for the whole season (basketball `teams.coach`, cheer `cheer_squads.coach`), first name only, shown as "Coach Mike". Never shown on the scorekeeper.
+- Lobby TV: per court, the live game plus exactly 1 next game. Full Court spans both panels, and the cheer row spans both courts for its slot.
+- Warnings: a cheer slot with no games at its time, and two squads at one slot (migration or legacy CSV).
+
