@@ -611,6 +611,10 @@ console.log('19. Gender / division, schedule warnings, lobby feed (live) + retir
   for (const u of ['/schedule', '/upwardbasketballscores/schedule', '/schedule?day=sat', '/upwardbasketballscores/schedule/?date=2031-01-04', '/schedule.html', '/schedule.js', '/schedule-view.js', '/schedule.css'])
     ok((await fetch(BASE + u, { redirect: 'manual' })).status === 404, `GET ${u} -> 404 (old schedule screen retired)`);
   for (const u of ['/lobby', '/upwardbasketballscores/lobby', '/upwardbasketballscores/lobby?date=2031-01-04']) ok((await fetch(BASE + u)).status === 200, `GET ${u} serves the lobby TV`);
+  const gdays = (await api('/api/public/game-days')).body;
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(gdays.today) && Array.isArray(gdays.days) && gdays.days.every((d, i, a) => d.date >= gdays.today && /^\d{2}:\d{2}$/.test(d.first) && (!i || a[i - 1].date < d.date)), `lobby idle/demo: /api/public/game-days lists ${gdays.days.length} game days from today on, with first tip-off`);
+  const lcss = await fetch(BASE + '/lobby.css').then((r) => r.text()), lhtml = await fetch(BASE + '/upwardbasketballscores/lobby').then((r) => r.text());
+  ok(lcss.includes('--lobby-scale') && lcss.includes('@media print') && /width=device-width/.test(lhtml), 'lobby: fit-to-viewport scale + print block, device-width viewport');
   const snap19 = (await api(`/api/public/schedule?date=${SAT}`)).body;
   const sg = snap19.games.find((g) => g.id === satW.id);
   ok(snap19.date === SAT && Array.isArray(snap19.cheerSlots) && sg && sg.time === '09:00' && sg.court === 'west' && sg.home.name === `Gx-${RUN}` && 'locker' in sg.home && !('label' in sg) && !('dayLabel' in snap19),

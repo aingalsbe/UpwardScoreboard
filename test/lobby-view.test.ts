@@ -95,3 +95,41 @@ test('L1: Full live at 7:00 AM, split games at 8:00, next Full at 5:30 PM -> UP 
   const q = planLobby([G('full', '07:00', 'active'), G('full', '08:00'), G('west', '09:00')]);
   assert.equal(q.next.layout, 'full'); assert.equal(q.mixed, false);
 });
+
+test('demo mode: ?at / ?day&at parsing, game-day pick, time-based live/next (read-only transform)', { skip }, async () => {
+  const { parseDemo, pickGameDay, demoGames, demoTag, planLobby } = await load();
+  const P = (q: string) => parseDemo(new URLSearchParams(q));
+  assert.deepEqual(P('at=2026-10-24T11:00'), { date: '2026-10-24', day: null, at: '11:00' });
+  assert.deepEqual(P('day=sat&at=9:05'), { date: null, day: 'sat', at: '09:05' });
+  assert.equal(P('at=25:00'), null); assert.equal(P(''), null);
+  const days = [{ date: '2026-10-23', first: '17:30' }, { date: '2026-10-24', first: '08:00' }, { date: '2026-10-31', first: '08:00' }];
+  assert.equal(pickGameDay('sat', days, '2026-10-20'), '2026-10-24');
+  assert.equal(pickGameDay('fri', days, '2026-10-20'), '2026-10-23');
+  assert.equal(pickGameDay('sun', days, '2026-10-20'), '2026-10-23', 'no Sunday in the data -> next date with games');
+  assert.equal(pickGameDay('sat', [], '2026-10-20'), null);
+  assert.equal(demoTag('2026-10-24', '11:00'), 'DEMO · Sat 11:00 AM');
+  const gs = [
+    { id: 1, court: 'west', time: '10:00', dur: 60, status: 'scheduled', home: { score: null }, away: { score: null } },
+    { id: 2, court: 'west', time: '11:00', dur: 60, status: 'scheduled', home: { score: null }, away: { score: null } },
+    { id: 3, court: 'east', time: '11:00', dur: 60, status: 'complete', home: { score: 12 }, away: { score: 10 } },
+    { id: 4, court: 'west', time: '12:00', dur: 60, status: 'scheduled', home: {}, away: {} },
+    { id: 5, court: 'east', time: '12:00', dur: 60, status: 'active', home: {}, away: {} },
+  ];
+  const d = demoGames(gs, '11:20');
+  assert.deepEqual(d.map((g: any) => g.status), ['complete', 'active', 'active', 'scheduled', 'scheduled']);
+  assert.deepEqual([d[1].home.score, d[1].away.score], [0, 0], 'no stored score -> 0-0');
+  assert.deepEqual([d[2].home.score, d[2].away.score], [12, 10], 'stored score kept');
+  assert.equal(d[1].period, 2); assert.equal(d[1].clock.running, false); assert.ok(d[1].clock.remainingMs > 0 && d[1].clock.remainingMs <= 8 * 60000);
+  assert.equal(gs[1].status, 'scheduled', 'input not mutated');
+  const p = planLobby(d);
+  assert.deepEqual([p.now.courts.west.id, p.now.courts.east.id, p.next.courts.west.id, p.next.courts.east.id], [2, 3, 4, 5]);
+  assert.equal(demoGames(gs, '10:59')[0].status, 'active'); assert.equal(demoGames(gs, '11:00')[0].status, 'complete');
+});
+
+test('idle: next game day after the shown date, with its first tip-off', { skip }, async () => {
+  const { idleText } = await load();
+  const days = [{ date: '2026-10-20', first: '09:00' }, { date: '2026-10-23', first: '17:30' }, { date: '2026-10-24', first: '08:00' }];
+  assert.equal(idleText(days, '2026-10-20'), 'Next games: Friday, Oct 23 · First tip-off 5:30 PM');
+  assert.equal(idleText(days, '2026-10-23'), 'Next games: Saturday, Oct 24 · First tip-off 8:00 AM');
+  assert.equal(idleText(days, '2026-10-24'), 'No games scheduled'); assert.equal(idleText([], '2026-10-20'), 'No games scheduled');
+});

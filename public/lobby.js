@@ -1,11 +1,29 @@
 // Lobby TV v2 logic (no styling): picks live + next per court (lobby-view.js) and renders Sage's mockup markup
 // (deliverables/mockups/lobby-v2) with its hooks. Live clocks tick from server time like the TV.
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
-import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL } from './lobby-view.js';
+import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText } from './lobby-view.js';
 
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search), query = new URLSearchParams();
 for (const k of ['day', 'date']) if (qs.get(k)) query.set(k, qs.get(k));
+// Demo mode (read-only, client-side): ?at=2026-10-24T11:00 or ?day=sat&at=11:00 -> live/next as if it were that time.
+const demo = parseDemo(qs);
+
+// FIT: the stage is a fixed 1920x1080 body; scale it to the viewport (letterboxed, centered) on load and resize.
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  root.style.setProperty('--lobby-scale', String(s));
+  root.style.setProperty('--lobby-x', `${Math.max(0, (innerWidth - 1920 * s) / 2)}px`);
+  root.style.setProperty('--lobby-y', `${Math.max(0, (innerHeight - 1080 * s) / 2)}px`);
+}
+fit(); addEventListener('resize', fit);
+
+let gameDays = null, gameDaysAt = 0, gameToday = null;
+async function loadGameDays() {
+  if (gameDays && Date.now() - gameDaysAt < 5 * 60000) return gameDays;
+  try { const j = await (await fetch('/api/public/game-days')).json(); gameDays = j.days || []; gameToday = j.today; gameDaysAt = Date.now(); } catch { gameDays = gameDays || []; }
+  return gameDays;
+}
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const main = document.querySelector('main');
 let snap = null;
@@ -37,12 +55,22 @@ const cheerBand = (c, slot) => (!c ? '' : `<section class="cheer-band ${slot}" d
       ${who(c.name, c.coach)}<span class="side">CHEER</span></div></section>`);
 const courtsOf = (band) => (band.layout === 'full' ? ['full'] : ['west', 'east']);
 
+function renderIdle() {
+  const had = (snap.games || []).length > 0;
+  document.querySelector('[data-bind="header"]').textContent = 'UPWARD BASKETBALL';
+  main.className = 'idle';
+  main.innerHTML = `<section class="idle" data-state="idle"><div class="idle-title" data-bind="idle-title">${had ? 'No more games today' : 'No games today'}</div>
+<div class="idle-next" data-bind="idle-next">${esc(gameDays ? idleText(gameDays, snap.date) : '')}</div></section>`;
+  if (!gameDays || Date.now() - gameDaysAt > 5 * 60000) loadGameDays().then(() => { const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleText(gameDays, snap.date); });
+}
+
 function render() {
-  const p = planLobby(snap.games || [], snap.cheerSlots || []);
+  const games = demo ? demoGames(snap.games || [], demo.at) : snap.games || [];
+  const p = planLobby(games, snap.cheerSlots || []);
   document.querySelector('[data-bind="header"]').textContent = headerText(snap.date, p.header);
   document.querySelector('[data-bind="sub"]').textContent = `${snap.church?.name || 'Lenexa Baptist Church'} · Upward Basketball`.toUpperCase();
   root.dataset.empty = String(p.empty);
-  if (p.empty) { main.className = 'full'; main.innerHTML = `<div class="court" data-court="full"><section class="game" data-state="empty"><div class="empty-note">No more games today</div></section></div>`; return; }
+  if (p.empty) return renderIdle();
   const allFull = (!p.now || p.now.layout === 'full') && (!p.next || p.next.layout === 'full');
   if (allFull) { // Friday: one Full Court panel, live then the UP NEXT bar then the next game below it
     main.className = 'full';
@@ -60,14 +88,25 @@ function render() {
     + (p.next ? '\n' + nextBar(p.nextTime) + '\n' + band(p.next, 'next', !p.now) + cheerBand(p.cheer.next, 'next') : '');
 }
 
-const conn = connect({
-  court: '*', role: 'schedule', query: query.toString(),
-  onState: (m) => { if (m.kind === 'schedule') { snap = m; render(); } },
-  onStatus: (st) => { root.dataset.conn = st; },
-});
+let conn = { isOpen: () => false, lastServerNow: () => Date.now() };
+async function start() {
+  if (demo) {
+    const date = demo.date || pickGameDay(demo.day || 'sat', await loadGameDays(), gameToday || '');
+    if (date) { query.delete('day'); query.set('date', date); }
+    root.dataset.demo = 'true';
+    const tag = document.createElement('div'); tag.className = 'demo-tag'; tag.dataset.bind = 'demo';
+    tag.textContent = demoTag(date || demo.date || new Date().toISOString().slice(0, 10), demo.at); document.body.append(tag);
+  }
+  conn = connect({
+    court: '*', role: 'schedule', query: query.toString(),
+    onState: (m) => { if (m.kind === 'schedule') { snap = m; render(); } },
+    onStatus: (st) => { root.dataset.conn = st; },
+  });
+}
+start();
 
 function tick() { // live clocks from server time (frozen while offline)
-  if (snap) for (const el of document.querySelectorAll('[data-bind="clock"][data-game-id]')) {
+  if (snap && !demo) for (const el of document.querySelectorAll('[data-bind="clock"][data-game-id]')) {
     const g = snap.games.find((x) => String(x.id) === el.dataset.gameId);
     const t = clockText(g); if (t && el.textContent !== t) el.textContent = t;
   }

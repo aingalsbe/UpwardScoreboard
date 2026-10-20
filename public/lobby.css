@@ -160,3 +160,23 @@ html[data-conn="offline"] body::after, html[data-conn="connecting"] body::after 
   content: "⟳ Reconnecting… scores may be out of date"; position: fixed; left: 2rem; top: 1.4rem; z-index: 5;
   font: 800 2rem "Montserrat", sans-serif; color: #ffe08a; background: #2a2208; border: .2rem dashed #ffe08a; border-radius: 3rem; padding: .4rem 1.6rem; }
 html[data-conn="offline"] .status .clock, html[data-conn="connecting"] .status .clock { color: #d9d9d9; outline: .2rem dashed #8a90a6; outline-offset: .2rem; }
+
+/* ---- Added by Devon 2026-10-20 (fit / idle / demo / print; NOT Sage's design, minimal, for Sage to restyle) ---- */
+/* FIT: lobby.js sets --lobby-scale = min(vw/1920, vh/1080) and centers the 1920x1080 body stage; the page around it is dark. */
+html { width: 100%; height: 100%; overflow: hidden; background: #0c1220; }
+body { position: absolute; left: var(--lobby-x, 0); top: var(--lobby-y, 0); transform: scale(var(--lobby-scale, 1)); transform-origin: 0 0; }
+/* IDLE: no live/next games -> centered message (no dashed box) */
+main.idle { display: flex; justify-content: center; align-items: center; height: 70rem; padding: 0 10rem; }
+main.idle .idle { text-align: center; }
+main.idle .idle-title { font: 800 6rem "Montserrat", Arial, sans-serif; color: #fff; text-shadow: 0 .4rem 1rem #000; }
+main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, sans-serif; color: var(--gold); text-shadow: 0 .3rem .8rem #000; }
+/* DEMO tag */
+.demo-tag { position: absolute; left: 2rem; top: 1.4rem; z-index: 3; font: 800 2rem "Montserrat", Arial, sans-serif; letter-spacing: .2rem;
+  color: #111; background: var(--gold); padding: .5rem 1.4rem; border-radius: 1rem; }
+/* PRINT: one landscape 16:9 page, backgrounds kept */
+@media print {
+  @page { size: 1920px 1080px; margin: 0; }
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html { overflow: visible; }
+  body { position: relative; left: 0; top: 0; transform: none; }
+}

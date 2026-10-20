@@ -10,7 +10,7 @@ import { pool, migrate, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, se
 import { scorekeeperView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
@@ -631,7 +631,7 @@ async function scheduleSnapshot(date: string) {
     const t = await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS hm`, [r.scheduled_at, LEAGUE_TZ]);
     const s = live?.state;
     games.push({
-      id: r.id, court: r.court_slug, time: t.rows[0].hm, status: r.status,
+      id: r.id, court: r.court_slug, time: t.rows[0].hm, dur: r.duration_min ?? GAME_MINUTES, status: r.status,
       home: { ...teamView(r, 'home_team', theme, 'home'), score: s ? s.home.score : r.final_home },
       away: { ...teamView(r, 'away_team', theme, 'away'), score: s ? s.away.score : r.final_away },
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
@@ -1032,6 +1032,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   if (seg[1] === 'public' && seg[2] === 'court' && seg[3]) {
     const s = await courtSnapshot(seg[3]);
     return s ? json(res, 200, s) : json(res, 404, { error: 'unknown court' });
+  }
+  // Lobby idle screen + demo mode (read-only): the game days from today on (league time) with the first tip-off.
+  if (p === '/api/public/game-days') {
+    const today = localDate(Date.now());
+    const { rows } = await pool.query(`SELECT to_char((scheduled_at AT TIME ZONE $1)::date, 'YYYY-MM-DD') AS date, to_char(min(scheduled_at AT TIME ZONE $1), 'HH24:MI') AS first, count(*)::int AS games
+      FROM games WHERE scheduled_at IS NOT NULL AND (scheduled_at AT TIME ZONE $1)::date >= $2::date GROUP BY 1 ORDER BY 1 LIMIT 60`, [LEAGUE_TZ, today]);
+    return json(res, 200, { today, days: rows });
   }
   if (p === '/api/public/schedule') {
     return json(res, 200, await scheduleSnapshot(resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now())));
