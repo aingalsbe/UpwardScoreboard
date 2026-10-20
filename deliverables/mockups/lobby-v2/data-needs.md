@@ -1,7 +1,11 @@
 # Lobby v2 mockup: data needs (aligned with docs/plans/locker-rooms-coaches.md)
 
-Mockups: `saturday-split.html/.png` (West + East, live + next each; West live has a cheer squad, East doesn't;
-East next has no away locker → hidden pill), `friday-full.html/.png` (one Full Court panel: live with cheer + next).
+Mockups: `saturday-split.html/.png` (West + East, live + next each; West live has a cheer squad, East doesn't),
+`friday-full.html/.png` (one Full Court panel: live + next, no cheer). Every locker pill has a sample value;
+the empty-pill rule (`.locker[data-empty]` → hidden) is in `lobby.css` but not demoed.
+
+**Cheer rule:** cheer squads only appear on 2nd–4th grade Saturday split-court (West/East) games, at most one per game.
+Full Court (Friday) games never show a cheer row.
 Shared style: `lobby.css`. All names are SAMPLE DATA.
 
 ## Fields the mockup uses → Devon's plan
