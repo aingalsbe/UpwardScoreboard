@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en" data-conn="connecting">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, initial-scale=1">
+  <title>UpwardScoreboard · Lobby</title>
+  <!-- Lobby TV v2 (1920x1080): per court the live game + exactly one next game, cheer per time slot, locker rooms,
+       coaches. Markup and hooks ported from Sage's deliverables/mockups/lobby-v2 (commit 44cf880); look = lobby.css (Sage).
+       lobby.js fills <main> from the role=schedule WebSocket snapshot (today, league time). -->
+  <link rel="stylesheet" href="/lobby.css">
+</head>
+<body data-role="lobby">
+  <header><h1 data-bind="header"></h1><div class="sub" data-bind="sub"></div></header>
+  <main class="split"></main>
+  <script type="module" src="/lobby.js"></script>
+</body>
+</html>

@@ -1278,6 +1278,8 @@ const PAGES: [RegExp, string][] = [
   [/^\/$/, 'index.html'], [/^\/admin\/?$/, 'admin.html'],
   // Lobby schedule screen (all courts, one day): /upwardbasketballscores/schedule, alias /schedule. Before the <slug>court rule.
   [/^\/upwardbasketballscores\/schedule\/?$/, 'schedule.html'], [/^\/schedule\/?$/, 'schedule.html'],
+  // Lobby TV v2 (live + next per court, cheer per slot, lockers, coaches): /upwardbasketballscores/lobby, alias /lobby.
+  [/^\/upwardbasketballscores\/lobby\/?$/, 'lobby.html'], [/^\/lobby\/?$/, 'lobby.html'],
   [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/upwardbasketballscores\/split\/?$/, 'split.html'],
   // Fixed TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt}[/overlay] (any court: <slug>court)
   [/^\/upwardbasketballscores\/[\w-]+\/overlay\/?$/, 'overlay.html'], [/^\/upwardbasketballscores\/[\w-]+\/?$/, 'tv.html'], [/^\/tv\/[\w-]+\/?$/, 'tv.html'], [/^\/overlay\/[\w-]+\/?$/, 'overlay.html'],
