@@ -220,6 +220,8 @@ What Avery should test in this batch:
 
 ### 3.5 Lobby schedule screen, gender, warnings and the demo weekend (2026-10)
 
+> **Retired 2026-10-20 (Aaron):** the full-day schedule screen below was removed; /upwardbasketballscores/schedule and /schedule now 404. The lobby TV is /upwardbasketballscores/lobby (live + next per court). The schedule-screen text and screenshots in this section are kept as history only.
+
 **Screens and routes**
 
 | Screen | Address | Notes |

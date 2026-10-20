@@ -91,7 +91,7 @@ export function demoWeekend(nowMs: number, tz = LEAGUE_TZ): { fri: string; sat: 
   const fri = dow === 5 ? today : dow === 6 ? addDays(today, -1) : addDays(today, (5 - dow + 7) % 7);
   return { fri, sat: addDays(fri, 1) };
 }
-/** Schedule screen day: ?date=YYYY-MM-DD wins, then ?day=fri|sat (demo weekend), else today. */
+/** Lobby TV day: ?date=YYYY-MM-DD wins, then ?day=fri|sat (demo weekend), else today. */
 export function resolveScheduleDay(q: { day?: string | null; date?: string | null }, nowMs: number, tz = LEAGUE_TZ): string {
   const d = String(q.date || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T12:00:00Z')) && addDays(d, 0) === d) return d;

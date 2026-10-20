@@ -90,27 +90,12 @@ test('home team is listed first everywhere (markup order and text templates)', {
   const read = (f: string) => fs.readFileSync(path.join(pub, f), 'utf8');
   // DOM order: the home block comes before the away block on every board / list.
   for (const [f, home, away] of [['tv.html', 'class="team home"', 'class="team away"'], ['score.html', 'class="panel team home"', 'class="panel team away"'],
-    ['overlay.html', 'class="side home"', 'class="side away"'], ['schedule.html', 'class="chip home"', 'class="chip away"']]) {
+    ['overlay.html', 'class="side home"', 'class="side away"'], ['lobby.js', "teamRow(g, 'home'", "teamRow(g, 'away'"]]) {
     const s = read(f); assert.ok(s.indexOf(home) > -1 && s.indexOf(home) < s.indexOf(away), `${f}: home before away`);
   }
   // Text: no "away … vs … home" matchup and no away-score-first score line in any screen script.
-  for (const f of ['display.js', 'score.js', 'admin.js', 'schedule.js']) {
+  for (const f of ['display.js', 'score.js', 'admin.js', 'lobby.js']) {
     const s = read(f);
     assert.ok(!/away[\w.]*\}?\s*(?:vs|–)\s*\$\{[^}]*home/.test(s), `${f}: away listed before home`);
   }
-});
-
-// Schedule screen view helpers (public/schedule-view.js; plain browser module, skipped where public/ is absent).
-test('schedule view: ties, status tags and the empty-day text', { skip: !fs.existsSync(PUB) && 'public/ not present (image build)' }, async () => {
-  const v = await import(path.join(PUB, 'schedule-view.js'));
-  assert.equal(v.winnerOf('complete', 20, 20), 'tie'); assert.equal(v.winnerOf('complete', 0, 0), 'tie');
-  assert.equal(v.winnerOf('complete', 21, 20), 'home'); assert.equal(v.winnerOf('complete', 9, 12), 'away');
-  assert.equal(v.winnerOf('active', 4, 4), ''); // only complete games have a winner
-  assert.equal(v.statusTag('complete', 'tie', false, '09:00'), '✓ FINAL · TIE');
-  assert.equal(v.statusTag('complete', 'home', false, '09:00'), '✓ FINAL');
-  assert.equal(v.statusTag('active', '', true, '09:00'), '● LIVE');
-  assert.equal(v.statusTag('upcoming', '', true, '16:30'), '🕒 UP NEXT');
-  assert.equal(v.statusTag('upcoming', '', false, '16:30'), '🕒 4:30');
-  assert.equal(v.emptyText(true, 'Friday, Oct 16'), 'No games scheduled today');
-  assert.equal(v.emptyText(false, 'Sunday, Oct 18'), 'No games scheduled for Sunday, Oct 18');
 });

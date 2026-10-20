@@ -5,7 +5,7 @@ Live youth-basketball scoreboard for the church league: a scorekeeper on the ben
 * **Score**: `/score/<court>` mobile-first bench controller (PIN per court)
 * **Display**: `/tv/<court>` full-screen TV board, `/overlay/<court>` transparent OBS scorebug (public, read-only)
 * **Admin**: `/admin` teams (grade + gender), colors, logos, courts, schedule (with warnings), start a game, CSV import/export
-* **Schedule**: `/upwardbasketballscores/schedule` (alias `/schedule`) lobby TV: all courts for one day, live; `?day=fri|sat` (demo weekend) or `?date=YYYY-MM-DD`
+* **Lobby TV**: `/upwardbasketballscores/lobby` (alias `/lobby`): per court the live game + exactly one next game, cheer per time slot, locker rooms, coaches; `?day=fri|sat` (demo weekend) or `?date=YYYY-MM-DD`. (The old full-day schedule screen was retired 2026-10-20; `/schedule` now 404s.)
 
 One Node/TypeScript container + Postgres. See [docs/POC.md](docs/POC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PLAN.md](docs/PLAN.md).
 
@@ -26,7 +26,7 @@ The first start seeds 10 teams in 4 grades, 3 courts (`full`, `west`, `east`; Fu
 | West scorekeeper / TV / overlay | http://localhost:3000/score/west · /upwardbasketballscores/westcourt · /upwardbasketballscores/westcourt/overlay |
 | East scorekeeper / TV / overlay | http://localhost:3000/score/east · /upwardbasketballscores/eastcourt · /upwardbasketballscores/eastcourt/overlay |
 | West + East on one TV | http://localhost:3000/tv/split |
-| Schedule (lobby TV, all courts) | http://localhost:3000/upwardbasketballscores/schedule · /schedule · ?day=fri · ?day=sat · ?date=YYYY-MM-DD |
+| Lobby TV (live + next per court) | http://localhost:3000/upwardbasketballscores/lobby · /lobby · ?day=fri · ?day=sat · ?date=YYYY-MM-DD |
 | Weekly court QR sheet | Admin > Courts > Print QR codes (valid until Sunday 23:59 America/Chicago) |
 
 Dev defaults from `.env.example`: admin password `change-me-admin`, PINs `full:1111`, `west:2222`, `east:3333`, `GAME_MINUTES=60` (default game length for the shared-floor rule). **Change them in any shared or hosted deployment.**
@@ -41,11 +41,11 @@ npm test                  # reducer unit tests (score, fouls/bonus, clock, timeo
 CHROME_PATH=/usr/bin/google-chrome node scripts/offline-e2e.mjs  # Playwright setOffline: Offline in <5 s, clock freezes, recovers
 CHROME_PATH=/usr/bin/google-chrome node scripts/lockout-e2e.mjs # wrong PINs on east don't affect signed-in west; queued tap delivered
 CHROME_PATH=/usr/bin/google-chrome node scripts/flow-e2e.mjs    # QR sign-in, picker, complete lock, resume, TV switching
-node scripts/smoke.mjs    # end-to-end (169 checks, incl. gender, warnings, schedule screen route + live updates, home first; repeatable on a used DB): 3 courts + shared-floor rule, grades (team names unique per grade), season colors, cheer squads, QR flow, statuses, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
+node scripts/smoke.mjs    # end-to-end (185 checks, incl. gender, warnings, lobby feed live updates, retired /schedule routes 404, home first; repeatable on a used DB): 3 courts + shared-floor rule, grades (team names unique per grade), season colors, cheer squads, QR flow, statuses, sync, reconnect, undo, idempotent CSV, errors, logos, lockouts, sessions.
                           # Repeatable on a used DB (own uniquely named fixtures); waits out an admin-login lock left by a previous run
 node scripts/latency.mjs  # tap -> TV latency (median/p95)
 CHROME_PATH=/usr/bin/google-chrome node scripts/screenshots.mjs   # writes docs/screenshots/*.png
-node scripts/schedule-screenshots.mjs  # schedule screen ?day=fri / ?day=sat (on a fresh demo seed; reseed after)
+node scripts/lobby-screenshots.mjs     # lobby TV Fri full / Sat split / mixed + /schedule 404 check (fresh SEED=demo; reseed after)
 node scripts/gen-templates.mjs [friday] # regenerate the example teams/schedule CSVs from the demo seed plan
 ```
 

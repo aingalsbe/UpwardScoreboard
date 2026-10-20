@@ -19,7 +19,7 @@ Start (PowerShell, in C:\UpwardScoreboard):
 
     powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1
 
-It checks Docker, builds and starts the app, waits until it answers, loads the demo weekend if needed, and opens two Edge windows: scorekeeper on the left, TV on the right. On a Saturday they show West (PIN 2222); any other day they show Full (PIN 1111), because the next games are Friday's Full Court games. Add -Schedule to also open the lobby schedule screen as a third window (scorekeeper | TV | schedule, a third of the screen each; it shows ?day=sat on Saturday, else ?day=fri). Add -Reseed for a fresh start (wipes and reloads the demo games). Add -NoBrowser to skip the windows, or -WindowsOnly to just reopen the two windows (app already running). The windows are Edge app windows with their own demo profile, so your normal Edge is not affected.
+It checks Docker, builds and starts the app, waits until it answers, loads the demo weekend if needed, and opens two Edge windows: scorekeeper on the left, TV on the right. On a Saturday they show West (PIN 2222); any other day they show Full (PIN 1111), because the next games are Friday's Full Court games. Add -Schedule to also open the lobby TV (/upwardbasketballscores/lobby) as a third window (scorekeeper | TV | lobby, a third of the screen each; it shows ?day=sat on Saturday, else ?day=fri). Add -Reseed for a fresh start (wipes and reloads the demo games). Add -NoBrowser to skip the windows, or -WindowsOnly to just reopen the two windows (app already running). The windows are Edge app windows with their own demo profile, so your normal Edge is not affected.
 
 Stop:
 
@@ -43,7 +43,7 @@ No .env is needed: docker compose reads the committed .env.demo. A .env (copy .e
 | Scorekeeper, West (left window) | http://localhost:3000/score/west | PIN 2222 |
 | TV, West (right window) | http://localhost:3000/upwardbasketballscores/westcourt | none |
 | Admin | http://localhost:3000/admin | password change-me-admin |
-| Schedule (lobby TV, all courts) | http://localhost:3000/upwardbasketballscores/schedule (alias /schedule); ?day=fri, ?day=sat or ?date=YYYY-MM-DD | none |
+| Lobby TV (live + next per court) | http://localhost:3000/upwardbasketballscores/lobby (alias /lobby); ?day=fri, ?day=sat or ?date=YYYY-MM-DD | none |
 
 Other courts: Full PIN 1111 (/score/full, /upwardbasketballscores/fullcourt), East PIN 3333 (/score/east, /upwardbasketballscores/eastcourt). Both half courts on one TV: /tv/split.
 
@@ -65,7 +65,7 @@ The scorekeeper lists today's games on its court; when there are none today it l
 
 ## The 2-minute flow
 
-(Saturday: West, PIN 2222. Any other day: Full, PIN 1111. Optional third window: the schedule, Start-Demo.ps1 -Schedule.)
+(Saturday: West, PIN 2222. Any other day: Full, PIN 1111. Optional third window: the lobby TV, Start-Demo.ps1 -Schedule.)
 
 1. Scorekeeper: type the PIN. The court's games are listed (on a weekday: Friday's, with the day shown).
 2. Tap the first game (e.g. "5th Grade Boys · Eagles vs Lions" on Full, or "2nd Grade Boys · Eagles vs Lions" on West), then confirm "Load ... Court?". The TV switches from Next up to the game; the schedule highlights it as LIVE.

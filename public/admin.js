@@ -315,7 +315,7 @@ for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-
 
 async function boot() { $('#app').hidden = false; route(); await load(); setInterval(() => !document.hidden && load().catch(() => {}), 10000); live(); }
 /**
- * Live like the TVs: the same WebSocket push the schedule screen uses (role=schedule, every court). Every score,
+ * Live like the TVs: the same WebSocket push the lobby TV uses (role=schedule, every court). Every score,
  * load, complete, reopen, edit, import or delete pushes a snapshot (coalesced 150 ms server-side); we then refetch
  * /api/games and re-render only the live parts (forms keep what's being typed).
  */

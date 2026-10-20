@@ -10,7 +10,7 @@ import { pool, migrate, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, se
 import { scorekeeperView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, dayLabel, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
@@ -618,8 +618,8 @@ async function loadWarnings() {
 const warningsFor = async (id: number) => (await loadWarnings()).filter((w) => w.gameId != null && w.gameId === id).map((w) => w.message);
 
 /**
- * Lobby schedule screen for one league-local day: every game with court, time, state, teams (home first, in
- * season colors respecting swap), grade + gender label, cheer squads, and live score/clock for active games.
+ * Lobby TV feed for one league-local day (role=schedule WebSocket + /api/public/schedule): every game with court,
+ * time, state, teams (home first; locker + coach), live score/period/clock for active games, and the day's cheer slots.
  */
 async function scheduleSnapshot(date: string) {
   const { rows } = await pool.query(`${GAME_SELECT}
@@ -631,10 +631,7 @@ async function scheduleSnapshot(date: string) {
     const t = await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS hm`, [r.scheduled_at, LEAGUE_TZ]);
     const s = live?.state;
     games.push({
-      id: r.id, court: r.court_slug, courtName: r.court_name, time: t.rows[0].hm, status: r.status,
-      grade: r.home_grade || r.away_grade || null, gender: r.home_gender || r.away_gender || null,
-      label: divisionLabel(r.home_grade || r.away_grade, r.home_gender || r.away_gender), swapped: !!r.swap_colors,
-      cheer: cheerView(r),
+      id: r.id, court: r.court_slug, time: t.rows[0].hm, status: r.status,
       home: { ...teamView(r, 'home_team', theme, 'home'), score: s ? s.home.score : r.final_home },
       away: { ...teamView(r, 'away_team', theme, 'away'), score: s ? s.away.score : r.final_away },
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
@@ -644,7 +641,7 @@ async function scheduleSnapshot(date: string) {
   const cheerSlots = (await pool.query(`SELECT s.id, to_char(s.slot_start, 'HH24:MI') AS start, s.locker, q.id AS squad_id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo
     FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date = $1::date ORDER BY s.slot_start`, [date])).rows
     .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: x.locker || null, logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
-  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, cheerSlots, isToday: date === localDate(Date.now()), dayLabel: dayLabel(date), title: 'LBC Upward', church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, games };
+  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, cheerSlots, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, games };
 }
 
 /**
@@ -1276,8 +1273,8 @@ function csvOut(res: http.ServerResponse, name: string, body: string) {
 
 const PAGES: [RegExp, string][] = [
   [/^\/$/, 'index.html'], [/^\/admin\/?$/, 'admin.html'],
-  // Lobby schedule screen (all courts, one day): /upwardbasketballscores/schedule, alias /schedule. Before the <slug>court rule.
-  [/^\/upwardbasketballscores\/schedule\/?$/, 'schedule.html'], [/^\/schedule\/?$/, 'schedule.html'],
+  // Lobby TV (live + next per court, cheer per slot, lockers, coaches): /upwardbasketballscores/lobby, alias /lobby.
+  // Before the <slug>court rule. The old full-day schedule screen (/schedule) was retired 2026-10-20 and 404s.
   // Lobby TV v2 (live + next per court, cheer per slot, lockers, coaches): /upwardbasketballscores/lobby, alias /lobby.
   [/^\/upwardbasketballscores\/lobby\/?$/, 'lobby.html'], [/^\/lobby\/?$/, 'lobby.html'],
   [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/upwardbasketballscores\/split\/?$/, 'split.html'],
@@ -1310,6 +1307,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': r.logo_mime, 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
       return res.end(r.logo_data);
     }
+    // Retired full-day schedule screen: 404 like any unknown path (the /upwardbasketballscores/<slug> TV rule would match it).
+    if (/^\/(upwardbasketballscores\/)?schedule\/?$/.test(u.pathname)) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found'); }
     const page = PAGES.find(([re]) => re.test(u.pathname));
     let file = page ? page[1] : u.pathname.replace(/^\/+/, '');
     const full = path.resolve(PUBLIC_DIR, file);

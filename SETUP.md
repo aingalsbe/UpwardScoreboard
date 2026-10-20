@@ -63,7 +63,7 @@ Both scripts live in the repo root (`C:\UpwardScoreboard`).
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1            # start
 powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1 -Reseed    # wipe and reload demo games
-powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1 -Schedule  # also open the lobby schedule
+powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1 -Schedule  # also open the lobby TV
 powershell -ExecutionPolicy Bypass -File .\Stop-Demo.ps1             # stop, keep data
 powershell -ExecutionPolicy Bypass -File .\Stop-Demo.ps1 -Wipe       # stop and DELETE all data
 ```
@@ -107,7 +107,7 @@ App on **http://localhost:3000** (health: `/api/health`). Postgres is not publis
 | Scorekeeper | `/score/full`, `/score/west`, `/score/east` |
 | TV | `/upwardbasketballscores/fullcourt`, `/westcourt`, `/eastcourt` (add `/overlay` for OBS) |
 | West + East on one TV | `/tv/split` |
-| Lobby schedule | `/upwardbasketballscores/schedule` (alias `/schedule`, `?day=fri`, `?day=sat`, `?date=YYYY-MM-DD`) |
+| Lobby TV | `/upwardbasketballscores/lobby` (alias `/lobby`, `?day=fri`, `?day=sat`, `?date=YYYY-MM-DD`) |
 
 Dev-only logins (from `.env.demo` / `DEMO.md`): admin password `change-me-admin`; PINs Full `1111`, West `2222`, East `3333`.
 

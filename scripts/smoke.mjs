@@ -574,7 +574,7 @@ await api(`/api/courts/${fc.id}`, { method: 'DELETE' });
 // leave the floor free for the next run / the e2e tests
 await api(`/api/games/${g1.id}/complete`, { method: 'POST' }); await api(`/api/games/${g2.id}/complete`, { method: 'POST' });
 
-console.log('19. Gender / division, schedule warnings, schedule screen (route + live), home listed first');
+console.log('19. Gender / division, schedule warnings, lobby feed (live) + retired schedule routes 404, home listed first');
 {
   const T = (b) => api('/api/teams', { method: 'POST', body: JSON.stringify(b) });
   const gb = await T({ name: `Gx-${RUN}`, grade: '3rd Grade', gender: 'Boys' }), gg = await T({ name: `Gx-${RUN}`, grade: '3rd Grade', gender: 'girls' });
@@ -607,56 +607,45 @@ console.log('19. Gender / division, schedule warnings, schedule screen (route + 
   const exS = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
   const hS = exS.split(/\r?\n/)[0].split(',');
   ok(hS.indexOf('home') < hS.indexOf('away') && hS.indexOf('home_score') < hS.indexOf('away_score') && hS.includes('gender'), 'schedule export: home before away (names + scores), gender column');
-  // Schedule screen: routes, snapshot, live updates.
-  for (const u of ['/schedule', '/upwardbasketballscores/schedule', '/schedule?day=sat']) ok((await fetch(BASE + u)).status === 200, `GET ${u} serves the schedule screen`);
+  // Retired full-day schedule screen: the routes 404 like any unknown path; the lobby TV feed (role=schedule) stays.
+  for (const u of ['/schedule', '/upwardbasketballscores/schedule', '/schedule?day=sat', '/upwardbasketballscores/schedule/?date=2031-01-04', '/schedule.html', '/schedule.js', '/schedule-view.js', '/schedule.css'])
+    ok((await fetch(BASE + u, { redirect: 'manual' })).status === 404, `GET ${u} -> 404 (old schedule screen retired)`);
+  for (const u of ['/lobby', '/upwardbasketballscores/lobby', '/upwardbasketballscores/lobby?date=2031-01-04']) ok((await fetch(BASE + u)).status === 200, `GET ${u} serves the lobby TV`);
   const snap19 = (await api(`/api/public/schedule?date=${SAT}`)).body;
   const sg = snap19.games.find((g) => g.id === satW.id);
-  ok(snap19.dayLabel === 'Saturday, Jan 4' && snap19.title === 'LBC Upward' && sg && sg.label === '3rd Grade Boys' && sg.time === '09:00' && sg.court === 'west' && sg.home.name === `Gx-${RUN}` && sg.home.side === 'light' && sg.away.side === 'dark' && sg.cheer?.name === 'Sx Cheer',
-    'schedule snapshot: day label, time, court, label, home first in Gold (light), cheer');
-  ok((await api('/api/public/schedule?day=fri')).body.dayLabel.startsWith('Friday'), '?day=fri resolves to a Friday');
+  ok(snap19.date === SAT && Array.isArray(snap19.cheerSlots) && sg && sg.time === '09:00' && sg.court === 'west' && sg.home.name === `Gx-${RUN}` && 'locker' in sg.home && !('label' in sg) && !('dayLabel' in snap19),
+    'lobby feed: date, time, court, home first with locker; old-screen-only fields (label, dayLabel) gone');
+  ok((await api('/api/public/schedule?day=fri')).body.date && new Date((await api('/api/public/schedule?day=fri')).body.date + 'T12:00:00Z').getUTCDay() === 5, '?day=fri resolves to a Friday');
   const sc = client('*', `schedule&date=${SAT}`); await sc.open;
   const first = await sc.wait((m) => m.type === 'state' && m.kind === 'schedule');
-  ok(first.date === SAT && first.games.some((g) => g.id === satW.id), 'schedule WebSocket sends the day snapshot on connect');
-  await api(`/api/games/${satW.id}`, { method: 'PUT', body: JSON.stringify({ swap_colors: true }) });
-  const sw = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.swapped);
-  const swg = sw.games.find((g) => g.id === satW.id);
-  ok(swg.home.side === 'dark' && swg.home.name === `Gx-${RUN}`, 'swap changes colors only: home stays first, now in Maroon (dark)');
+  ok(first.date === SAT && first.games.some((g) => g.id === satW.id), 'lobby WebSocket sends the day snapshot on connect');
   for (const g of (await api('/api/games')).body.filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
   await api(`/api/games/${satW.id}/start`, { method: 'POST' });
-  ok(!!(await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.status === 'active').catch(() => null)), 'schedule updates live when a game becomes active');
+  ok(!!(await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.status === 'active').catch(() => null)), 'lobby feed updates live when a game becomes active');
   const sk19 = client('west', 'score'); await sk19.open;
   sk19.send({ type: 'auth', pin: PIN1, device: DEV('sk19') }); await sk19.wait((m) => m.type === 'auth' && m.ok);
   await sk19.cmd({ type: 'SCORE', team: 'home', pts: 2 });
   const sl = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.home.score === 2).catch(() => null);
-  ok(sl && sl.games.find((g) => g.id === satW.id).clock && sl.games.find((g) => g.id === satW.id).period === 1, 'live score + clock + period reach the schedule screen');
+  ok(sl && sl.games.find((g) => g.id === satW.id).clock && sl.games.find((g) => g.id === satW.id).period === 1, 'live score + clock + period reach the lobby feed');
   const ag = (await api('/api/games')).body.find((g) => g.id === satW.id);
   ok(ag.status === 'active' && ag.home_score === 2 && ag.away_score === 0 && ag.on_court === true, 'A1: Admin games payload has the active game with its live score (2–0)');
   await api(`/api/games/${satW.id}/complete`, { method: 'POST' });
   const fin = await sc.wait((m) => m.kind === 'schedule' && m.games.find((g) => g.id === satW.id)?.status === 'complete').catch(() => null);
-  ok(fin && fin.games.find((g) => g.id === satW.id).home.score === 2, 'complete shows the final score on the schedule');
+  ok(fin && fin.games.find((g) => g.id === satW.id).home.score === 2, 'complete reaches the lobby feed with the final score');
   const cg = (await api('/api/games')).body.find((g) => g.id === satW.id);
   ok(cg.status === 'complete' && cg.home_score === 2 && cg.away_score === 0 && cg.court === 'West' && cg.scheduled_at, 'A1: Admin games payload keeps the completed game with its final score (2–0), court and time');
   const sc2 = client('*', 'schedule&date=2031-01-05'); await sc2.open;
   const other = await sc2.wait((m) => m.kind === 'schedule');
-  ok(other.games.every((g) => g.id !== satW.id) && other.dayLabel === 'Sunday, Jan 5', 'a schedule screen only gets its own day');
+  ok(other.games.every((g) => g.id !== satW.id) && other.date === '2031-01-05', 'a lobby screen only gets its own day');
   sc2.send({ type: 'cmd', id: 'x', cmd: { type: 'SCORE', team: 'home', pts: 2 } });
-  ok(/read-only/.test((await sc2.wait((m) => m.type === 'error')).error), 'schedule screen is read-only');
-  // Tie: a complete game with equal scores (client shows data-winner=tie + '✓ FINAL · TIE', via schedule-view.js).
+  ok(/read-only/.test((await sc2.wait((m) => m.type === 'error')).error), 'lobby feed is read-only');
   const tieG = games19.find((g) => g.court === 'East' && g.cheer === 'Fri Cheer'); // the Friday 18:00 game (not live yet)
   await api(`/api/games/${tieG.id}/start`, { method: 'POST', body: JSON.stringify({ force: true }) });
   await api(`/api/games/${tieG.id}/complete`, { method: 'POST' }); // 0–0 final = tie
-  const tie = (await api(`/api/public/schedule?date=${FRI}`)).body;
-  const tg = tie.games.find((g) => g.id === tieG.id);
-  const view = await fetch(BASE + '/schedule-view.js').then((r) => r.text());
-  ok(tg && tg.status === 'complete' && tg.home.score === tg.away.score && view.includes("'tie'") && view.includes('✓ FINAL · TIE'), `tie: complete ${tg?.home.score}–${tg?.away.score} reaches the schedule; view module marks it FINAL · TIE`);
   const tieRow = (await api('/api/games')).body.find((g) => g.id === tieG.id);
   ok(tieRow.status === 'complete' && tieRow.home_score === tieRow.away_score, `A1: Admin games payload: tied final ${tieRow.home_score}–${tieRow.away_score} (Today shows FINAL + TIE)`);
-  // Empty day: no games -> empty list, isToday flag, and the page has the .empty element.
   const emp = (await api('/api/public/schedule?date=2031-01-06')).body;
-  const page19 = await fetch(BASE + '/schedule').then((r) => r.text());
-  ok(emp.games.length === 0 && emp.isToday === false && emp.dayLabel === 'Monday, Jan 6' && /class="empty"/.test(page19) && view.includes('No games scheduled today'), 'empty day: no games, isToday=false, .empty element + text');
-  ok((await api('/api/public/schedule')).body.isToday === true, 'default day is today (isToday=true)');
-  ok(/<script src="\/contrast.js"><\/script>/.test(page19), 'schedule page loads contrast.js (chip --team-fg)');
+  ok(emp.games.length === 0 && emp.cheerSlots.length === 0, 'empty day: no games, no cheer slots');
   // A3: a game completed by CSV import (never ran here) reopens with its stored final, not 0–0.
   for (const g of (await api('/api/games')).body.filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
   const a3 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away\n2031-01-07,09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN}\n` });

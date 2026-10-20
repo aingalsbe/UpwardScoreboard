@@ -79,9 +79,9 @@ Courts are now full, west and east (Full shares the floor with West and East; GA
 
 ## Update (2026-10)
 
-- ✅ Lobby schedule screen: /upwardbasketballscores/schedule (alias /schedule), all courts for one day, live, fits one 1920x1080 screen (moves/pages to keep live + next in view, reduced-motion aware, offline like the TV).
+- ~~Lobby schedule screen: /upwardbasketballscores/schedule (alias /schedule)~~ **Retired 2026-10-20 (Aaron):** replaced by the lobby TV below; the routes now 404.
 - ✅ Gender (Boys/Girls) on teams, CSVs, Admin and every display ("3rd Grade Girls · Eagles vs Lions"); names unique per grade + gender + name.
-- ✅ Schedule paging rule: live + UP NEXT pinned (never paged), later upcoming paged only when they overflow, most recent finals as compact rows in the leftover space, the rest "▲ N earlier finals"; root data-phase early|midday|end. Logic in public/schedule-view.js (unit-tested); browser e2e scripts/schedule-paging-e2e.mjs.
+- ~~Schedule paging rule~~ (retired with the schedule screen): live + UP NEXT pinned (never paged), later upcoming paged only when they overflow, most recent finals as compact rows in the leftover space, the rest "▲ N earlier finals"; root data-phase early|midday|end. Code and tests removed.
 - ✅ One cheer squad per game (was per side); shown on the TV and schedule, never on the scorekeeper. **Superseded (planned):** cheer becomes one squad per time slot; see "Next feature" below.
 - ✅ Schedule warnings in import and Admin (team twice in a weekend, cheer rules, split-court hours).
 - ✅ Home team always listed first, home on the left.
@@ -89,7 +89,7 @@ Courts are now full, west and east (Full shares the floor with West and East; GA
 
 ### Locker rooms, coaches, cheer by time slot (built 2026-10-20; was "Next feature")
 
-Lobby TV v2: /upwardbasketballscores/lobby (alias /lobby), live + exactly one next game per court. The full-day lobby schedule screen (/upwardbasketballscores/schedule) is unchanged.
+Lobby TV v2: /upwardbasketballscores/lobby (alias /lobby), live + exactly one next game per court. It is the only lobby screen: the full-day schedule screen (/upwardbasketballscores/schedule, /schedule) was retired 2026-10-20 and 404s.
 
 Plan: docs/plans/locker-rooms-coaches.md.
 - Cheer: one squad per time slot (date + start time), shared by West, East and Full. It is optional, and some slots have none. This replaces the one-squad-per-game rule above. New `cheer_squads` (name, coach, logo) and `cheer_slots` (date, start_time, squad, locker; unique date+start_time). `games.cheer*` stays read-only until it is dropped after the transition.

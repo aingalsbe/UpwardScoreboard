@@ -42,4 +42,11 @@ wW.close(); wE.close();
 await fetch(B + '/api/import/schedule.csv', { method: 'POST', headers: { ...H, 'content-type': 'text/csv' }, body: 'id,status,home_score,away_score\n' + ['12:00', '13:00', '14:00'].flatMap((h) => [at(sat, h, 'West'), at(sat, h, 'East')]).map((g) => `${g.id},complete,10,8`).join('\n') + '\n' });
 const m1 = await live(at(sat, '15:00', 'West'), 'west', [['home', 2]]), m2 = await live(at(sat, '15:00', 'East'), 'east', [['away', 2]]);
 await shot(sat, 'saturday-split-live-full-next.png');
-m1.close(); m2.close(); await b.close();
+m1.close(); m2.close();
+// Retired full-day schedule screen: the browser gets a 404 like any unknown path.
+{ const p = await b.newPage();
+  for (const u of ['/upwardbasketballscores/schedule', '/schedule', '/schedule?day=sat']) {
+    const r = await p.goto(B + u); if (r.status() !== 404) { console.error(`FAIL ${u} -> ${r.status()} (expected 404)`); process.exitCode = 1; } else console.log(`PASS ${u} -> 404`);
+  }
+  await p.close(); }
+await b.close();

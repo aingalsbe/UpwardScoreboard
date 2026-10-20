@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
   Start the UpwardScoreboard laptop demo: Docker stack, demo data, two browser windows side by side
-  (three with -Schedule).
+  (three with -Schedule: the lobby TV).
 .PARAMETER Reseed
   Wipe all teams, courts and games and load fresh demo data for the demo weekend (this Fri/Sat, or the upcoming one).
 .PARAMETER Schedule
-  Also open the lobby schedule screen as a third window (scorekeeper | TV | schedule, a third of the screen each).
+  Also open the lobby TV (/upwardbasketballscores/lobby, live + next per court) as a third window (scorekeeper | TV | lobby, a third of the screen each).
 .PARAMETER NoBrowser
   Do not open browser windows.
 .PARAMETER WindowsOnly
@@ -28,12 +28,12 @@ $ErrorActionPreference = 'Continue'
 Set-Location -Path $PSScriptRoot
 $Base = 'http://localhost:3000'
 # Demo weekend: Saturday has the West/East block (scorekeeper on West, PIN 2222); any other day the next games
-# are the Full Court games (Friday evening), so the demo uses Full (PIN 1111). The schedule shows Fri or Sat.
+# are the Full Court games (Friday evening), so the demo uses Full (PIN 1111). The lobby shows Fri or Sat.
 $IsSat = (Get-Date).DayOfWeek -eq 'Saturday'
 if ($IsSat) { $Court = 'west'; $Pin = '2222'; $Day = 'sat' } else { $Court = 'full'; $Pin = '1111'; $Day = 'fri' }
 $ScoreUrl = "$Base/score/$Court"
 $TvUrl = "$Base/upwardbasketballscores/${Court}court"
-$ScheduleUrl = "$Base/upwardbasketballscores/schedule?day=$Day"
+$ScheduleUrl = "$Base/upwardbasketballscores/lobby?day=$Day"
 
 function Fail([string]$Message) {
   Write-Host ''
@@ -84,7 +84,7 @@ if ($out -match 'SEEDED') {
 Write-Host ''
 Write-Host "Scorekeeper (left): $ScoreUrl   PIN $Pin" -ForegroundColor Green
 Write-Host "TV (right):         $TvUrl" -ForegroundColor Green
-Write-Host "Schedule (lobby):   $ScheduleUrl   (also ?day=fri / ?day=sat)" -ForegroundColor Green
+Write-Host "Lobby TV:           $ScheduleUrl   (also ?day=fri / ?day=sat / ?date=YYYY-MM-DD)" -ForegroundColor Green
 Write-Host "Admin:              $Base/admin   password change-me-admin" -ForegroundColor Green
 
 # 5. Browser windows side by side: two Edge app windows, each with its own throwaway profile so
@@ -160,6 +160,6 @@ $null = Set-DemoWindow 'UpwardScoreboard*TV*' ($x0 + $w)
 if ($Schedule) {
   Open-DemoWindow 'schedule' $ScheduleUrl ($x0 + 2 * $w)
   Start-Sleep -Seconds 2
-  $null = Set-DemoWindow 'UpwardScoreboard*Schedule*' ($x0 + 2 * $w)
-  Write-Host "Opened scorekeeper, TV and schedule, each ${w}x${h}." -ForegroundColor Green
+  $null = Set-DemoWindow 'UpwardScoreboard*Lobby*' ($x0 + 2 * $w)
+  Write-Host "Opened scorekeeper, TV and lobby, each ${w}x${h}." -ForegroundColor Green
 } else { Write-Host "Opened scorekeeper (left) and TV (right), each ${w}x${h}." -ForegroundColor Green }
