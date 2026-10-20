@@ -1193,6 +1193,29 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       await pool.query('DELETE FROM cheer_squads WHERE id=$1', [id]); return json(res, 200, { ok: true });
     }
   }
+  // Pick a squad for a cheer-slot-conflict (L2): the candidate may be a legacy name that is not a squad yet, so
+  // create it by name (no coach: the legacy per-game data has none), then set the slot, in one transaction.
+  // Idempotent: a second click finds the squad and the slot already set and changes nothing.
+  if (p === '/api/cheer-slots/pick' && m === 'POST') {
+    const b = await readJson(req);
+    const date = String(b.date || '').trim(), name = String(b.squad || '').trim().slice(0, 40);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'date must be YYYY-MM-DD');
+    let start: string; try { start = hourSlot(String(b.time ?? '')); } catch (e: any) { throw new HttpError(400, e.message); }
+    if (!name) throw new HttpError(400, 'squad name required');
+    const exists = (await pool.query('SELECT 1 FROM cheer_squads WHERE lower(name)=lower($1)', [name])).rowCount;
+    if (!exists && !(await legacyCheerConflicts()).some((c) => c.date === date && c.start === start && c.candidates.some((x) => x.toLowerCase() === name.toLowerCase())))
+      throw new HttpError(400, `"${name}" is not a cheer squad or a candidate for the ${date} ${start} slot`);
+    const client = await pool.connect();
+    let sid: number, changed: boolean;
+    try {
+      await client.query('BEGIN');
+      sid = await squadId(client, name);
+      changed = await setSlotSquad(client, date, start, sid);
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
+    if (changed) { await refreshAllCourts(); scheduleChanged(); }
+    return json(res, 200, { squad_id: sid, created: !exists, changed, date, time: start });
+  }
   if (seg[1] === 'cheer-slots') {
     const id = seg[2] ? Number(seg[2]) : undefined;
     if (m === 'GET' && !id) {

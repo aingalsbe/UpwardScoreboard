@@ -213,7 +213,7 @@ document.addEventListener('click', guard(async (e) => {
     slotsDirty = false; document.activeElement?.blur(); await load(); renderSlots(true);
   }
   if (b.dataset.pickSquad) {
-    await api('/api/cheer-slots', { method: 'POST', body: JSON.stringify({ date: b.dataset.date, time: b.dataset.time, squad: b.dataset.pickSquad }) });
+    await api('/api/cheer-slots/pick', { method: 'POST', body: JSON.stringify({ date: b.dataset.date, time: b.dataset.time, squad: b.dataset.pickSquad }) });
     msg(`${b.dataset.pickSquad} set for ${b.dataset.date} ${ampm(b.dataset.time)}.`); await load(); renderSlots(true);
   }
   if (b.dataset.editTeam) {

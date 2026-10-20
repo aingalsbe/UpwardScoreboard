@@ -82,6 +82,25 @@ test('server: warnings, CRUD, CSV round-trip + legacy files, scorekeeper never g
   assert.ok(w.some((x: any) => x.code === 'cheer-slot-empty' && x.slot.start === '15:00'));
   await api(`/api/cheer-slots/${empty.body.id}`, { method: 'DELETE' });
   assert.equal((await api(`/api/cheer-squads/${sparkle.id}`, { method: 'DELETE' })).status, 409, 'squad in use');
+
+  // L2: Pick a conflict candidate that is not a squad yet (legacy names) -> creates the squad + sets the slot; twice is a no-op
+  const ins = (court: string, h: number, a: number, cheer: string) => db.pool.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, cheer)
+    VALUES ((SELECT id FROM courts WHERE slug=$1), (SELECT id FROM teams WHERE name=$2), (SELECT id FROM teams WHERE name=$3), '2026-10-24 13:00'::timestamp AT TIME ZONE 'America/Chicago', $4)`, [court, `T${h}`, `T${a}`, cheer]);
+  await ins('west', 1, 2, 'Legacy Alpha'); await ins('east', 3, 4, 'Legacy Beta');
+  const c13 = (await api('/api/warnings')).body.find((x: any) => x.code === 'cheer-slot-conflict' && x.slot.start === '13:00');
+  assert.deepEqual(c13?.candidates, ['Legacy Alpha', 'Legacy Beta']);
+  assert.equal((await db.pool.query(`SELECT count(*)::int n FROM cheer_squads WHERE name LIKE 'Legacy %'`)).rows[0].n, 0, 'candidates are not squads yet');
+  const pk1 = await api('/api/cheer-slots/pick', { body: { date: '2026-10-24', time: '13:00', squad: 'Legacy Beta' } });
+  assert.equal(pk1.status, 200, JSON.stringify(pk1.body)); assert.equal(pk1.body.created, true); assert.equal(pk1.body.changed, true);
+  const pk2 = await api('/api/cheer-slots/pick', { body: { date: '2026-10-24', time: '13:00', squad: 'Legacy Beta' } });
+  assert.equal(pk2.status, 200); assert.equal(pk2.body.created, false); assert.equal(pk2.body.changed, false); assert.equal(pk2.body.squad_id, pk1.body.squad_id);
+  assert.deepEqual((await db.pool.query(`SELECT name, coach FROM cheer_squads WHERE name LIKE 'Legacy %'`)).rows, [{ name: 'Legacy Beta', coach: null }]);
+  assert.equal((await db.pool.query(`SELECT count(*)::int n FROM cheer_slots WHERE date='2026-10-24' AND slot_start='13:00' AND squad_id=$1`, [pk1.body.squad_id])).rows[0].n, 1);
+  assert.equal((await api('/api/warnings')).body.some((x: any) => x.code === 'cheer-slot-conflict' && x.slot.start === '13:00'), false, 'conflict cleared');
+  assert.equal((await api('/api/cheer-slots/pick', { body: { date: '2026-10-24', time: '14:00', squad: 'Not A Candidate' } })).status, 400, 'random names are not created');
+  // clean up so the CSV round-trip below sees the original data
+  await db.pool.query(`DELETE FROM cheer_slots WHERE squad_id=$1`, [pk1.body.squad_id]); await db.pool.query(`DELETE FROM cheer_squads WHERE id=$1`, [pk1.body.squad_id]);
+  await db.pool.query(`DELETE FROM games WHERE cheer LIKE 'Legacy %'`);
   assert.equal((await fetch(`${BASE}/api/cheer-squads`)).status, 401, 'admin only');
 
   // CSV imports: coaches, squads, slots, lockers
