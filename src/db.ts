@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { demoWeekend, demoSeedPlan, gradeOrder } from './schedule.js';
+import { demoWeekend, demoSeedPlan, gradeOrder, LEAGUE_TZ, hourSlot } from './schedule.js';
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -96,12 +96,114 @@ ALTER TABLE games ADD COLUMN IF NOT EXISTS duration_min INT CHECK (duration_min 
 DO $$ BEGIN
   ALTER TABLE courts ADD CONSTRAINT courts_current_game_fk FOREIGN KEY (current_game_id) REFERENCES games(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- Locker rooms + coaches + cheer by time slot (2026-10, docs/plans/locker-rooms-coaches.md).
+-- Locker rooms change every week: free text per game and side ('CH', '2'), no default.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS home_locker TEXT CHECK (home_locker IS NULL OR length(home_locker) <= 8),
+  ADD COLUMN IF NOT EXISTS away_locker TEXT CHECK (away_locker IS NULL OR length(away_locker) <= 8);
+-- One coach per team for the whole season, first name only (pages render "Coach <name>"; never on the scorekeeper).
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS coach TEXT CHECK (coach IS NULL OR length(coach) <= 30);
+-- Cheer squads (season-long: name, coach first name, logo). The logo moved here from games.cheer_logo_*.
+CREATE TABLE IF NOT EXISTS cheer_squads (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 40),
+  coach TEXT CHECK (coach IS NULL OR length(coach) <= 30),
+  logo_url TEXT,
+  logo_data BYTEA,
+  logo_mime TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS cheer_squads_name_uk ON cheer_squads (lower(name));
+-- One optional squad per scheduled 1-hour block (league-local date + start on the hour), shared by West, East
+-- and Full. A game belongs to the slot its start falls in (09:05 -> 09:00). No row = no cheer that hour.
+CREATE TABLE IF NOT EXISTS cheer_slots (
+  id SERIAL PRIMARY KEY,
+  date DATE NOT NULL,
+  slot_start TIME NOT NULL CHECK (slot_start = date_trunc('hour', slot_start)),
+  squad_id INT NOT NULL REFERENCES cheer_squads(id),
+  locker TEXT CHECK (locker IS NULL OR length(locker) <= 8),
+  UNIQUE (date, slot_start)
+);
+-- games.cheer, cheer_logo_url/_data/_mime are READ-ONLY from here on: the backfill below reads them once and
+-- nothing writes them. Drop them once /api/warnings shows no cheer-slot-conflict and an export/import round-trip
+-- of cheer_slots.csv matches (planned for the release after the next import cycle).
 `;
 
 export async function migrate(): Promise<void> {
   await pool.query(SCHEMA);
   await migrateFloorCourts();
   await migrateCheer();
+  await migrateCheerSlots();
+}
+
+/** SQL for a game's cheer slot (league-local date + start floored to the hour). $tz is a bind parameter. */
+export const slotDateSql = (col: string, tz: string) => `(${col} AT TIME ZONE ${tz})::date`;
+export const slotStartSql = (col: string, tz: string) => `date_trunc('hour', ${col} AT TIME ZONE ${tz})::time`;
+
+type Q = { query: (text: string, params?: any[]) => Promise<any> };
+export type CheerBackfill = { squads: number; slots: number; conflicts: { date: string; start: string; candidates: string[] }[]; ran: boolean };
+
+/**
+ * One-time backfill of cheer_squads + cheer_slots from the old per-game games.cheer values (2026-10).
+ * - squads: one per distinct trimmed name (case-insensitive); the logo comes from the first game that had one
+ *   (uploads preferred over URLs).
+ * - slots: games grouped by league-local date + hour; a slot is created only when exactly one squad is in it.
+ *   Two or more different squads in one hour = conflict: no slot, reported (see legacyCheerConflicts) so an
+ *   admin can pick. Safe to re-run: guarded by settings.cheer_slots_backfill and ON CONFLICT DO NOTHING.
+ */
+export async function migrateCheerSlots(force = false): Promise<CheerBackfill> {
+  const done = (await pool.query(`SELECT value FROM settings WHERE key='cheer_slots_backfill'`)).rows[0];
+  if (done && !force) return { squads: 0, slots: 0, conflicts: [], ran: false };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const squads = (await client.query(`INSERT INTO cheer_squads(name, logo_url, logo_data, logo_mime)
+      SELECT DISTINCT ON (lower(trim(cheer))) left(trim(cheer), 40), cheer_logo_url, cheer_logo_data, cheer_logo_mime FROM games
+      WHERE nullif(trim(cheer), '') IS NOT NULL
+      ORDER BY lower(trim(cheer)), (cheer_logo_data IS NULL), (cheer_logo_url IS NULL), id
+      ON CONFLICT ((lower(name))) DO NOTHING`)).rowCount ?? 0;
+    const slots = (await client.query(`WITH g AS (
+        SELECT ${slotDateSql('scheduled_at', '$1')} AS d, ${slotStartSql('scheduled_at', '$1')} AS s, lower(left(trim(cheer), 40)) AS k
+        FROM games WHERE nullif(trim(cheer), '') IS NOT NULL AND scheduled_at IS NOT NULL),
+      one AS (SELECT d, s, min(k) AS k FROM g GROUP BY d, s HAVING count(DISTINCT k) = 1)
+      INSERT INTO cheer_slots(date, slot_start, squad_id) SELECT one.d, one.s, q.id FROM one JOIN cheer_squads q ON lower(q.name) = one.k
+      ON CONFLICT (date, slot_start) DO NOTHING`, [LEAGUE_TZ])).rowCount ?? 0;
+    await client.query(`INSERT INTO settings(key, value) VALUES ('cheer_slots_backfill', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, [new Date().toISOString()]);
+    await client.query('COMMIT');
+    const conflicts = await legacyCheerConflicts();
+    if (squads || slots) console.log(`Cheer slots migration: ${squads} squad(s), ${slots} slot(s) from per-game cheer.`);
+    for (const c of conflicts) console.log(`Cheer slots migration: CONFLICT ${c.date} ${c.start}: ${c.candidates.join(', ')} (no slot created; pick one in Admin)`);
+    return { squads, slots, conflicts, ran: true };
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+}
+
+/** Hours where the old per-game data names 2+ different squads and no slot has been set yet. */
+export async function legacyCheerConflicts(): Promise<{ date: string; start: string; candidates: string[] }[]> {
+  const { rows } = await pool.query(`SELECT to_char(${slotDateSql('g.scheduled_at', '$1')}, 'YYYY-MM-DD') AS date,
+      to_char(${slotStartSql('g.scheduled_at', '$1')}, 'HH24:MI') AS start,
+      array_agg(DISTINCT left(trim(g.cheer), 40) ORDER BY left(trim(g.cheer), 40)) AS candidates
+    FROM games g WHERE nullif(trim(g.cheer), '') IS NOT NULL AND g.scheduled_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM cheer_slots cs WHERE cs.date = ${slotDateSql('g.scheduled_at', '$1')} AND cs.slot_start = ${slotStartSql('g.scheduled_at', '$1')})
+    GROUP BY 1, 2 HAVING count(DISTINCT lower(left(trim(g.cheer), 40))) > 1 ORDER BY 1, 2`, [LEAGUE_TZ]);
+  return rows;
+}
+
+/** Find or create a squad by name (case-insensitive). */
+export async function squadId(q: Q, name: string): Promise<number> {
+  const ex = (await q.query('SELECT id FROM cheer_squads WHERE lower(name)=lower($1)', [name])).rows[0];
+  if (ex) return ex.id;
+  return (await q.query('INSERT INTO cheer_squads(name) VALUES ($1) ON CONFLICT ((lower(name))) DO UPDATE SET name=cheer_squads.name RETURNING id', [name])).rows[0].id;
+}
+/** Set the squad of a slot (date YYYY-MM-DD, start HH:00); keeps the slot's locker. Returns true if it changed. */
+export async function setSlotSquad(q: Q, date: string, start: string, sid: number): Promise<boolean> {
+  const r = await q.query(`INSERT INTO cheer_slots(date, slot_start, squad_id) VALUES ($1, $2, $3)
+    ON CONFLICT (date, slot_start) DO UPDATE SET squad_id=EXCLUDED.squad_id WHERE cheer_slots.squad_id IS DISTINCT FROM EXCLUDED.squad_id`, [date, start, sid]);
+  return (r.rowCount ?? 0) > 0;
+}
+/** The league-local slot (date, HH:00) of a game, or null when it isn't scheduled. */
+export async function gameSlot(q: Q, gameId: number): Promise<{ date: string; start: string } | null> {
+  const r = (await q.query(`SELECT to_char(${slotDateSql('scheduled_at', '$2')}, 'YYYY-MM-DD') AS date, to_char(${slotStartSql('scheduled_at', '$2')}, 'HH24:MI') AS start
+    FROM games WHERE id=$1 AND scheduled_at IS NOT NULL`, [gameId, LEAGUE_TZ])).rows[0];
+  return r || null;
 }
 
 /**
@@ -174,9 +276,12 @@ export async function seedIfEmpty(): Promise<boolean> {
        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, $4, $5)`,
       [court, await id(h), await id(a), when, div]);
   }
-  // Some games have a cheer squad for a team, some don't.
-  await pool.query(`UPDATE games SET cheer='Eagles Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Eagles'), await id('Lions')]);
-  await pool.query(`UPDATE games SET cheer='Knights Cheer' WHERE home_team_id=$1 AND away_team_id=$2`, [await id('Knights'), await id('Saints')]);
+  // Some time slots have a cheer squad, some don't (one squad per hour, shared by every court).
+  for (const [squad, h, a] of [['Eagles Cheer', 'Eagles', 'Lions'], ['Knights Cheer', 'Knights', 'Saints']]) {
+    const g = (await pool.query('SELECT id FROM games WHERE home_team_id=$1 AND away_team_id=$2', [await id(h), await id(a)])).rows[0];
+    const slot = g && (await gameSlot(pool, g.id));
+    if (slot) await setSlotSquad(pool, slot.date, slot.start, await squadId(pool, squad));
+  }
   return true;
 }
 
@@ -199,7 +304,7 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('TRUNCATE game_events, games, teams, courts RESTART IDENTITY CASCADE');
+    await client.query('TRUNCATE game_events, cheer_slots, cheer_squads, games, teams, courts RESTART IDENTITY CASCADE');
     for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
       await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
     }
@@ -210,9 +315,10 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
       [name, name.slice(0, 3).toUpperCase(), grade, gradeOrder(grade), gender])).rows[0].id;
     for (const g of plan) {
       const h = await team(g.home, g.grade, g.gender), a = await team(g.away, g.grade, g.gender);
-      await client.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, cheer)
-        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, ($4 || ' ' || $5)::timestamp AT TIME ZONE 'America/Chicago', $6, $7)`,
-      [g.court, h, a, g.date, g.time, `${g.grade} ${g.gender}`, g.cheer ?? null]);
+      await client.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division)
+        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, ($4 || ' ' || $5)::timestamp AT TIME ZONE 'America/Chicago', $6)`,
+      [g.court, h, a, g.date, g.time, `${g.grade} ${g.gender}`]);
+      if (g.cheer) await setSlotSquad(client, g.date, hourSlot(g.time), await squadId(client, g.cheer)); // one squad per hour
     }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }

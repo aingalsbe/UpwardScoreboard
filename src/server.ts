@@ -6,10 +6,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { pool, migrate, seedIfEmpty, seedDemo } from './db.js';
+import { pool, migrate, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
+import { scorekeeperView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, dayLabel, localDate, LEAGUE_TZ, WarnGame } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, dayLabel, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
@@ -166,10 +167,11 @@ async function loadSeason() {
 }
 /** Relative luminance (WCAG) for server-side season validation. */
 const lum = (h: string) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
-/** The game's cheer squad (one per game, not per side): { name, logo } or null. */
+/** The cheer squad of the game's time slot (one per hour, shared by every court), or null. Coach = first name only. */
 function cheerView(r: any) {
-  if (!r.cheer) return null;
-  return { name: r.cheer, logo: r.cheer_has_logo ? `/logos/cheer/${r.id}` : r.cheer_logo_url || null };
+  if (!r.cheer_squad_id) return null;
+  return { squadId: r.cheer_squad_id, name: r.cheer_squad, logo: r.cheer_squad_has_logo ? `/logos/squad/${r.cheer_squad_id}` : r.cheer_squad_logo_url || null,
+    coach: r.cheer_coach || null, locker: r.cheer_locker || null, slot: { date: r.cheer_slot_date, start: r.cheer_slot_start } };
 }
 function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
   const id = r[`${prefix}_id`];
@@ -182,9 +184,16 @@ function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
     color: theme[`${side}Color`] || season[wear],
     accent: theme[`${side}Accent`] || season[wear === 'light' ? 'dark' : 'light'],
     logo: theme[`${side}Logo`] || (r[`${prefix}_has_logo`] ? `/logos/${id}` : r[`${prefix}_logo_url`] || null),
+    locker: r[`${side}_locker`] || null, // per game (changes weekly)
+    coach: r[`${side}_coach`] || null, // first name; never sent to the scorekeeper (see scorekeeperView)
   };
 }
 
+/** League time zone as a SQL literal (from TZ; only zone-name characters are allowed). */
+const TZ_SQL = `'${/^[A-Za-z0-9_\/+-]+$/.test(LEAGUE_TZ) ? LEAGUE_TZ : 'America/Chicago'}'`;
+/** Joins a game row g to its cheer slot (league date + start floored to the hour) and squad. */
+const CHEER_JOIN = `LEFT JOIN cheer_slots cs ON cs.date = ${slotDateSql('g.scheduled_at', TZ_SQL)} AND cs.slot_start = ${slotStartSql('g.scheduled_at', TZ_SQL)}
+  LEFT JOIN cheer_squads cq ON cq.id = cs.squad_id`;
 const GAME_SELECT = `
   SELECT g.*, c.slug AS court_slug, c.name AS court_name,
     h.grade AS home_grade, a.grade AS away_grade, h.gender AS home_gender, a.gender AS away_gender,
@@ -192,9 +201,12 @@ const GAME_SELECT = `
     h.logo_url AS home_logo_url, (h.logo_data IS NOT NULL) AS home_has_logo,
     a.name AS away_name, a.short_name AS away_short, a.primary_color AS away_primary, a.secondary_color AS away_secondary,
     a.logo_url AS away_logo_url, (a.logo_data IS NOT NULL) AS away_has_logo,
-    (g.cheer_logo_data IS NOT NULL) AS cheer_has_logo
+    h.coach AS home_coach, a.coach AS away_coach,
+    cs.id AS cheer_slot_id, to_char(cs.date, 'YYYY-MM-DD') AS cheer_slot_date, to_char(cs.slot_start, 'HH24:MI') AS cheer_slot_start, cs.locker AS cheer_locker,
+    cq.id AS cheer_squad_id, cq.name AS cheer_squad, cq.coach AS cheer_coach, cq.logo_url AS cheer_squad_logo_url, (cq.logo_data IS NOT NULL) AS cheer_squad_has_logo
   FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
-  LEFT JOIN courts c ON c.id=g.court_id`;
+  LEFT JOIN courts c ON c.id=g.court_id
+  ${CHEER_JOIN}`;
 
 // teamView reads columns like home_team_name; alias the joined names onto that shape.
 function normalizeRow(r: any) {
@@ -214,7 +226,7 @@ async function courtSnapshot(slug: string) {
   const game = active ? await gameViewNorm(active.id) : null;
   const lite = `SELECT g.id, g.status, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today,
-      COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, h.name AS home, a.name AS away, g.final_home, g.final_away
+      COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, h.name AS home, a.name AS away, g.home_locker, g.away_locker, g.final_home, g.final_away
     FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.court_id=$1`;
   const nextUp = (await pool.query(`${lite} AND g.status='scheduled' AND g.scheduled_at >= date_trunc('day', now()) ORDER BY g.scheduled_at, g.id LIMIT 1`, [c.id])).rows[0] || null;
   const lastFinal = (await pool.query(`${lite} AND g.status='complete' AND g.scheduled_at::date = now()::date ORDER BY g.updated_at DESC LIMIT 1`, [c.id])).rows[0] || null;
@@ -225,7 +237,7 @@ async function courtSnapshot(slug: string) {
       WHERE x.court_id=$1 AND x.status <> 'complete' AND x.scheduled_at::date > now()::date AND x.scheduled_at < now() + interval '7 days') ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
   const upNext = (await pool.query(
     `SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
-       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label
+       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today, h.name AS home, a.name AS away, g.home_locker, g.away_locker, COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label
      FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
      WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
      ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
@@ -255,11 +267,9 @@ async function gameViewNorm(gameId: number) {
 interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule'; authed: boolean; qrVer?: number | null; date?: string; }
 const clients = new Set<Client>();
 
-/** Scorekeepers never get cheer squad data (TV/overlay only). */
+/** Scorekeepers never get cheer squad data (TV/overlay only) nor any coach name (deep-stripped). */
 function forRole(c: Client, msg: any) {
-  if (c.role !== 'score' || msg?.type !== 'state' || !msg.game) return msg;
-  const { cheer, ...game } = msg.game;
-  return { ...msg, game };
+  return c.role === 'score' ? scorekeeperView(msg) : msg;
 }
 function send(c: Client, msg: unknown) { if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(forRole(c, msg))); }
 
@@ -476,16 +486,18 @@ async function upsertTeam(b: any, id?: number) {
 }
 async function upsertTeamRaw(b: any, id?: number) {
   const vals = teamValues(b);
+  coachOf(b.coach); // validate before any write
   const logo = decodeLogo(b.logo_data_url);
   if (id) {
     await pool.query('UPDATE teams SET name=$2, short_name=$3, primary_color=COALESCE($4, primary_color), secondary_color=COALESCE($5, secondary_color), logo_url=$6 WHERE id=$1', [id, ...vals.slice(0, 5)]);
     if ('grade' in b) await pool.query('UPDATE teams SET grade=$2, grade_order=$3 WHERE id=$1', [id, vals[5], gradeOrder(vals[5])]);
     if ('gender' in b) await pool.query('UPDATE teams SET gender=$2 WHERE id=$1', [id, vals[6]]);
+    if ('coach' in b) await pool.query('UPDATE teams SET coach=$2 WHERE id=$1', [id, coachOf(b.coach)]);
     if (logo) await pool.query('UPDATE teams SET logo_data=$2, logo_mime=$3 WHERE id=$1', [id, logo.data, logo.mime]);
     if (b.remove_logo) await pool.query('UPDATE teams SET logo_data=NULL, logo_mime=NULL WHERE id=$1', [id]);
     return id;
   }
-  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order, gender) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7,$8,$9,$10) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6]]);
+  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order, gender, coach) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6], coachOf(b.coach)]);
   return r.rows[0].id as number;
 }
 
@@ -529,28 +541,54 @@ const cheerName = (v: unknown): string | null => {
   if (t.length > 40) throw new HttpError(400, `cheer squad name "${t.slice(0, 20)}…" is longer than 40 characters`);
   return t;
 };
-const EXTRA_COLS = ['swap_colors', 'cheer', 'cheer_logo_url'];
-/** Write the optional per-game fields that are present in `extra` (swap, cheer names, cheer logo URLs). */
+/** Locker room: free text ('CH', '2'), max 8 characters; empty = none. */
+const lockerOf = (v: unknown, field = 'locker'): string | null => {
+  const t = String(v ?? '').trim(); if (!t) return null;
+  if (t.length > 8) throw new HttpError(400, `${field} "${t.slice(0, 12)}" is longer than 8 characters (use a short room name like CH or 2)`);
+  return t;
+};
+/** Coach: first name only, max 30; a typed "Coach " prefix is dropped (pages render "Coach <name>"). */
+const coachOf = (v: unknown): string | null => {
+  const t = String(v ?? '').trim().replace(/^coach\s+/i, '').trim(); if (!t) return null;
+  if (t.length > 30) throw new HttpError(400, `coach "${t.slice(0, 20)}…" is longer than 30 characters (first name only)`);
+  return t;
+};
+const EXTRA_COLS = ['swap_colors', 'home_locker', 'away_locker'];
+/** Write the optional per-game fields that are present in `extra` (swap colors, locker rooms). */
 async function setGameExtras(id: number, extra: Record<string, any>) {
   const keys = Object.keys(extra).filter((k) => EXTRA_COLS.includes(k));
   if (!keys.length) return;
   await pool.query(`UPDATE games SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')} WHERE id=$1`, [id, ...keys.map((k) => extra[k])]);
-  // a cheer squad removed -> drop its uploaded logo too; a URL set -> it replaces an uploaded logo
-  if ('cheer' in extra && !extra.cheer) await pool.query(`UPDATE games SET cheer_logo_url=NULL, cheer_logo_data=NULL, cheer_logo_mime=NULL WHERE id=$1`, [id]);
-  if (extra.cheer_logo_url) await pool.query(`UPDATE games SET cheer_logo_data=NULL, cheer_logo_mime=NULL WHERE id=$1`, [id]);
 }
-/** Admin JSON body -> extras (+ uploaded cheer logos, same validation as team logos). */
+/** Squad logo: a URL replaces an upload; an upload replaces a URL. */
+async function setSquadLogo(sid: number, url: string | null | undefined, upload: { data: Buffer; mime: string } | null, remove = false) {
+  if (remove) await pool.query('UPDATE cheer_squads SET logo_url=NULL, logo_data=NULL, logo_mime=NULL WHERE id=$1', [sid]);
+  if (url !== undefined) await pool.query(`UPDATE cheer_squads SET logo_url=$2${url ? ', logo_data=NULL, logo_mime=NULL' : ''} WHERE id=$1`, [sid, url]);
+  if (upload) await pool.query('UPDATE cheer_squads SET logo_data=$2, logo_mime=$3, logo_url=NULL WHERE id=$1', [sid, upload.data, upload.mime]);
+}
+/**
+ * Admin JSON body -> extras. Lockers per game. Until the phase-2 Admin slot editor ships, the old per-game cheer
+ * fields still work: `cheer` sets (or, empty, removes) the squad of the game's TIME SLOT, shared by every court in
+ * that hour; cheer logo fields update that squad's logo. The games.cheer* columns themselves are never written.
+ */
 async function gameExtrasFromBody(id: number, b: any) {
   const extra: Record<string, any> = {};
   if ('swap_colors' in b) extra.swap_colors = !!b.swap_colors;
-  // One squad per game. Legacy clients sending home_cheer/away_cheer: whichever is set (home if both).
-  const legacy = cheerName(b.home_cheer) || cheerName(b.away_cheer);
-  if ('cheer' in b) extra.cheer = cheerName(b.cheer); else if ('home_cheer' in b || 'away_cheer' in b) extra.cheer = legacy;
-  if ('cheer_logo_url' in b) extra.cheer_logo_url = safeLogoUrl(String(b.cheer_logo_url || '').trim() || null);
+  if ('home_locker' in b) extra.home_locker = lockerOf(b.home_locker, 'home_locker');
+  if ('away_locker' in b) extra.away_locker = lockerOf(b.away_locker, 'away_locker');
   const logo = decodeLogo(b.cheer_logo_data_url);
+  const logoUrl = 'cheer_logo_url' in b ? safeLogoUrl(String(b.cheer_logo_url || '').trim() || null) : undefined;
   await setGameExtras(id, extra);
-  if (logo) await pool.query(`UPDATE games SET cheer_logo_data=$2, cheer_logo_mime=$3, cheer_logo_url=NULL WHERE id=$1`, [id, logo.data, logo.mime]);
-  if (b.remove_cheer_logo) await pool.query(`UPDATE games SET cheer_logo_data=NULL, cheer_logo_mime=NULL, cheer_logo_url=NULL WHERE id=$1`, [id]);
+  const hasCheer = 'cheer' in b || 'home_cheer' in b || 'away_cheer' in b;
+  if (!hasCheer && !logo && logoUrl === undefined && !b.remove_cheer_logo) return;
+  const slot = await gameSlot(pool, id);
+  if (!slot) { if (hasCheer && (cheerName(b.cheer) || cheerName(b.home_cheer) || cheerName(b.away_cheer))) throw new HttpError(400, 'set the game time first: cheer squads are assigned per time slot'); return; }
+  const name = hasCheer ? ('cheer' in b ? cheerName(b.cheer) : cheerName(b.home_cheer) || cheerName(b.away_cheer)) : undefined;
+  if (name === null) { await pool.query('DELETE FROM cheer_slots WHERE date=$1 AND slot_start=$2', [slot.date, slot.start]); return; }
+  const sid = name ? await squadId(pool, name) : (await pool.query('SELECT squad_id FROM cheer_slots WHERE date=$1 AND slot_start=$2', [slot.date, slot.start])).rows[0]?.squad_id;
+  // logo first, then the slot, so a concurrent snapshot never shows the new squad without its logo
+  if (sid && (logo || logoUrl !== undefined || b.remove_cheer_logo)) await setSquadLogo(sid, logo ? undefined : logoUrl, logo, !!b.remove_cheer_logo);
+  if (name && sid) await setSlotSquad(pool, slot.date, slot.start, sid);
 }
 
 /** Grade rule for a game (import + admin): both teams in the same grade, and matching an optional stated grade. */
@@ -567,12 +605,17 @@ async function loadWarnings() {
       (EXTRACT(HOUR FROM g.scheduled_at AT TIME ZONE $1) * 60 + EXTRACT(MINUTE FROM g.scheduled_at AT TIME ZONE $1))::int AS start_min,
       COALESCE(g.duration_min, $2)::int AS dur, c.slug AS court, COALESCE(h.grade, a.grade) AS grade,
       concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label,
-      g.home_team_id, g.away_team_id, h.name AS home, a.name AS away, (g.cheer IS NOT NULL) AS has_cheer
-    FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id`, [LEAGUE_TZ, GAME_MINUTES]);
-  return scheduleWarnings(rows.map((r): WarnGame => ({ id: r.id, date: r.date, startMin: r.start_min, durMin: r.dur, court: r.court, grade: r.grade, label: r.label || null,
-    homeId: r.home_team_id, awayId: r.away_team_id, home: r.home, away: r.away, hasCheer: r.has_cheer })));
+      g.home_team_id, g.away_team_id, h.name AS home, a.name AS away, cq.name AS cheer
+    FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
+    ${CHEER_JOIN}`, [LEAGUE_TZ, GAME_MINUTES]);
+  const games = rows.map((r): WarnGame => ({ id: r.id, date: r.date, startMin: r.start_min, durMin: r.dur, court: r.court, grade: r.grade, label: r.label || null,
+    homeId: r.home_team_id, awayId: r.away_team_id, home: r.home, away: r.away, hasCheer: !!r.cheer, cheer: r.cheer }));
+  const slots = (await pool.query(`SELECT to_char(s.date, 'YYYY-MM-DD') AS date, to_char(s.slot_start, 'HH24:MI') AS start, q.name AS squad
+    FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id ORDER BY s.date, s.slot_start`)).rows;
+  // Per-game warnings first (by game id), then the slot-level ones (gameId null).
+  return [...scheduleWarnings(games), ...cheerSlotWarnings(slots, games, await legacyCheerConflicts())];
 }
-const warningsFor = async (id: number) => (await loadWarnings()).filter((w) => w.gameId === id).map((w) => w.message);
+const warningsFor = async (id: number) => (await loadWarnings()).filter((w) => w.gameId != null && w.gameId === id).map((w) => w.message);
 
 /**
  * Lobby schedule screen for one league-local day: every game with court, time, state, teams (home first, in
@@ -597,7 +640,11 @@ async function scheduleSnapshot(date: string) {
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
     });
   }
-  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, isToday: date === localDate(Date.now()), dayLabel: dayLabel(date), title: 'LBC Upward', church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, games };
+  // The day's cheer slots (one squad per hour, all courts); the lobby shows one cheer row spanning the courts.
+  const cheerSlots = (await pool.query(`SELECT s.id, to_char(s.slot_start, 'HH24:MI') AS start, s.locker, q.id AS squad_id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo
+    FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date = $1::date ORDER BY s.slot_start`, [date])).rows
+    .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: x.locker || null, logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
+  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, cheerSlots, isToday: date === localDate(Date.now()), dayLabel: dayLabel(date), title: 'LBC Upward', church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, games };
 }
 
 /**
@@ -669,7 +716,7 @@ async function importTeams(text: string): Promise<ImportResult> {
       seen.set(key, line);
       // Match on grade + name. Old files without a grade column match by name (must be unambiguous).
       // A team that has no grade yet is adopted by a row naming it with a grade (instead of creating a twin).
-      let sameName = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade, gender FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
+      let sameName = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade, gender, coach FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
       // With a gender column: match grade + gender + name; a team without a gender yet is adopted (no twin).
       if (hasGender) { const exact = sameName.filter((t) => t.gender === v[6]); sameName = exact.length ? exact : sameName.filter((t) => t.gender == null); }
       else delete (r as any).gender;
@@ -680,7 +727,8 @@ async function importTeams(text: string): Promise<ImportResult> {
         ex = sameName[0]; delete (r as any).grade; // keep the team's grade
       }
       if (!ex) { await upsertTeam(r); out.created++; continue; }
-      const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]) && (!hasGender || (ex.gender ?? null) === v[6]); // color columns are ignored (season colors)
+      const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]) && (!hasGender || (ex.gender ?? null) === v[6])
+        && (!headers.includes('coach') || (ex.coach ?? null) === coachOf(r.coach)); // color columns are ignored (season colors); absent coach column = keep
       if (same) { out.skipped++; continue; }
       await upsertTeam(r, ex.id); out.updated++;
     } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
@@ -719,6 +767,7 @@ async function importSchedule(text: string): Promise<ImportResult> {
   requireColumns(headers, headers.includes('id') ? ['id'] : FULL, 'schedule.csv');
   const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [], warnings: [] }; const seen = new Map<string, number>();
   const touched = new Set<number>();
+  const legacyCheerSlots = new Map<string, { name: string; logo: string | null; line: number }>();
   const team = async (n: string, col: string) => {
     if (!n) throw new HttpError(400, `${col} team is empty`);
     return n.trim();
@@ -782,16 +831,29 @@ async function importSchedule(text: string): Promise<ImportResult> {
       // Optional columns (old CSVs without them still import; absent column = keep the game's current value).
       const extra: Record<string, any> = {};
       if (headers.includes('swap_colors')) extra.swap_colors = parseBool(r.swap_colors, 'swap_colors');
-      // One cheer squad per game: cheer + cheer_logo. Legacy home_cheer/away_cheer columns: whichever is set; both -> home + warning.
-      if (headers.includes('cheer')) extra.cheer = cheerName(r.cheer);
+      // Locker rooms (per game, change weekly): absent column = keep, blank cell = clear.
+      if (headers.includes('home_locker')) extra.home_locker = lockerOf(r.home_locker, 'home_locker');
+      if (headers.includes('away_locker')) extra.away_locker = lockerOf(r.away_locker, 'away_locker');
+      // Legacy cheer columns (cheer + cheer_logo; older home_cheer/away_cheer): mapped to the row's TIME SLOT after the
+      // loop. A blank cell does not clear a slot (another court's row may name it); clear slots in cheer_slots.csv.
+      let legacyCheer: string | null = null, legacyLogo: string | null = null;
+      if (headers.includes('cheer')) legacyCheer = cheerName(r.cheer);
       else if (headers.includes('home_cheer') || headers.includes('away_cheer')) {
         const hc = cheerName(r.home_cheer), ac = cheerName(r.away_cheer);
-        if (hc && ac) out.warnings!.push(`row ${line}: two cheer squads (home_cheer "${hc}", away_cheer "${ac}"); one squad per game, kept "${hc}"`);
-        extra.cheer = hc || ac;
+        if (hc && ac && hc.toLowerCase() !== ac.toLowerCase()) out.warnings!.push(`row ${line}: two cheer squads (home_cheer "${hc}", away_cheer "${ac}"); one squad per time slot, kept "${hc}"`);
+        legacyCheer = hc || ac;
       }
-      const logoCol = headers.includes('cheer_logo') ? 'cheer_logo' : headers.includes('home_cheer') || headers.includes('away_cheer')
-        ? ((r.home_cheer || '').trim() || !headers.includes('away_cheer_logo') ? 'home_cheer_logo' : 'away_cheer_logo') : null;
-      if (logoCol && headers.includes(logoCol)) extra.cheer_logo_url = safeLogoUrl((r[logoCol] || '').trim() || null);
+      const logoCol = headers.includes('cheer_logo') ? 'cheer_logo' : (r.home_cheer || '').trim() ? 'home_cheer_logo' : 'away_cheer_logo';
+      if (legacyCheer && headers.includes(logoCol)) {
+        const v = (r[logoCol] || '').trim();
+        // An exported upload address (/logos/cheer/<game> or /logos/squad/<id>) means "keep the squad's logo".
+        legacyLogo = v && !/\/logos\/(cheer|squad)\/\d+(?:\/(?:home|away))?$/.test(v) ? safeLogoUrl(v) : null;
+      }
+      if (legacyCheer && date) {
+        const k = `${date}|${hourSlot(time)}`, prev = legacyCheerSlots.get(k);
+        if (prev && prev.name.toLowerCase() !== legacyCheer.toLowerCase()) out.warnings!.push(`row ${line}: cheer "${legacyCheer}" conflicts with "${prev.name}" (row ${prev.line}) for the ${date} ${hourSlot(time)} slot; one squad per time slot, kept "${prev.name}"`);
+        else if (!prev) legacyCheerSlots.set(k, { name: legacyCheer, logo: legacyLogo, line });
+      } else if (legacyCheer) out.warnings!.push(`row ${line}: cheer "${legacyCheer}" ignored: the game has no date/time (cheer squads are per time slot)`);
       const id = (r.id || '').trim();
       const ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date | null;
       const key = `${court.id}|${ts?.getTime() ?? ''}|${home}|${away}`;
@@ -805,18 +867,6 @@ async function importSchedule(text: string): Promise<ImportResult> {
       } else {
         ex = (await pool.query('SELECT * FROM games WHERE court_id IS NOT DISTINCT FROM $1 AND scheduled_at IS NOT DISTINCT FROM $2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
       }
-      // Cheer logo cells: this game's own exported upload URL keeps the upload; a URL to ANOTHER game's upload
-      // (copied row) is not carried over (warning, no logo); a cleared cell removes an uploaded logo.
-      const clearLogo: string[] = [];
-      { // (older exports wrote /logos/cheer/<id>/home|away; both forms are recognized)
-        const k = 'cheer_logo_url';
-        const mm = typeof extra[k] === 'string' ? /\/logos\/cheer\/(\d+)(?:\/(?:home|away))?$/.exec(extra[k]) : null;
-        if (mm) {
-          if (ex && Number(mm[1]) === ex.id) { if (ex.cheer_logo_data) delete extra[k]; else extra[k] = null; }
-          else { extra[k] = null; out.errors.push(`row ${line}: warning: cheer_logo points to the uploaded logo of game #${mm[1]}; it was not copied (row imported without that logo; upload it for this game in Admin)`); }
-        }
-        if (ex && k in extra && extra[k] === null && ex.cheer_logo_data) clearLogo.push('cheer');
-      }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
       if (!ex) {
         const clash = await floorConflict(court.id, ts, dur, null);
@@ -829,22 +879,135 @@ async function importSchedule(text: string): Promise<ImportResult> {
       const st = await applyStatus(ex, r);
       if (st === 'updated') { out.updated++; continue; }
       const extrasSame = Object.entries(extra).every(([k, v]) => (ex[k] ?? null) === v);
-      const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division && (ex.duration_min ?? null) === dur && extrasSame && !clearLogo.length;
+      const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division && (ex.duration_min ?? null) === dur && extrasSame;
       if (same) { out.skipped++; continue; }
       const clash = await floorConflict(court.id, ts, dur, ex.id);
       if (clash) throw new HttpError(409, clash);
       await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, home_team_id=$4, away_team_id=$5, division=$6, duration_min=$7 WHERE id=$1', [ex.id, court.id, ts, home, away, division, dur]);
       await setGameExtras(ex.id, extra);
-      if (clearLogo.length) await pool.query(`UPDATE games SET cheer_logo_data=NULL, cheer_logo_mime=NULL WHERE id=$1`, [ex.id]);
       out.updated++;
     } catch (e: any) {
       out.errors.push(`row ${line}: ${/duplicate key/.test(e.message) ? 'another game already has this court, time and teams' : e.message}`);
     }
   }
+  // Legacy cheer columns -> cheer slots (squad created when new; an existing slot keeps its locker).
+  let mapped = 0;
+  for (const [k, c] of legacyCheerSlots) {
+    const [date, start] = k.split('|');
+    const sid = await squadId(pool, c.name);
+    if (c.logo) { const q = (await pool.query('SELECT logo_url, logo_data IS NOT NULL AS up FROM cheer_squads WHERE id=$1', [sid])).rows[0]; if (q.logo_url !== c.logo && !q.up) await setSquadLogo(sid, c.logo, null); }
+    if (await setSlotSquad(pool, date, start, sid)) mapped++;
+  }
+  if (mapped) out.warnings!.push(`legacy cheer column: ${mapped} cheer slot(s) set from this file (cheer is now one squad per time slot; use cheer_slots.csv)`);
+  if (mapped) scheduleChanged();
   // Warnings (not errors) for the games in this file, checked against the whole schedule (e.g. a team twice in a weekend).
-  out.warnings = [...new Set([...out.warnings!, ...(await loadWarnings()).filter((w) => touched.has(w.gameId)).map((w) => w.message)])];
+  out.warnings = [...new Set([...out.warnings!, ...(await loadWarnings()).filter((w) => w.gameId != null && touched.has(w.gameId)).map((w) => w.message)])];
   return out;
 }
+
+/** cheer_squads.csv: name (key, case-insensitive), coach, optional logo. Absent column = keep, blank cell = clear. */
+async function importCheerSquads(text: string): Promise<ImportResult> {
+  const { headers, rows } = parseCsvTable(text);
+  requireColumns(headers, ['name'], 'cheer_squads.csv');
+  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [], warnings: [] }; const seen = new Map<string, number>();
+  for (const [i, r] of rows.entries()) {
+    const line = i + 2;
+    try {
+      const name = cheerName(r.name); if (!name) throw new HttpError(400, 'name required');
+      const key = name.toLowerCase();
+      if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (skipped)`); continue; }
+      seen.set(key, line);
+      const ex = (await pool.query('SELECT id, name, coach, logo_url, (logo_data IS NOT NULL) AS up FROM cheer_squads WHERE lower(name)=lower($1)', [name])).rows[0];
+      const coach = headers.includes('coach') ? coachOf(r.coach) : undefined;
+      // logo: a URL; this squad's own exported upload address keeps the upload; blank clears.
+      let logo: string | null | undefined = undefined, keepUpload = false;
+      if (headers.includes('logo')) {
+        const v = (r.logo || '').trim(), mm = /\/logos\/squad\/(\d+)$/.exec(v);
+        if (mm) { if (ex && Number(mm[1]) === ex.id && ex.up) keepUpload = true; else { logo = null; out.warnings!.push(`row ${line}: logo points to another squad's upload; not copied (upload it in Admin)`); } }
+        else logo = v ? safeLogoUrl(v) : null;
+      }
+      if (!ex) {
+        const sid = (await pool.query('INSERT INTO cheer_squads(name, coach, logo_url) VALUES ($1,$2,$3) RETURNING id', [name, coach ?? null, logo ?? null])).rows[0].id;
+        void sid; out.created++; continue;
+      }
+      const same = ex.name === name && (coach === undefined || (ex.coach ?? null) === coach)
+        && (keepUpload || logo === undefined || ((ex.logo_url ?? null) === logo && !(logo === null && ex.up)));
+      if (same) { out.skipped++; continue; }
+      await pool.query('UPDATE cheer_squads SET name=$2 WHERE id=$1', [ex.id, name]);
+      if (coach !== undefined) await pool.query('UPDATE cheer_squads SET coach=$2 WHERE id=$1', [ex.id, coach]);
+      if (!keepUpload && logo !== undefined) await setSquadLogo(ex.id, logo, null, logo === null);
+      out.updated++;
+    } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
+  }
+  return out;
+}
+
+/**
+ * cheer_slots.csv: date, time, squad, locker. Key = date + time floored to the hour (09:05 -> the 09:00 slot).
+ * Blank squad = no cheer in that slot (deletes it). Unknown squad = error (import cheer_squads.csv first).
+ * locker: absent column = keep, blank = clear.
+ */
+async function importCheerSlots(text: string): Promise<ImportResult> {
+  const { headers, rows } = parseCsvTable(text);
+  requireColumns(headers, ['date', 'time', 'squad'], 'cheer_slots.csv');
+  const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [], warnings: [] }; const seen = new Map<string, number>();
+  for (const [i, r] of rows.entries()) {
+    const line = i + 2;
+    try {
+      const date = (r.date || '').trim(), time = (r.time || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date + 'T00:00:00Z'))) throw new HttpError(400, `date "${r.date}" must be YYYY-MM-DD`);
+      let start: string; try { start = hourSlot(time); } catch (e: any) { throw new HttpError(400, e.message); }
+      if (!/:00$/.test(time)) out.warnings!.push(`row ${line}: time ${time} is in the ${start} slot (slots are whole hours)`);
+      const key = `${date}|${start}`;
+      if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (same ${start} slot, skipped)`); continue; }
+      seen.set(key, line);
+      const ex = (await pool.query('SELECT id, squad_id, locker FROM cheer_slots WHERE date=$1 AND slot_start=$2', [date, start])).rows[0];
+      const squad = cheerName(r.squad);
+      if (!squad) {
+        if (ex) { await pool.query('DELETE FROM cheer_slots WHERE id=$1', [ex.id]); out.updated++; } else out.skipped++;
+        continue;
+      }
+      const q = (await pool.query('SELECT id FROM cheer_squads WHERE lower(name)=lower($1)', [squad])).rows[0];
+      if (!q) throw new HttpError(400, `unknown cheer squad "${squad}" (import cheer_squads.csv first)`);
+      const locker = headers.includes('locker') ? lockerOf(r.locker) : undefined;
+      if (!ex) { await pool.query('INSERT INTO cheer_slots(date, slot_start, squad_id, locker) VALUES ($1,$2,$3,$4)', [date, start, q.id, locker ?? null]); out.created++; continue; }
+      if (ex.squad_id === q.id && (locker === undefined || (ex.locker ?? null) === locker)) { out.skipped++; continue; }
+      await pool.query('UPDATE cheer_slots SET squad_id=$2, locker=CASE WHEN $4 THEN $3 ELSE locker END WHERE id=$1', [ex.id, q.id, locker ?? null, locker !== undefined]);
+      out.updated++;
+    } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
+  }
+  return out;
+}
+
+/** Admin cheer squad body -> validated values (name, coach, logo URL/upload). */
+async function upsertSquad(b: any, id?: number): Promise<number> {
+  const name = cheerName(b.name); if (!name) throw new HttpError(400, 'name required');
+  const coach = 'coach' in b ? coachOf(b.coach) : undefined;
+  const url = 'logo_url' in b ? safeLogoUrl(String(b.logo_url || '').trim() || null) : undefined;
+  const logo = decodeLogo(b.logo_data_url);
+  try {
+    if (!id) id = (await pool.query('INSERT INTO cheer_squads(name, coach) VALUES ($1,$2) RETURNING id', [name, coach ?? null])).rows[0].id as number;
+    else {
+      const r = await pool.query('UPDATE cheer_squads SET name=$2 WHERE id=$1', [id, name]);
+      if (!r.rowCount) throw new HttpError(404, 'cheer squad not found');
+      if (coach !== undefined) await pool.query('UPDATE cheer_squads SET coach=$2 WHERE id=$1', [id, coach]);
+    }
+  } catch (e: any) { if (/cheer_squads_name_uk/.test(e.message)) throw new HttpError(409, `A cheer squad named "${name}" already exists.`); throw e; }
+  await setSquadLogo(id, logo ? undefined : url, logo, !!b.remove_logo);
+  return id;
+}
+/** Admin cheer slot body: date, time (any HH:MM in the hour), squad_id (or squad name), locker. */
+async function slotValues(b: any) {
+  const date = String(b.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'date must be YYYY-MM-DD');
+  let start: string; try { start = hourSlot(String(b.time ?? b.slot_start ?? '')); } catch (e: any) { throw new HttpError(400, e.message); }
+  let sid = b.squad_id ? Number(b.squad_id) : null;
+  if (!sid && b.squad) sid = (await pool.query('SELECT id FROM cheer_squads WHERE lower(name)=lower($1)', [String(b.squad).trim()])).rows[0]?.id ?? null;
+  if (!sid || !(await pool.query('SELECT 1 FROM cheer_squads WHERE id=$1', [sid])).rowCount) throw new HttpError(400, 'pick an existing cheer squad (squad_id)');
+  return { date, start, sid, locker: 'locker' in b ? lockerOf(b.locker) : undefined };
+}
+const SLOT_SELECT = `SELECT s.id, to_char(s.date, 'YYYY-MM-DD') AS date, to_char(s.slot_start, 'HH24:MI') AS time, s.squad_id, q.name AS squad, q.coach, s.locker
+  FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id`;
 
 async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL): Promise<void> {
   const p = u.pathname, m = req.method || 'GET';
@@ -882,7 +1045,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
 
   if (seg[1] === 'teams') {
     const id = seg[2] ? Number(seg[2]) : undefined;
-    if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, grade, grade_order, gender, primary_color, secondary_color, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)')).rows);
+    if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, grade, grade_order, gender, coach, primary_color, secondary_color, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)')).rows);
     if (m === 'POST') return json(res, 201, { id: await upsertTeam(await readJson(req)) });
     if (m === 'PUT' && id) { await upsertTeam(await readJson(req), id); await refreshAllCourts(); return json(res, 200, { id }); }
     if (m === 'DELETE' && id) {
@@ -942,8 +1105,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         g.home_team_id, h.name AS home, g.away_team_id, a.name AS away, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, LEAST(h.grade_order, a.grade_order) AS grade_order,
         COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int, 0) AS home_score,
         COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int, 0) AS away_score,
-        (c.current_game_id = g.id) AS on_court, g.duration_min, g.swap_colors, g.cheer, g.cheer_logo_url, (g.cheer_logo_data IS NOT NULL) AS cheer_has_logo
+        (c.current_game_id = g.id) AS on_court, g.duration_min, g.swap_colors, g.home_locker, g.away_locker, h.coach AS home_coach, a.coach AS away_coach,
+        cs.id AS cheer_slot_id, cs.locker AS cheer_locker, cq.id AS cheer_squad_id, cq.name AS cheer, cq.coach AS cheer_coach, cq.logo_url AS cheer_logo_url, (cq.logo_data IS NOT NULL) AS cheer_has_logo
         FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
+        ${CHEER_JOIN}
         ORDER BY g.scheduled_at NULLS LAST, g.id`);
       const warn = await loadWarnings();
       for (const r of rows) r.warnings = warn.filter((w) => w.gameId === r.id).map((w) => w.message);
@@ -1018,10 +1183,58 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       return json(res, 200, (await pool.query('SELECT seq, actor, command, created_at FROM game_events WHERE game_id=$1 ORDER BY id', [id])).rows);
     }
   }
+  if (seg[1] === 'cheer-squads') {
+    const id = seg[2] ? Number(seg[2]) : undefined;
+    if (m === 'GET' && !id) return json(res, 200, (await pool.query(`SELECT q.id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo,
+      (SELECT count(*)::int FROM cheer_slots s WHERE s.squad_id=q.id) AS slots FROM cheer_squads q ORDER BY lower(q.name)`)).rows);
+    if (m === 'POST' && !id) { const nid = await upsertSquad(await readJson(req)); scheduleChanged(); return json(res, 201, { id: nid }); }
+    if (m === 'PUT' && id) { await upsertSquad(await readJson(req), id); await refreshAllCourts(); scheduleChanged(); return json(res, 200, { id }); }
+    if (m === 'DELETE' && id) {
+      const q = (await pool.query('SELECT name, (SELECT count(*)::int FROM cheer_slots WHERE squad_id=$1) AS n FROM cheer_squads WHERE id=$1', [id])).rows[0];
+      if (!q) return json(res, 404, { error: 'cheer squad not found' });
+      if (q.n > 0) return json(res, 409, { error: `"${q.name}" cheers in ${q.n} time slot${q.n === 1 ? '' : 's'}. Remove or change those slots first, then delete the squad.` });
+      await pool.query('DELETE FROM cheer_squads WHERE id=$1', [id]); return json(res, 200, { ok: true });
+    }
+  }
+  if (seg[1] === 'cheer-slots') {
+    const id = seg[2] ? Number(seg[2]) : undefined;
+    if (m === 'GET' && !id) {
+      const d = u.searchParams.get('date');
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new HttpError(400, 'date must be YYYY-MM-DD');
+      return json(res, 200, (await pool.query(`${SLOT_SELECT} ${d ? 'WHERE s.date=$1::date' : ''} ORDER BY s.date, s.slot_start`, d ? [d] : [])).rows);
+    }
+    if (m === 'POST' && !id) {
+      const v = await slotValues(await readJson(req));
+      try {
+        const r = await pool.query('INSERT INTO cheer_slots(date, slot_start, squad_id, locker) VALUES ($1,$2,$3,$4) RETURNING id', [v.date, v.start, v.sid, v.locker ?? null]);
+        await refreshAllCourts(); scheduleChanged(); return json(res, 201, { id: r.rows[0].id, time: v.start });
+      } catch (e: any) { if (/duplicate key/.test(e.message)) throw new HttpError(409, `The ${v.date} ${v.start} slot already has a cheer squad; edit that slot instead.`); throw e; }
+    }
+    if (m === 'PUT' && id) {
+      const b = await readJson(req);
+      const ex = (await pool.query(`${SLOT_SELECT} WHERE s.id=$1`, [id])).rows[0];
+      if (!ex) throw new HttpError(404, 'cheer slot not found');
+      const v = await slotValues({ date: ex.date, time: ex.time, squad_id: ex.squad_id, ...b });
+      try { await pool.query('UPDATE cheer_slots SET date=$2, slot_start=$3, squad_id=$4, locker=CASE WHEN $6 THEN $5 ELSE locker END WHERE id=$1', [id, v.date, v.start, v.sid, v.locker ?? null, v.locker !== undefined]); }
+      catch (e: any) { if (/duplicate key/.test(e.message)) throw new HttpError(409, `The ${v.date} ${v.start} slot already has a cheer squad.`); throw e; }
+      await refreshAllCourts(); scheduleChanged(); return json(res, 200, { id });
+    }
+    if (m === 'DELETE' && id) { await pool.query('DELETE FROM cheer_slots WHERE id=$1', [id]); await refreshAllCourts(); scheduleChanged(); return json(res, 200, { ok: true }); }
+  }
   if (p === '/api/warnings' && m === 'GET') return json(res, 200, await loadWarnings());
+  if (p === '/api/export/cheer_squads.csv') {
+    const { rows } = await pool.query(`SELECT name, coach, CASE WHEN logo_data IS NOT NULL THEN $1 || '/logos/squad/' || id ELSE logo_url END AS logo FROM cheer_squads ORDER BY lower(name)`, [baseUrl(req)]);
+    return csvOut(res, 'cheer_squads.csv', toCsv(['name', 'coach', 'logo'], rows));
+  }
+  if (p === '/api/export/cheer_slots.csv') {
+    const { rows } = await pool.query(`SELECT date, time, squad, locker FROM (${SLOT_SELECT}) x ORDER BY date, time`);
+    return csvOut(res, 'cheer_slots.csv', toCsv(['date', 'time', 'squad', 'locker'], rows));
+  }
+  if (p === '/api/import/cheer_squads.csv' && m === 'POST') { const r = await importCheerSquads(await readBody(req)); await refreshAllCourts(); scheduleChanged(); return json(res, 200, r); }
+  if (p === '/api/import/cheer_slots.csv' && m === 'POST') { const r = await importCheerSlots(await readBody(req)); await refreshAllCourts(); scheduleChanged(); return json(res, 200, r); }
   if (p === '/api/export/teams.csv') {
-    const { rows } = await pool.query('SELECT name, short_name, grade, gender, logo_url FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)');
-    return csvOut(res, 'teams.csv', toCsv(['name', 'short_name', 'grade', 'gender', 'logo_url'], rows));
+    const { rows } = await pool.query('SELECT name, short_name, grade, gender, coach, logo_url FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)');
+    return csvOut(res, 'teams.csv', toCsv(['name', 'short_name', 'grade', 'gender', 'coach', 'logo_url'], rows));
   }
   if (p === '/api/export/schedule.csv') {
     const { rows } = await pool.query(`SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'),'YYYY-MM-DD') AS date,
@@ -1029,11 +1242,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       h.name AS home, a.name AS away,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int) END AS home_score,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int) END AS away_score, g.status, g.duration_min AS minutes, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender,
-      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.cheer,
-      CASE WHEN g.cheer_logo_data IS NOT NULL THEN $1 || '/logos/cheer/' || g.id ELSE g.cheer_logo_url END AS cheer_logo
+      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.home_locker, g.away_locker
       FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
-      ORDER BY g.scheduled_at NULLS LAST, g.id`, [baseUrl(req)]);
-    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'gender', 'swap_colors', 'cheer', 'cheer_logo'], rows));
+      ORDER BY g.scheduled_at NULLS LAST, g.id`);
+    // Cheer is no longer a schedule column: it is per time slot (cheer_slots.csv).
+    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'gender', 'swap_colors', 'home_locker', 'away_locker'], rows));
   }
   if (p === '/api/import/teams.csv' && m === 'POST') { const r = await importTeams(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   if (p === '/api/export/courts.csv') {
@@ -1077,6 +1290,13 @@ const server = http.createServer(async (req, res) => {
     const cm = /^\/logos\/cheer\/(\d+)(?:\/(?:home|away))?$/.exec(u.pathname); // one squad per game; old /home|/away links still work
     if (cm) {
       const r = (await pool.query(`SELECT cheer_logo_data AS d, cheer_logo_mime AS m FROM games WHERE id=$1`, [Number(cm[1])])).rows[0];
+      if (!r?.d || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(r.m)) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'content-type': r.m, 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
+      return res.end(r.d);
+    }
+    const sm = /^\/logos\/squad\/(\d+)$/.exec(u.pathname); // cheer squad uploads (moved from games.cheer_logo_*)
+    if (sm) {
+      const r = (await pool.query('SELECT logo_data AS d, logo_mime AS m FROM cheer_squads WHERE id=$1', [Number(sm[1])])).rows[0];
       if (!r?.d || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(r.m)) { res.writeHead(404); return res.end(); }
       res.writeHead(200, { 'content-type': r.m, 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
       return res.end(r.d);

@@ -105,10 +105,39 @@ export const SPLIT_COURTS = ['west', 'east'];
 export const SPLIT_START_MIN = 8 * 60, SPLIT_END_MIN = 16 * 60;
 export type WarnGame = {
   id: number; date: string | null; startMin: number | null; durMin: number; court: string | null;
-  grade: string | null; label: string | null; homeId: number; awayId: number; home: string; away: string; hasCheer: boolean;
+  grade: string | null; label: string | null; homeId: number; awayId: number; home: string; away: string;
+  /** The cheer squad of the game's time slot (null = that slot has no cheer). */
+  hasCheer: boolean; cheer?: string | null;
 };
-export type Warning = { gameId: number; code: 'team-twice-weekend' | 'cheer-not-allowed' | 'split-outside-hours'; message: string };
-const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+export type WarningCode = 'team-twice-weekend' | 'cheer-not-allowed' | 'split-outside-hours' | 'cheer-slot-empty' | 'cheer-slot-conflict';
+/** gameId is null for slot-level warnings (cheer-slot-empty / cheer-slot-conflict); those carry `slot`. */
+export type Warning = { gameId: number | null; code: WarningCode; message: string; slot?: { date: string; start: string }; candidates?: string[] };
+
+// ---- Cheer by time slot (2026-10): one optional squad per scheduled 1-hour block, shared by West, East and Full.
+/** "09:05" -> "09:00": a game belongs to the slot its start falls in (date + start floored to the hour). */
+export function hourSlot(time: string): string {
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(String(time ?? '').trim());
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new Error(`time "${time}" must be HH:MM (24h, league time)`);
+  return `${m[1].padStart(2, '0')}:00`;
+}
+/** Slot start (minutes after midnight) of a game start. */
+export const slotStartMin = (startMin: number) => Math.floor(startMin / 60) * 60;
+export type CheerSlotInfo = { date: string; start: string; squad: string };
+export type CheerConflict = { date: string; start: string; candidates: string[] };
+/** Slot-level warnings: a cheer slot whose hour has no games, and legacy per-game data with 2+ squads in one slot. */
+export function cheerSlotWarnings(slots: CheerSlotInfo[], games: Pick<WarnGame, 'date' | 'startMin'>[], conflicts: CheerConflict[]): Warning[] {
+  const out: Warning[] = [];
+  const busy = new Set(games.filter((g) => g.date && g.startMin != null).map((g) => `${g.date}|${hhmm(slotStartMin(g.startMin!))}`));
+  for (const s of slots) {
+    if (!busy.has(`${s.date}|${s.start}`)) out.push({ gameId: null, code: 'cheer-slot-empty', slot: { date: s.date, start: s.start }, message: `cheer slot ${dayLabel(s.date).split(',')[0].slice(0, 3)} ${s.date} ${s.start} (${s.squad}) has no games in that hour` });
+  }
+  for (const c of conflicts) {
+    out.push({ gameId: null, code: 'cheer-slot-conflict', slot: { date: c.date, start: c.start }, candidates: c.candidates,
+      message: `cheer slot ${c.date} ${c.start}: the old per-game data has ${c.candidates.length} squads (${c.candidates.join(', ')}); no slot was created, pick one in Admin` });
+  }
+  return out;
+}
+export const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 /** Friday date of a Fri/Sat game (its weekend), else null. */
 const weekendOf = (d: string) => (dowOf(d) === 5 ? d : dowOf(d) === 6 ? addDays(d, -1) : null);
 export function scheduleWarnings(games: WarnGame[]): Warning[] {
@@ -133,10 +162,11 @@ export function scheduleWarnings(games: WarnGame[]): Warning[] {
       const go = gradeOrder(g.grade);
       const why = !(go >= 2 && go <= 4) ? `cheer squads are for 2nd–4th grade (this is ${g.grade || 'no grade'})`
         : !(g.date && dowOf(g.date) === 6 && split && inHours) ? 'cheer squads are only on Saturday split-court games (West/East, 08:00–16:00)' : null;
-      if (why) out.push({ gameId: g.id, code: 'cheer-not-allowed', message: `game #${g.id} (${g.home} vs ${g.away}): ${why}` });
+      const slot = g.startMin != null ? ` at ${hhmm(slotStartMin(g.startMin))}` : '';
+      if (why) out.push({ gameId: g.id, code: 'cheer-not-allowed', message: `game #${g.id} (${g.home} vs ${g.away}) is in the cheer slot${slot}${g.cheer ? ' (' + g.cheer + ')' : ''}: ${why}` });
     }
   }
-  return out.sort((a, b) => a.gameId - b.gameId || a.code.localeCompare(b.code));
+  return out.sort((a, b) => (a.gameId ?? 0) - (b.gameId ?? 0) || a.code.localeCompare(b.code));
 }
 
 // ---- Demo seed plan (pure, so tests can check the invariants without a database).
