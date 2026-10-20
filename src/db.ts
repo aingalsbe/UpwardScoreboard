@@ -310,15 +310,20 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
     }
     await client.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
       ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')`);
-    const team = async (name: string, grade: string, gender: string) => (await client.query(
-      'INSERT INTO teams(name, short_name, grade, grade_order, gender) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [name, name.slice(0, 3).toUpperCase(), grade, gradeOrder(grade), gender])).rows[0].id;
+    const team = async (name: string, grade: string, gender: string, coach: string) => (await client.query(
+      'INSERT INTO teams(name, short_name, grade, grade_order, gender, coach) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [name, name.slice(0, 3).toUpperCase(), grade, gradeOrder(grade), gender, coach])).rows[0].id;
     for (const g of plan) {
-      const h = await team(g.home, g.grade, g.gender), a = await team(g.away, g.grade, g.gender);
-      await client.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division)
-        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, ($4 || ' ' || $5)::timestamp AT TIME ZONE 'America/Chicago', $6)`,
-      [g.court, h, a, g.date, g.time, `${g.grade} ${g.gender}`]);
-      if (g.cheer) await setSlotSquad(client, g.date, hourSlot(g.time), await squadId(client, g.cheer)); // one squad per hour
+      const h = await team(g.home, g.grade, g.gender, g.homeCoach), a = await team(g.away, g.grade, g.gender, g.awayCoach);
+      await client.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, home_locker, away_locker)
+        VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, ($4 || ' ' || $5)::timestamp AT TIME ZONE 'America/Chicago', $6, $7, $8)`,
+      [g.court, h, a, g.date, g.time, `${g.grade} ${g.gender}`, g.homeLocker, g.awayLocker]);
+      if (g.cheer) { // one squad per hour, shared by every court
+        const sid = await squadId(client, g.cheer);
+        await client.query('UPDATE cheer_squads SET coach=$2 WHERE id=$1', [sid, g.cheerCoach ?? null]);
+        await setSlotSquad(client, g.date, hourSlot(g.time), sid);
+        await client.query('UPDATE cheer_slots SET locker=$3 WHERE date=$1 AND slot_start=$2', [g.date, hourSlot(g.time), g.cheerLocker ?? null]);
+      }
     }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }

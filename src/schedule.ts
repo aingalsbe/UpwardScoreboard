@@ -170,7 +170,13 @@ export function scheduleWarnings(games: WarnGame[]): Warning[] {
 }
 
 // ---- Demo seed plan (pure, so tests can check the invariants without a database).
-export type SeedGame = { date: string; time: string; court: 'full' | 'west' | 'east'; grade: string; gender: 'Boys' | 'Girls'; home: string; away: string; cheer?: string };
+export type SeedGame = { date: string; time: string; court: 'full' | 'west' | 'east'; grade: string; gender: 'Boys' | 'Girls'; home: string; away: string; cheer?: string;
+  /** Example data (2026-10): coach first names (season-long), locker rooms (per game), cheer squad coach + slot locker. */
+  homeCoach: string; awayCoach: string; homeLocker: string; awayLocker: string; cheerCoach?: string; cheerLocker?: string };
+/** Example first names (one coach per team for the season; pages show "Coach <name>"). */
+export const DEMO_COACHES = ['Mike', 'Sarah', 'David', 'Rachel', 'Chris', 'Amy', 'Josh', 'Laura', 'Ben', 'Katie', 'Matt', 'Emily', 'Tyler', 'Megan', 'Ryan', 'Hannah'];
+/** Example locker rooms (they change every week): CH (church hall) and numbered rooms. */
+export const DEMO_ROOMS = ['CH', '1', '2', '3', '4', '5'];
 const BOYS = ['Eagles', 'Lions', 'Bears', 'Hawks', 'Tigers', 'Rams', 'Knights', 'Warriors', 'Panthers', 'Falcons', 'Wildcats', 'Mustangs'];
 const GIRLS = ['Stars', 'Comets', 'Lightning', 'Sparks', 'Hornets', 'Cardinals', 'Blaze', 'Jaguars', 'Storm', 'Thunder', 'Doves', 'Bluebirds'];
 /**
@@ -188,7 +194,9 @@ export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
   const games: SeedGame[] = [];
   const add = (date: string, time: string, court: SeedGame['court'], grade: string, gender: 'Boys' | 'Girls', cheer?: string) => {
     const [home, away] = pair(grade, gender);
-    games.push({ date, time, court, grade, gender, home, away, ...(cheer ? { cheer } : {}) });
+    const i = games.length, C = DEMO_COACHES, R = DEMO_ROOMS;
+    games.push({ date, time, court, grade, gender, home, away, homeCoach: C[(2 * i) % C.length], awayCoach: C[(2 * i + 1) % C.length],
+      homeLocker: R[(2 * i) % R.length], awayLocker: R[(2 * i + 1) % R.length], ...(cheer ? { cheer } : {}) });
   };
   // Friday night: Full Court, grades 5–6.
   add(w.fri, '17:30', 'full', '5th Grade', 'Boys'); add(w.fri, '18:30', 'full', '5th Grade', 'Girls'); add(w.fri, '19:30', 'full', '6th Grade', 'Boys');
@@ -202,5 +210,7 @@ export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
     add(w.sat, t, 'east', gradeAt(h), boysWest ? 'Girls' : 'Boys', cheers[`${t} east`]);
   }
   add(w.sat, '16:30', 'full', '6th Grade', 'Girls'); add(w.sat, '17:30', 'full', '6th Grade', 'Boys'); add(w.sat, '18:30', 'full', '5th Grade', 'Girls');
+  let k = 0; // cheer squad coach + the slot's locker room (example data)
+  for (const g of games) if (g.cheer) { g.cheerCoach = DEMO_COACHES[(k * 5 + 3) % DEMO_COACHES.length]; g.cheerLocker = DEMO_ROOMS[(k + 1) % DEMO_ROOMS.length]; k++; }
   return games;
 }
