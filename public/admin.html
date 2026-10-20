@@ -19,7 +19,7 @@
       <h1>🏀 UpwardScoreboard · Admin</h1>
       <nav>
         <a href="#today" class="tab">Today</a><a href="#teams" class="tab">Teams</a><a href="#courts" class="tab">Courts</a>
-        <a href="#schedule" class="tab">Schedule</a><a href="#data" class="tab">Import / Export</a>
+        <a href="#schedule" class="tab">Schedule</a><a href="#cheer" class="tab">Cheer</a><a href="#data" class="tab">Import / Export</a>
         <button id="logout" class="link">Log out</button>
       </nav>
     </header>
@@ -50,12 +50,13 @@
         <label>Grade <input name="grade" maxlength="30" placeholder="5th Grade" list="grade-list"></label>
         <datalist id="grade-list"></datalist>
         <label>Gender <select name="gender"><option value="">—</option><option>Boys</option><option>Girls</option></select></label>
+        <label>Coach (first name) <input name="coach" maxlength="30" placeholder="Mike"></label>
         <label>Logo URL <input name="logo_url" placeholder="https://… (optional)"></label>
         <label>…or upload logo <input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"></label>
         <div class="actions"><button class="primary" id="team-save">Add team</button><button type="reset" class="link">Clear</button></div>
       </form>
       <label class="grade-filter">Grade <select id="team-grade-filter" data-grade-filter="teams"><option value="">All grades</option></select></label>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Grade</th><th>Gender</th><th>Name</th><th>Short</th><th></th></tr></thead><tbody id="team-rows"></tbody></table></div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Grade</th><th>Gender</th><th>Name</th><th>Short</th><th>Coach</th><th></th></tr></thead><tbody id="team-rows"></tbody></table></div>
     </section>
 
     <section id="courts" class="view">
@@ -83,13 +84,9 @@
         <label>Home <select name="home_team_id" required></select></label>
         <label>Away <select name="away_team_id" required></select></label>
         <label class="swap-toggle"><input type="checkbox" name="swap_colors" id="swap-colors"> Swap colors (home wears dark, away wears light)</label>
-        <fieldset class="cheer-fields full" id="cheer-fields">
-          <legend>Cheer squad (optional, one per game)</legend>
-          <label>Cheer squad <input name="cheer" maxlength="40" placeholder="e.g. LBC Spirit Cheer"></label>
-          <label>Cheer logo URL <input name="cheer_logo_url" placeholder="https://… (optional)"></label>
-          <label>…or upload <input type="file" name="cheer_logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
-          <p class="muted full">For 2nd–4th grade Saturday West/East games (08:00–16:00); other games get a warning.</p>
-        </fieldset>
+        <label>Home locker room <input name="home_locker" maxlength="8" placeholder="CH"></label>
+        <label>Away locker room <input name="away_locker" maxlength="8" placeholder="2"></label>
+        <p class="muted full">Locker rooms change every week (no default). Cheer squads are set per time slot on the Cheer tab.</p>
         <details class="full advanced"><summary>Advanced: matchup overrides (display names, alternate colors instead of the season colors)</summary>
           <div class="form">
             <label>Home display name <input name="homeName"></label>
@@ -103,9 +100,28 @@
         <div class="actions"><button class="primary" id="game-save">Add game</button><button type="reset" class="link">Clear</button></div>
       </form>
       <div class="schedule-warnings" id="schedule-warnings" role="status" aria-live="polite" hidden></div>
+      <div class="schedule-warnings slot-warnings" data-slot-warnings role="status" aria-live="polite" hidden></div>
       <h2>All games</h2>
       <label class="grade-filter">Grade <select id="game-grade-filter" data-grade-filter="games"><option value="">All grades</option></select></label>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Court</th><th>Grade</th><th>Matchup</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody id="game-rows"></tbody></table></div>
+    </section>
+
+    <section id="cheer" class="view">
+      <h2>Cheer squads</h2>
+      <form id="squad-form" class="card form">
+        <input type="hidden" name="id">
+        <label>Name <input name="name" required maxlength="40" placeholder="Pep Power"></label>
+        <label>Coach (first name) <input name="coach" maxlength="30" placeholder="Tasha"></label>
+        <label>Logo URL <input name="logo_url" placeholder="https://… (optional)"></label>
+        <label>…or upload logo <input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+        <div class="actions"><button class="primary" id="squad-save">Add squad</button><button type="reset" class="link">Clear</button></div>
+      </form>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Name</th><th>Coach</th><th>Slots</th><th></th></tr></thead><tbody id="squad-rows"></tbody></table></div>
+      <h2>Cheer by time slot</h2>
+      <p class="muted">One squad per hour, shared by West, East and Full. A game belongs to the hour it starts in (9:05 is in the 9:00 slot). "None" = no cheer that hour.</p>
+      <label class="grade-filter">Date <input type="date" id="slot-date"></label>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Hour</th><th>Games</th><th>Squad</th><th>Locker room</th><th></th></tr></thead><tbody id="slot-rows"></tbody></table></div>
+      <div class="schedule-warnings slot-warnings" data-slot-warnings role="status" aria-live="polite" hidden></div>
     </section>
 
     <section id="data" class="view">
@@ -113,7 +129,7 @@
       <div class="cards">
         <div class="card">
           <h3>Teams</h3>
-          <p class="muted">Columns: <code>name, short_name, grade, gender, logo_url</code> (gender: Boys or Girls; names are unique per grade + gender). Existing names are updated. Old files with color columns still import; the colors are ignored (season colors apply).</p>
+          <p class="muted">Columns: <code>name, short_name, grade, gender, coach, logo_url</code> (coach: first name, optional) (gender: Boys or Girls; names are unique per grade + gender). Existing names are updated. Old files with color columns still import; the colors are ignored (season colors apply).</p>
           <p><a class="button" href="/api/export/teams.csv">Export teams.csv</a></p>
           <input type="file" id="import-teams" accept=".csv,text/csv">
         </div>
@@ -125,9 +141,21 @@
         </div>
         <div class="card">
           <h3>Schedule</h3>
-          <p class="muted">Columns: <code>id, date (YYYY-MM-DD), time (HH:MM), court (slug), division, home, away</code>, optional <code>grade, gender, minutes, swap_colors, cheer, cheer_logo</code> (older files with home_cheer/away_cheer still import: one squad per game). Keep the id column when editing an export. Times are league-local (TZ). Unknown courts and teams are rejected. A Full game can't overlap a West or East game. Export adds home_score, away_score, status (ignored on import).</p>
+          <p class="muted">Columns: <code>id, date (YYYY-MM-DD), time (HH:MM), court (slug), division, home, away</code>, optional <code>grade, gender, minutes, swap_colors, home_locker, away_locker</code>. Older files with cheer / cheer_logo (or home_cheer/away_cheer) still import: the squad is set for that game's hour. Keep the id column when editing an export. Times are league-local (TZ). Unknown courts and teams are rejected. A Full game can't overlap a West or East game. Export adds home_score, away_score, status (ignored on import).</p>
           <p><a class="button" href="/api/export/schedule.csv">Export schedule.csv</a></p>
           <input type="file" id="import-schedule" accept=".csv,text/csv">
+        </div>
+        <div class="card">
+          <h3>Cheer squads</h3>
+          <p class="muted">Columns: <code>name, coach</code>, optional <code>logo</code>. Matched by name. Import before cheer slots.</p>
+          <p><a class="button" href="/api/export/cheer_squads.csv">Export cheer_squads.csv</a></p>
+          <input type="file" id="import-cheer-squads" accept=".csv,text/csv">
+        </div>
+        <div class="card">
+          <h3>Cheer slots</h3>
+          <p class="muted">Columns: <code>date, time, squad, locker</code>. One squad per hour (all courts); matched by date + hour. A blank squad removes the cheer for that hour.</p>
+          <p><a class="button" href="/api/export/cheer_slots.csv">Export cheer_slots.csv</a></p>
+          <input type="file" id="import-cheer-slots" accept=".csv,text/csv">
         </div>
       </div>
       <p class="muted">In Google Sheets: File → Download → CSV to import here; File → Import → Upload to load an export.</p>

@@ -3,7 +3,8 @@ import { todayGames, resultOf } from './admin-today.js';
 import { connect } from './common.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let teams = [], courts = [], games = [];
+let teams = [], courts = [], games = [], squads = [], slots = [], warnings = [];
+let slotDate = '', slotsDirty = false; // cheer slot editor: the chosen date, and unsaved edits (A2: refresh must not reset them)
 let leagueTz; // all times shown in the league time zone (server TZ), not the viewer's
 
 async function api(path, opts = {}) {
@@ -37,7 +38,9 @@ const when = (iso) => (iso ? new Date(iso).toLocaleString([], { timeZone: league
 const swatch = (t) => `<span class="swatch" style="background:${esc(t.primary_color)};border-color:${esc(t.secondary_color)}"></span>`;
 
 async function load() {
-  [teams, courts, games] = await Promise.all([api('/api/teams'), api('/api/courts'), api('/api/games')]);
+  [teams, courts, games, squads, warnings] = await Promise.all([api('/api/teams'), api('/api/courts'), api('/api/games'), api('/api/cheer-squads'), api('/api/warnings')]);
+  if (!slotDate) slotDate = defaultSlotDate();
+  slots = await api(`/api/cheer-slots?date=${slotDate}`);
   loadSeason().catch(() => {});
   render();
 }
@@ -63,6 +66,53 @@ function todayRow(g) {
   return gameRow(g, { res, cls: 'today-row', data: `data-status="${esc(g.status)}" data-result="${r.kind}" data-game-id="${g.id}"${r.winner ? ` data-winner="${r.winner}"` : ''}` });
 }
 const leagueDate = (iso) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: leagueTz });
+const leagueHM = (iso) => new Date(iso).toLocaleTimeString('sv-SE', { timeZone: leagueTz, hour: '2-digit', minute: '2-digit' });
+const hourOf = (hm) => `${hm.slice(0, 2)}:00`;
+const ampm = (hm) => { const [h, m] = hm.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+/** Slot editor default: today if it has games, else the next day with games, else today. */
+function defaultSlotDate() {
+  const today = leagueDate(Date.now());
+  const days = [...new Set(games.filter((g) => g.scheduled_at).map((g) => leagueDate(g.scheduled_at)))].sort();
+  return days.includes(today) ? today : days.find((d) => d > today) || today;
+}
+
+/** Cheer squads table (Cheer tab). */
+function renderSquads() {
+  $('#squad-rows').innerHTML = squads.map((q) => `<tr data-squad-id="${q.id}"><td>${q.has_logo || q.logo_url ? `<img class="mini" src="${q.has_logo ? `/logos/squad/${q.id}?v=${Date.now()}` : esc(q.logo_url)}" alt="">` : ''}</td>
+    <td>${esc(q.name)}</td><td>${q.coach ? `Coach ${esc(q.coach)}` : '<span class="muted">—</span>'}</td><td>${q.slots}</td>
+    <td class="right"><button class="link sm" data-edit-squad="${q.id}">Edit</button><button class="link sm" data-del-squad="${q.id}">Delete</button></td></tr>`).join('')
+    || '<tr><td colspan="5" class="muted">No cheer squads yet</td></tr>';
+}
+/**
+ * Cheer-by-hour editor for slotDate: one row per hour that has games (plus hours that already have a slot).
+ * A2: rebuilt only on load when nothing is being edited (slotsDirty / focus inside), so the 10 s refresh keeps edits.
+ */
+function renderSlots(force = false) {
+  const box = $('#slot-rows');
+  if (!force && (slotsDirty || box.contains(document.activeElement))) return;
+  slotsDirty = false;
+  $('#slot-date').value = slotDate;
+  const day = games.filter((g) => g.scheduled_at && leagueDate(g.scheduled_at) === slotDate);
+  const hours = [...new Set([...day.map((g) => hourOf(leagueHM(g.scheduled_at))), ...slots.map((x) => x.time)])].sort();
+  const opts = (sel) => `<option value="">— none —</option>` + squads.map((q) => `<option value="${q.id}"${q.id === sel ? ' selected' : ''}>${esc(q.name)}</option>`).join('');
+  box.innerHTML = hours.map((h) => {
+    const sl = slots.find((x) => x.time === h), gs = day.filter((g) => hourOf(leagueHM(g.scheduled_at)) === h);
+    return `<tr data-slot-hour="${h}"${sl ? ` data-slot-id="${sl.id}"` : ''}><td class="when">${ampm(h)}</td>
+      <td>${gs.map((g) => `${esc(g.court || '—')} ${leagueHM(g.scheduled_at)} ${esc(g.label || g.grade || '')}`).join('<br>') || '<span class="muted">no games this hour</span>'}</td>
+      <td><select name="squad_id" aria-label="Cheer squad at ${ampm(h)}">${opts(sl?.squad_id)}</select></td>
+      <td><input name="locker" maxlength="8" value="${esc(sl?.locker ?? '')}" aria-label="Cheer locker room at ${ampm(h)}" placeholder="1"></td>
+      <td class="right"><button class="primary sm" data-save-slot="${h}">Save</button></td></tr>`;
+  }).join('') || `<tr><td colspan="5" class="muted">No games on ${esc(slotDate)}</td></tr>`;
+}
+/** Warnings that aren't tied to a game (cheer-slot-empty, cheer-slot-conflict); a conflict offers "pick this squad". */
+function renderSlotWarnings() {
+  const ws = warnings.filter((w) => w.gameId == null);
+  for (const box of document.querySelectorAll('[data-slot-warnings]')) {
+    box.hidden = !ws.length;
+    box.innerHTML = ws.length ? `<b>⚠ ${ws.length} cheer slot warning${ws.length === 1 ? '' : 's'}</b><ul>${ws.map((w) => `<li data-code="${esc(w.code)}">${esc(w.message)}${
+      w.code === 'cheer-slot-conflict' ? ` ${(w.candidates || []).map((c) => `<button class="sm" data-pick-squad="${esc(c)}" data-date="${esc(w.slot.date)}" data-time="${esc(w.slot.start)}">Pick ${esc(c)}</button>`).join(' ')}` : ''}</li>`).join('')}</ul>` : '';
+  }
+}
 /** The live parts of the page (court cards, Today list, all-games table): safe to re-render on every push. */
 function renderLive() {
   $('#court-cards').innerHTML = courts.map((c) => {
@@ -87,7 +137,7 @@ function render() {
   for (const sel of document.querySelectorAll('[data-grade-filter]')) { const v = sel.value; sel.innerHTML = '<option value="">All grades</option>' + grades.map((g) => `<option>${esc(g)}</option>`).join(''); sel.value = grades.includes(v) ? v : ''; }
   $('#grade-list').innerHTML = grades.map((g) => `<option value="${esc(g)}">`).join('');
   $('#team-rows').innerHTML = teams.filter((t) => !tf || t.grade === tf).map((t) => `<tr><td>${t.has_logo || t.logo_url ? `<img class="mini" src="${t.has_logo ? `/logos/${t.id}?v=${Date.now()}` : esc(t.logo_url)}" alt="">` : swatch(t)}</td>
-    <td>${esc(t.grade || '—')}</td><td>${esc(t.gender || '—')}</td><td>${esc(t.name)}</td><td>${esc(t.short_name)}</td>
+    <td>${esc(t.grade || '—')}</td><td>${esc(t.gender || '—')}</td><td>${esc(t.name)}</td><td>${esc(t.short_name)}</td><td>${t.coach ? `Coach ${esc(t.coach)}` : '<span class="muted">—</span>'}</td>
     <td class="right"><button class="link sm" data-edit-team="${t.id}">Edit</button><button class="link sm" data-del-team="${t.id}">Delete</button></td></tr>`).join('');
   $('#court-rows').innerHTML = courts.map((c) => `<tr><td>${esc(c.name)}</td><td><code>${esc(c.slug)}</code></td><td>${c.has_pin ? '✔' : '<span class="bad">no PIN — scorekeeping disabled</span>'}</td>
     <td><a href="/tv/${esc(c.slug)}" target="_blank">TV</a> · <a href="/score/${esc(c.slug)}" target="_blank">Score</a> · <a href="/overlay/${esc(c.slug)}" target="_blank">Overlay</a></td>
@@ -104,6 +154,7 @@ function render() {
   wbox.hidden = !warns.length;
   wbox.innerHTML = warns.length ? `<b>⚠ ${warns.length} schedule warning${warns.length === 1 ? '' : 's'}</b><ul>${[...new Set(warns)].map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '';
   if (teams[1] && !keep.away_team_id) f.elements.away_team_id.value = teams[1].id;
+  renderSquads(); renderSlots(); renderSlotWarnings();
 }
 
 document.addEventListener('click', guard(async (e) => {
@@ -140,16 +191,34 @@ document.addEventListener('click', guard(async (e) => {
     el.id.value = g.id; el.court_id.value = g.court_id ?? ''; el.division.value = g.division ?? '';
     el.scheduled_at.value = g.scheduled_at ? new Date(g.scheduled_at).toLocaleString('sv-SE', { timeZone: leagueTz }).slice(0, 16).replace(' ', 'T') : '';
     el.home_team_id.value = g.home_team_id; el.away_team_id.value = g.away_team_id; el.swap_colors.checked = !!g.swap_colors;
-    for (const k of ['cheer', 'cheer_logo_url']) el[k].value = g[k] ?? '';
+    for (const k of ['home_locker', 'away_locker']) el[k].value = g[k] ?? '';
     el.homeName.value = g.theme?.homeName ?? ''; el.awayName.value = g.theme?.awayName ?? '';
     $('#game-save').textContent = 'Save game'; f.scrollIntoView({ behavior: 'smooth' });
   }
   if (b.dataset.delGame && confirm('Delete this game?')) { await api(`/api/games/${b.dataset.delGame}`, { method: 'DELETE' }); await load(); }
   if (b.dataset.delTeam && confirm('Delete this team?')) { await api(`/api/teams/${b.dataset.delTeam}`, { method: 'DELETE' }); await load(); }
   if (b.dataset.delCourt && confirm('Delete this court?')) { await api(`/api/courts/${b.dataset.delCourt}`, { method: 'DELETE' }); await load(); }
+  if (b.dataset.editSquad) {
+    const q = squads.find((x) => x.id === Number(b.dataset.editSquad)); const f = $('#squad-form');
+    for (const k of ['id', 'name', 'coach', 'logo_url']) f.elements[k].value = q[k] ?? '';
+    $('#squad-save').textContent = 'Save squad'; f.scrollIntoView({ behavior: 'smooth' });
+  }
+  if (b.dataset.delSquad && confirm('Delete this cheer squad?')) { await api(`/api/cheer-squads/${b.dataset.delSquad}`, { method: 'DELETE' }); msg('Cheer squad deleted'); await load(); }
+  if (b.dataset.saveSlot) {
+    const tr = b.closest('tr'), sid = tr.dataset.slotId, squad = tr.querySelector('[name=squad_id]').value, locker = tr.querySelector('[name=locker]').value;
+    if (!squad) { if (sid) await api(`/api/cheer-slots/${sid}`, { method: 'DELETE' }); }
+    else if (sid) await api(`/api/cheer-slots/${sid}`, { method: 'PUT', body: JSON.stringify({ squad_id: Number(squad), locker }) });
+    else await api('/api/cheer-slots', { method: 'POST', body: JSON.stringify({ date: slotDate, time: b.dataset.saveSlot, squad_id: Number(squad), locker }) });
+    msg(`Cheer for ${ampm(b.dataset.saveSlot)} saved${squad ? '' : ' (no cheer that hour)'}. TVs update automatically.`);
+    slotsDirty = false; document.activeElement?.blur(); await load(); renderSlots(true);
+  }
+  if (b.dataset.pickSquad) {
+    await api('/api/cheer-slots', { method: 'POST', body: JSON.stringify({ date: b.dataset.date, time: b.dataset.time, squad: b.dataset.pickSquad }) });
+    msg(`${b.dataset.pickSquad} set for ${b.dataset.date} ${ampm(b.dataset.time)}.`); await load(); renderSlots(true);
+  }
   if (b.dataset.editTeam) {
     const t = teams.find((x) => x.id === Number(b.dataset.editTeam)); const f = $('#team-form');
-    for (const k of ['id', 'name', 'short_name', 'grade', 'gender', 'logo_url']) f.elements[k].value = t[k] ?? '';
+    for (const k of ['id', 'name', 'short_name', 'grade', 'gender', 'coach', 'logo_url']) f.elements[k].value = t[k] ?? '';
     $('#team-save').textContent = 'Save team'; f.scrollIntoView({ behavior: 'smooth' });
   }
 }));
@@ -158,7 +227,7 @@ const fileToDataUrl = (file) => new Promise((ok, bad) => { const r = new FileRea
 
 $('#team-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;
-  const body = Object.fromEntries(['name', 'short_name', 'grade', 'gender', 'logo_url'].map((k) => [k, f.elements[k].value]));
+  const body = Object.fromEntries(['name', 'short_name', 'grade', 'gender', 'coach', 'logo_url'].map((k) => [k, f.elements[k].value]));
   const file = f.elements.logo_file.files[0];
   if (file && file.size > 1024 * 1024) throw new Error(`Logo is ${(file.size / 1048576).toFixed(1)} MB; the limit is 1 MB. Please use a smaller image.`);
   if (file) body.logo_data_url = await fileToDataUrl(file);
@@ -183,11 +252,8 @@ $('#game-form').addEventListener('submit', guard(async (e) => {
     court_id: Number(el.court_id.value), home_team_id: Number(el.home_team_id.value), away_team_id: Number(el.away_team_id.value),
     scheduled_at: el.scheduled_at.value || null /* naive local time, interpreted in league TZ by Postgres */, division: el.division.value, theme,
     swap_colors: el.swap_colors.checked,
-    cheer: el.cheer.value, cheer_logo_url: el.cheer_logo_url.value,
+    home_locker: el.home_locker.value, away_locker: el.away_locker.value, // per game; cheer is per time slot (Cheer tab)
   };
-  const cfile = el.cheer_logo_file.files[0];
-  if (cfile && cfile.size > 1024 * 1024) throw new Error(`Cheer logo is ${(cfile.size / 1048576).toFixed(1)} MB; the limit is 1 MB.`);
-  if (cfile) body.cheer_logo_data_url = await fileToDataUrl(cfile);
   const r = el.id.value ? await api(`/api/games/${el.id.value}`, { method: 'PUT', body: JSON.stringify(body) })
     : await api('/api/games', { method: 'POST', body: JSON.stringify(body) });
   const wasEdit = !!el.id.value; f.reset();
@@ -195,6 +261,24 @@ $('#game-form').addEventListener('submit', guard(async (e) => {
 }));
 $('#game-form').addEventListener('reset', () => { $('#game-form').elements.id.value = ''; $('#game-save').textContent = 'Add game';
   setTimeout(() => { const el = $('#game-form').elements; if (teams[1] && !el.id.value) el.away_team_id.value = teams[1].id; }); }); // fresh-form default (not when Edit just filled it)
+
+$('#squad-form').addEventListener('submit', guard(async (e) => {
+  e.preventDefault(); const f = e.target;
+  const body = Object.fromEntries(['name', 'coach', 'logo_url'].map((k) => [k, f.elements[k].value]));
+  const file = f.elements.logo_file.files[0];
+  if (file && file.size > 1024 * 1024) throw new Error(`Logo is ${(file.size / 1048576).toFixed(1)} MB; the limit is 1 MB. Please use a smaller image.`);
+  if (file) body.logo_data_url = await fileToDataUrl(file);
+  if (f.elements.id.value) await api(`/api/cheer-squads/${f.elements.id.value}`, { method: 'PUT', body: JSON.stringify(body) });
+  else await api('/api/cheer-squads', { method: 'POST', body: JSON.stringify(body) });
+  f.reset(); f.elements.id.value = ''; $('#squad-save').textContent = 'Add squad'; msg('Cheer squad saved'); await load(); renderSlots(true);
+}));
+$('#squad-form').addEventListener('reset', () => { $('#squad-form').elements.id.value = ''; $('#squad-save').textContent = 'Add squad'; });
+$('#slot-date').addEventListener('change', guard(async (e) => {
+  if (!e.target.value) return;
+  slotDate = e.target.value; slotsDirty = false; slots = await api(`/api/cheer-slots?date=${slotDate}`); renderSlots(true);
+}));
+$('#slot-rows').addEventListener('input', () => { slotsDirty = true; });
+$('#slot-rows').addEventListener('change', () => { slotsDirty = true; });
 
 // Season colors: one dark + one light for every team. Checked here with Sage's window.Contrast helpers.
 function seasonCheck() {
@@ -219,7 +303,8 @@ async function loadSeason() {
   f.elements.name.value = s.name; f.elements.dark.value = s.dark; f.elements.light.value = s.light; seasonCheck();
 }
 
-for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-courts', '/api/import/courts.csv'], ['#import-schedule', '/api/import/schedule.csv']]) {
+for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-courts', '/api/import/courts.csv'], ['#import-schedule', '/api/import/schedule.csv'],
+  ['#import-cheer-squads', '/api/import/cheer_squads.csv'], ['#import-cheer-slots', '/api/import/cheer_slots.csv']]) {
   $(id).addEventListener('change', guard(async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const r = await api(path, { method: 'POST', body: await file.text(), headers: { 'content-type': 'text/csv' } });
