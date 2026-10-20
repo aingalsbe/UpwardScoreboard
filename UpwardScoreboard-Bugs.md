@@ -6,6 +6,9 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 
 | ID | Found | Area | Issue | Notes |
 |----|-------|------|-------|-------|
+| L1 | 2026-10-20 (Avery, QA of 81f9a58) | Lobby TV | Low. While a Full Court game is live, UP NEXT prefers the next Full Court game over sooner split games. Repro: on Sat, move a Full game to 7:00 AM, start it, open /upwardbasketballscores/lobby?date=2026-10-24; UP NEXT shows Full 5:30 PM instead of the 8:00 split games. | Not fixed yet. |
+| L2 | 2026-10-20 (Avery, QA of 81f9a58) | Admin › Cheer warnings | Low. "Pick this squad" on a cheer-slot-conflict fails with 'pick an existing cheer squad (squad_id)' when the candidate isn't a squad yet (e.g. two legacy cheer names). | Fix idea: create the squad on Pick. Laptop migration on 2026-10-20 found 0 conflicts, so nothing is blocked today. |
+| L3 | 2026-10-20 (Avery, QA of 81f9a58) | Docs | Low. deliverables/UpwardScoreboard-POC.md still references the deleted scripts/schedule-paging-e2e.mjs and the old URL table (/upwardbasketballscores/schedule). | Not fixed yet. |
 
 ## Fixed
 
