@@ -33,6 +33,9 @@ Shared style: `lobby.css`. All names are SAMPLE DATA.
 - Either way the TV payload gets one `cheer` object per slot (`now`, `next`), not per court; the scorekeeper never gets it.
 
 ## Hooks used in the HTML
+- **UP NEXT (Aaron, 3:00 PM):** ONE full-width `section.next-bar[data-slot="next"][data-state="upcoming"]` with
+  `data-bind="time"` ("UP NEXT · Tip-off 12:00 PM") replaces the per-court UP NEXT tags; next game sections carry no status
+  line. Next rows are slightly smaller and dimmed (all text ≥10:1). Friday: next game sits below the bar.
 `data-court=west|east|full`, `data-slot=now|next`, `data-row=home|away|cheer` (cheer row sits in a spanning
 `section.cheer-band[data-court="both"][data-slot=now|next]`, omitted when the slot has no squad), `data-state=live|upcoming`,
 `data-bind=header|name|coach|locker|time|clock|home-score|away-score`; empty locker → `.locker[data-empty]` (hidden,
