@@ -1,6 +1,6 @@
 # UpwardScoreboard laptop demo (one page)
 
-Windows laptop, Docker Desktop, repo in C:\UpwardScoreboard. All values are demo-only.
+Windows laptop, Docker Desktop, repo in C:\AIProjects\UpwardScoreboard (its own git repo, nested under C:\AIProjects). All values are demo-only.
 
 ## Logins (dev only)
 
@@ -15,7 +15,7 @@ Demo values only; the printed QR cards never show a PIN (they say "enter the cou
 
 ## Start and stop
 
-Start (PowerShell, in C:\UpwardScoreboard):
+Start (PowerShell, in C:\AIProjects\UpwardScoreboard):
 
     powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1
 

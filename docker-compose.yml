@@ -1,5 +1,7 @@
 # Local dev / POC: `docker compose up --build`. On a managed host you run only the
 # `app` image and point DATABASE_URL at the host's managed Postgres.
+# Pinned project name: containers + the upwardscoreboard_pgdata volume don't depend on the folder name.
+name: upwardscoreboard
 services:
   app:
     build: .

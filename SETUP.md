@@ -25,12 +25,12 @@ git config --global user.email aingalsbe@gmail.com
 ## 3. Clone
 
 ```powershell
-git clone https://github.com/aingalsbe/UpwardScoreboard C:\UpwardScoreboard
+git clone https://github.com/aingalsbe/UpwardScoreboard C:\AIProjects\UpwardScoreboard
 ```
 
 ## 4. Folder location
 
-Use `C:\UpwardScoreboard` (git root is the folder itself). Keep it separate from Vineyard Manager (`C:\AIProjects`).
+Use `C:\AIProjects\UpwardScoreboard`. It is its own git repo (git root is the folder itself), nested under `C:\AIProjects`; Vineyard Manager's repo (`C:\AIProjects`) ignores it via `UpwardScoreboard/` in its `.gitignore`. The Docker Compose project name is pinned (`name: upwardscoreboard` in docker-compose.yml), so the containers and the `upwardscoreboard_pgdata` volume stay the same whatever the folder is.
 
 ## 5. Environment files
 
@@ -58,7 +58,7 @@ To list a `.env`'s keys without values: `Get-Content .env | ForEach-Object { ($_
 
 ## 6. Start and stop
 
-Both scripts live in the repo root (`C:\UpwardScoreboard`).
+Both scripts live in the repo root (`C:\AIProjects\UpwardScoreboard`) and run from their own folder (`$PSScriptRoot`), not a hardcoded path.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1            # start
