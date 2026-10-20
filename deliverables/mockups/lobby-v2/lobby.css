@@ -1,0 +1,77 @@
+/* Lobby v2 mockup (Sage) — static, SAMPLE DATA. Style follows Aaron's lobby slides (uploads/lobby/mockup.pptx):
+   condensed grey day/time header with black outline, court tabs (parallelograms), gold HOME row / black AWAY row,
+   Locker Room pills, pink CHEER row. Added: LIVE + score/period/clock, UP NEXT + tip-off, coaches, cheer coach.
+   Season reconciliation: Home row = season Gold #FFC72C (slides' gold, brightened to the season value) with black text;
+   Away row = black (as the slides) with a Maroon #800000 rim + maroon pill accents, so the season dark is still there.
+   Hooks follow Devon's plan (docs/plans/locker-rooms-coaches.md): data-court, data-slot=now|next, data-row=home|away|cheer,
+   data-bind=name|locker|coach|time|header, data-state=live|upcoming|empty; empty locker pill = data-empty (hidden).
+   Coach: small secondary line under the name (Q4 default). 1rem = 10px at 1920x1080. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 10px; --gold: #ffc72c; --maroon: #800000; --ink: #fff; --pink: #f47cc6; }
+body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", "Archivo", sans-serif; color: var(--ink);
+  background:
+    radial-gradient(ellipse 60% 35% at 50% 18%, rgba(120,150,200,.35), transparent 70%),
+    linear-gradient(180deg, #0c1220 0%, #182238 38%, #2a3348 52%, #7a4a22 60%, #b7783d 72%, #8a5528 100%); position: relative; }
+/* soft court lines + darkening veil so text stays readable from across the lobby */
+body::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 22% at 50% 78%, transparent 60%, rgba(255,255,255,.18) 61%, transparent 63%),
+              linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.35)); }
+.sample { position: absolute; right: 2rem; bottom: 1.4rem; font: 700 1.6rem "Montserrat"; color: #fff; background: rgba(0,0,0,.7);
+  padding: .4rem 1.2rem; border-radius: 1rem; letter-spacing: .1rem; z-index: 2; }
+header { position: relative; text-align: center; padding-top: 1.6rem; z-index: 1; }
+header h1 { font-family: "Anton", "Oswald", sans-serif; font-weight: 400; font-size: 10.5rem; line-height: 1; letter-spacing: .3rem;
+  color: #d9d9d9; -webkit-text-stroke: .5rem #111; paint-order: stroke fill; text-shadow: 0 .6rem 1.2rem rgba(0,0,0,.6); }
+header .sub { margin-top: .6rem; font: 700 2.2rem "Montserrat"; letter-spacing: .4rem; color: #fff; text-shadow: 0 .2rem .6rem #000; }
+main { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; padding: 1.6rem 5rem 0; }
+main.full { grid-template-columns: 1fr; padding: 2.4rem 18rem 0; }
+.court { display: flex; flex-direction: column; gap: 1.2rem; }
+/* court tab: parallelogram like the slides (West black / East grey / Full grey) */
+.tab { align-self: flex-start; justify-self: start; margin-left: 9rem; transform: skewX(-30deg); background: #111; border: .4rem solid #000; padding: .6rem 5rem;
+  box-shadow: 0 .4rem 1rem rgba(0,0,0,.5); }
+.tab span { display: block; transform: skewX(30deg); font: 800 3rem "Montserrat"; letter-spacing: .1rem; color: #fff; }
+.court[data-court="east"] .tab, .court[data-court="full"] .tab { background: #c8c8c8; }
+.court[data-court="east"] .tab span, .court[data-court="full"] .tab span { color: #000; }
+.court[data-court="full"] .tab { align-self: center; margin-left: 0; }
+/* a game block: status line + home row + away row (+ cheer row) */
+.game { display: flex; flex-direction: column; gap: .8rem; }
+.status { display: flex; align-items: center; gap: 1.4rem; font: 800 2.6rem "Montserrat"; text-shadow: 0 .2rem .5rem #000; }
+.tag { display: inline-flex; align-items: center; gap: .6rem; padding: .4rem 1.6rem; border-radius: 3rem; font: 900 2.4rem "Montserrat"; letter-spacing: .2rem; text-shadow: none; }
+.tag.live { background: #c0392b; color: #fff; border: .3rem solid #fff; }            /* white on #c0392b 5.4:1; "● LIVE" word */
+.tag.next { background: #fff; color: #000; border: .3rem solid #000; }                /* "🕒 UP NEXT" word */
+.status .when { color: #fff; }
+.status .clock { font-family: "Anton", sans-serif; font-weight: 400; font-size: 3.2rem; letter-spacing: .2rem; color: #fff; background: rgba(0,0,0,.75); padding: 0 1.2rem; border-radius: .8rem; }
+.row { display: grid; grid-template-columns: 16rem minmax(0,1fr) auto auto; align-items: center; gap: 1.6rem; padding: .9rem 1.2rem;
+  border-radius: 2.2rem; border: .5rem solid #000; box-shadow: 0 .5rem 1.4rem rgba(0,0,0,.45); min-height: 10rem; }
+.row.home { background: var(--gold); color: #000; }                                  /* black on gold 13.5:1 */
+.row.away { background: #000; color: #fff; border-color: var(--maroon); }            /* white on black 21:1 */
+.row.cheer { background: var(--pink); color: #000; border-color: #000; }             /* black on pink 9.3:1 */
+.locker { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 2rem; padding: .5rem .6rem; min-height: 7.8rem; line-height: 1; }
+.locker small { font: 700 1.8rem "Montserrat"; white-space: nowrap; }
+.locker b { font: 900 4rem "Montserrat"; margin-top: .3rem; }
+.home .locker { background: #000; color: var(--gold); }                              /* gold on black 13.5:1 */
+.away .locker { background: #c8c8c8; color: #000; }
+.cheer .locker { background: #000; color: var(--pink); }                             /* 7.6:1 */
+/* empty locker (data-empty): pill hidden but its column kept so names stay centered and rows aligned */
+.locker[data-empty] { visibility: hidden; }
+/* UP NEXT lines up across courts whether or not there's a squad: courts share rows via subgrid */
+main:not(.full) .court { display: grid; grid-row: span 4; grid-template-rows: subgrid; align-content: start; }  /* tab | now | divider | next rows shared across courts */
+main:not(.full) .game[data-slot="next"] { align-self: start; }
+main:not(.full) .game[data-slot="now"] { align-self: start; }
+.who { min-width: 0; text-align: center; }
+.who .name { font: 800 4.4rem "Montserrat"; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who .coach { margin-top: .3rem; font: 600 2.2rem "Montserrat"; opacity: 1; }
+.home .coach { color: #2b2000; } .away .coach { color: #e6e6e6; } .cheer .coach { color: #1a0012; }
+.score { font: 400 7.6rem "Anton", sans-serif; letter-spacing: .2rem; min-width: 9rem; text-align: center; font-variant-numeric: tabular-nums; }
+.side { font: 900 3.6rem "Montserrat"; letter-spacing: .1rem; padding: .7rem 2.4rem; border-radius: 3rem; min-width: 18rem; text-align: center; }
+.home .side { background: #000; color: var(--gold); }
+.away .side { background: #c8c8c8; color: #000; box-shadow: inset 0 0 0 .4rem var(--maroon); }
+.cheer .side { background: #000; color: var(--pink); }
+.cheer .row-note { font: 700 1.8rem "Montserrat"; color: #000; }
+/* UP NEXT block: same rows, compact */
+.game.next .row { min-height: 8rem; padding: .6rem 1.2rem; }
+.game.next .locker { min-height: 6.6rem; } .game.next .locker b { font-size: 3.6rem; }
+.game.next .who .name { font-size: 3.6rem; } .game.next .who .coach { font-size: 1.9rem; }
+.game.next .side { font-size: 2.8rem; min-width: 15rem; padding: .5rem 1.8rem; }
+.divider { align-self: center; height: .4rem; background: rgba(255,255,255,.35); border-radius: .2rem; margin: .4rem 4rem; }
+/* Full Court: live and next side by side inside one spanning panel */
+.full .pair { display: grid; grid-template-columns: 1.15fr 1fr; gap: 4rem; align-items: start; }
