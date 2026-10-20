@@ -53,7 +53,7 @@ function render() {
   }
   // Split day: band.now (tabs + live per court), cheer for the live slot, UP NEXT bar, band.next, cheer for the next slot.
   main.className = 'split';
-  // Mixed day (Full Court and split): next courts have no tabs, so each gets a real text label (WEST / EAST / FULL COURT).
+  // Mixed day (Full Court and split): next courts have no tabs, so each gets a real text label (WEST COURT / EAST COURT / FULL COURT).
   const label = (c) => `<span class="court-label" data-bind="court">${COURT_LABEL[c] || esc(c.toUpperCase())}</span>`;
   const band = (b, slot, withTabs) => `<div class="band ${slot}">\n${courtsOf(b).map((c) => `<div class="court" data-court="${c}">${withTabs ? tab(c) : ''}${slot === 'next' && p.mixed ? label(c) : ''}${gameSection(b.courts[c], slot, emptyNote(p, c))}</div>`).join('\n')}\n</div>`;
   main.innerHTML = (p.now ? band(p.now, 'now', true) + cheerBand(p.cheer.now, 'now') : '')

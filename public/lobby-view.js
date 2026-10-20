@@ -55,6 +55,6 @@ export function planLobby(games, cheerSlots = []) {
 }
 
 /** Court label text for next games on mixed days (a real element, not CSS attr()). */
-export const COURT_LABEL = { west: 'WEST', east: 'EAST', full: 'FULL COURT' };
+export const COURT_LABEL = { west: 'WEST COURT', east: 'EAST COURT', full: 'FULL COURT' };
 /** Text for an empty court: a later game exists -> "No game right now"; nothing left on that court today -> "No more games on this court". */
 export const emptyNote = (plan, court) => (plan.remaining?.[court] ? 'No game right now' : 'No more games on this court');

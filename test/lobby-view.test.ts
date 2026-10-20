@@ -79,7 +79,7 @@ test('mixed days and empty-court text', { skip }, async () => {
   const e16 = G('east', '16:00'), w9 = G('west', '09:00', 'active');
   const q = planLobby([w9, e16], []);
   assert.equal(q.mixed, false); assert.equal(emptyNote(q, 'east'), 'No game right now');
-  assert.deepEqual(COURT_LABEL, { west: 'WEST', east: 'EAST', full: 'FULL COURT' });
+  assert.deepEqual(COURT_LABEL, { west: 'WEST COURT', east: 'EAST COURT', full: 'FULL COURT' });
   // Full live then split next: mixed too
   assert.equal(planLobby([G('full', '08:00', 'active'), G('west', '10:00')], []).mixed, true);
 });
