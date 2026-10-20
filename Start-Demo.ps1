@@ -6,6 +6,11 @@
   Wipe all teams, courts and games and load fresh demo data for the demo weekend (this Fri/Sat, or the upcoming one).
 .PARAMETER Schedule
   Also open the lobby TV (/upwardbasketballscores/lobby, live + next per court) as a third window (scorekeeper | TV | lobby, a third of the screen each).
+.PARAMETER Lobby
+  Same as -Schedule (open the lobby TV as the third window).
+.PARAMETER At
+  With -Schedule/-Lobby: open the lobby in read-only DEMO mode as if it were that time, e.g. -At 'sat 11:00',
+  -At 'fri 18:30' or -At '2026-10-24T11:00' (league time). Nothing on the server changes.
 .PARAMETER NoBrowser
   Do not open browser windows.
 .PARAMETER WindowsOnly
@@ -14,14 +19,18 @@
   powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1
   powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1 -Reseed
   powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1 -Schedule
+  powershell -ExecutionPolicy Bypass -File .\Start-Demo.ps1 -Lobby -At 'sat 11:00'
 #>
 [CmdletBinding()]
 param(
   [switch]$Reseed,
   [switch]$NoBrowser,
   [switch]$WindowsOnly,
-  [switch]$Schedule
+  [switch]$Schedule,
+  [switch]$Lobby,
+  [string]$At = ''
 )
+if ($Lobby) { $Schedule = $true }
 
 # 'Continue': in Windows PowerShell 5.1, 'Stop' turns native stderr output (docker progress) into errors.
 $ErrorActionPreference = 'Continue'
@@ -34,6 +43,12 @@ if ($IsSat) { $Court = 'west'; $Pin = '2222'; $Day = 'sat' } else { $Court = 'fu
 $ScoreUrl = "$Base/score/$Court"
 $TvUrl = "$Base/upwardbasketballscores/${Court}court"
 $ScheduleUrl = "$Base/upwardbasketballscores/lobby?day=$Day"
+if ($At) {
+  # Demo time: 'sat 11:00' -> ?day=sat&at=11:00; '2026-10-24T11:00' -> ?at=2026-10-24T11:00
+  if ($At -match '^\s*(\d{4}-\d{2}-\d{2})[T ](\d{1,2}:\d{2})\s*$') { $ScheduleUrl = "$Base/upwardbasketballscores/lobby?at=$($Matches[1])T$($Matches[2])" }
+  elseif ($At -match '^\s*(fri|sat)\w*\s+(\d{1,2}:\d{2})\s*$') { $ScheduleUrl = "$Base/upwardbasketballscores/lobby?day=$($Matches[1].ToLower())&at=$($Matches[2])" }
+  else { Write-Host "Ignoring -At '$At' (use 'sat 11:00', 'fri 18:30' or 'YYYY-MM-DDTHH:MM')." -ForegroundColor Yellow }
+}
 
 function Fail([string]$Message) {
   Write-Host ''
