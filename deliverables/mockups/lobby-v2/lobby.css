@@ -123,3 +123,9 @@ main.split .band.next .side { font-size: 2.5rem; min-width: 13rem; padding: .4re
 .full .pair { grid-template-columns: 1fr; gap: 1.6rem; }
 .full .pair .next-bar { margin-top: 1.4rem; }
 .full .game.next { width: 82%; margin: 0 auto; }
+
+/* Aaron 3:01 PM: no cheer captions; cheer rows just sit under the courts, next one full width + dimmed */
+.cheer-band.next { flex-direction: column; }
+.cheer-band.next .row.cheer { width: 100%; }
+main.split { gap: 1.1rem; }
+main.split .next-bar { margin-top: 2rem; }

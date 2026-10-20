@@ -54,8 +54,8 @@ column kept so names stay centered). Coaches only in the lobby payload; never in
 - Status never color-only: "● LIVE" + red tag + score/clock; "🕒 UP NEXT" + "Tip-off 12:00 PM".
 - Fonts: header Anton (grey fill, black outline, like the slides' condensed caps); rows Montserrat 800/900
   (closest available to the slides' rounded sans). Court tabs are the slides' skewed parallelograms (West black, East grey).
-- Cheer sits between the live and UP NEXT bands, spanning both courts ("Cheering both courts · 11:00 AM"); the next slot's
-  squad is a smaller spanning row at the bottom ("Next cheer · 12:00 PM"). West/East live and next rows stay aligned.
+- Cheer sits directly under the live courts, spanning both (no caption); the next slot's squad is a full-width, dimmed
+  row under the next games (no caption). No squad that hour → no row. West/East live and next rows stay aligned.
 
 ## Open questions for Aaron
 1. Multiple coaches per team (head + assistant)? With first names only, "Coach Mike & Dana" fits on the line.
