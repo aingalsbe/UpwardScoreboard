@@ -8,9 +8,12 @@
    Hooks follow Devon's plan (docs/plans/locker-rooms-coaches.md): data-court, data-slot=now|next, data-row=home|away|cheer,
    data-bind=name|locker|coach|time|header, data-state=live|upcoming|empty; empty locker pill = data-empty (hidden).
    Coach: small secondary line under the name (Q4 default). 1rem = 10px at 1920x1080. */
+/* Self-hosted fonts (SIL OFL 1.1, licenses in /fonts/OFL-*.txt). Latin subsets from Google Fonts; Montserrat is variable 400–900. */
+@font-face { font-family: "Anton"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/Anton-Regular-latin.woff2") format("woff2"); }
+@font-face { font-family: "Montserrat"; font-style: normal; font-weight: 400 900; font-display: swap; src: url("/fonts/Montserrat-Variable-latin.woff2") format("woff2"); }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 10px; --gold: #ffc72c; --maroon: #800000; --ink: #fff; --pink: #f47cc6; }
-body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", "Archivo", sans-serif; color: var(--ink);
+body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", "Archivo", Arial, sans-serif; color: var(--ink);
   background:
     radial-gradient(ellipse 60% 35% at 50% 18%, rgba(120,150,200,.35), transparent 70%),
     linear-gradient(180deg, #0c1220 0%, #182238 38%, #2a3348 52%, #7a4a22 60%, #b7783d 72%, #8a5528 100%); position: relative; }
@@ -18,38 +21,38 @@ body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat
 body::before { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse 70% 22% at 50% 78%, transparent 60%, rgba(255,255,255,.18) 61%, transparent 63%),
               linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.35)); }
-.sample { position: absolute; right: 2rem; bottom: 1.4rem; font: 700 1.6rem "Montserrat"; color: #fff; background: rgba(0,0,0,.7);
+.sample { position: absolute; right: 2rem; bottom: 1.4rem; font: 700 1.6rem "Montserrat", "Archivo", Arial, sans-serif; color: #fff; background: rgba(0,0,0,.7);
   padding: .4rem 1.2rem; border-radius: 1rem; letter-spacing: .1rem; z-index: 2; }
 header { position: relative; text-align: center; padding-top: 1.6rem; z-index: 1; }
-header h1 { font-family: "Anton", "Oswald", sans-serif; font-weight: 400; font-size: 10.5rem; line-height: 1; letter-spacing: .3rem;
+header h1 { font-family: "Anton", "Oswald", "Arial Narrow", sans-serif; font-weight: 400; font-size: 10.5rem; line-height: 1; letter-spacing: .3rem;
   color: #d9d9d9; -webkit-text-stroke: .5rem #111; paint-order: stroke fill; text-shadow: 0 .6rem 1.2rem rgba(0,0,0,.6); }
-header .sub { margin-top: .6rem; font: 700 2.2rem "Montserrat"; letter-spacing: .4rem; color: #fff; text-shadow: 0 .2rem .6rem #000; }
+header .sub { margin-top: .6rem; font: 700 2.2rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .4rem; color: #fff; text-shadow: 0 .2rem .6rem #000; }
 main { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; padding: 1.6rem 5rem 0; }
 main.full { grid-template-columns: 1fr; padding: 2.4rem 18rem 0; }
 .court { display: flex; flex-direction: column; gap: 1.2rem; }
 /* court tab: parallelogram like the slides (West black / East grey / Full grey) */
 .tab { align-self: flex-start; justify-self: start; margin-left: 9rem; transform: skewX(-30deg); background: #111; border: .4rem solid #000; padding: .6rem 5rem;
   box-shadow: 0 .4rem 1rem rgba(0,0,0,.5); }
-.tab span { display: block; transform: skewX(30deg); font: 800 3rem "Montserrat"; letter-spacing: .1rem; color: #fff; }
+.tab span { display: block; transform: skewX(30deg); font: 800 3rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .1rem; color: #fff; }
 .court[data-court="east"] .tab, .court[data-court="full"] .tab { background: #c8c8c8; }
 .court[data-court="east"] .tab span, .court[data-court="full"] .tab span { color: #000; }
 .court[data-court="full"] .tab { align-self: center; margin-left: 0; }
 /* a game block: status line + home row + away row (+ cheer row) */
 .game { display: flex; flex-direction: column; gap: .8rem; }
-.status { display: flex; align-items: center; gap: 1.4rem; font: 800 2.6rem "Montserrat"; text-shadow: 0 .2rem .5rem #000; }
-.tag { display: inline-flex; align-items: center; gap: .6rem; padding: .4rem 1.6rem; border-radius: 3rem; font: 900 2.4rem "Montserrat"; letter-spacing: .2rem; text-shadow: none; }
+.status { display: flex; align-items: center; gap: 1.4rem; font: 800 2.6rem "Montserrat", "Archivo", Arial, sans-serif; text-shadow: 0 .2rem .5rem #000; }
+.tag { display: inline-flex; align-items: center; gap: .6rem; padding: .4rem 1.6rem; border-radius: 3rem; font: 900 2.4rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .2rem; text-shadow: none; }
 .tag.live { background: #c0392b; color: #fff; border: .3rem solid #fff; }            /* white on #c0392b 5.4:1; "● LIVE" word */
 .tag.next { background: #fff; color: #000; border: .3rem solid #000; }                /* "🕒 UP NEXT" word */
 .status .when { color: #fff; }
-.status .clock { font-family: "Anton", sans-serif; font-weight: 400; font-size: 3.2rem; letter-spacing: .2rem; color: #fff; background: rgba(0,0,0,.75); padding: 0 1.2rem; border-radius: .8rem; }
+.status .clock { font-family: "Anton", "Oswald", "Arial Narrow", sans-serif; font-weight: 400; font-size: 3.2rem; letter-spacing: .2rem; color: #fff; background: rgba(0,0,0,.75); padding: 0 1.2rem; border-radius: .8rem; }
 .row { display: grid; grid-template-columns: 16rem minmax(0,1fr) auto auto; align-items: center; gap: 1.6rem; padding: .9rem 1.2rem;
   border-radius: 2.2rem; border: .5rem solid #000; box-shadow: 0 .5rem 1.4rem rgba(0,0,0,.45); min-height: 10rem; }
 .row.home { background: var(--gold); color: #000; }                                  /* black on gold 13.5:1 */
 .row.away { background: #000; color: #fff; border-color: var(--maroon); }            /* white on black 21:1 */
 .row.cheer { background: var(--pink); color: #000; border-color: #000; }             /* black on pink 9.3:1 */
 .locker { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 2rem; padding: .5rem .6rem; min-height: 7.8rem; line-height: 1; }
-.locker small { font: 700 1.8rem "Montserrat"; white-space: nowrap; }
-.locker b { font: 900 4rem "Montserrat"; margin-top: .3rem; }
+.locker small { font: 700 1.8rem "Montserrat", "Archivo", Arial, sans-serif; white-space: nowrap; }
+.locker b { font: 900 4rem "Montserrat", "Archivo", Arial, sans-serif; margin-top: .3rem; }
 .home .locker { background: #000; color: var(--gold); }                              /* gold on black 13.5:1 */
 .away .locker { background: #c8c8c8; color: #000; }
 .cheer .locker { background: #000; color: var(--pink); }                             /* 7.6:1 */
@@ -60,15 +63,15 @@ main:not(.full):not(.split) .court { display: grid; grid-row: span 4; grid-templ
 main:not(.full):not(.split) .game[data-slot="next"] { align-self: start; }
 main:not(.full):not(.split) .game[data-slot="now"] { align-self: start; }
 .who { min-width: 0; text-align: center; }
-.who .name { font: 800 4.4rem "Montserrat"; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.who .coach { margin-top: .3rem; font: 600 2.2rem "Montserrat"; opacity: 1; }
+.who .name { font: 800 4.4rem "Montserrat", "Archivo", Arial, sans-serif; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who .coach { margin-top: .3rem; font: 600 2.2rem "Montserrat", "Archivo", Arial, sans-serif; opacity: 1; }
 .home .coach { color: #2b2000; } .away .coach { color: #e6e6e6; } .cheer .coach { color: #1a0012; }
-.score { font: 400 7.6rem "Anton", sans-serif; letter-spacing: .2rem; min-width: 9rem; text-align: center; font-variant-numeric: tabular-nums; }
-.side { font: 900 3.6rem "Montserrat"; letter-spacing: .1rem; padding: .7rem 2.4rem; border-radius: 3rem; min-width: 18rem; text-align: center; }
+.score { font: 400 7.6rem "Anton", "Oswald", "Arial Narrow", sans-serif; letter-spacing: .2rem; min-width: 9rem; text-align: center; font-variant-numeric: tabular-nums; }
+.side { font: 900 3.6rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .1rem; padding: .7rem 2.4rem; border-radius: 3rem; min-width: 18rem; text-align: center; }
 .home .side { background: #000; color: var(--gold); }
 .away .side { background: #c8c8c8; color: #000; box-shadow: inset 0 0 0 .4rem var(--maroon); }
 .cheer .side { background: #000; color: var(--pink); }
-.cheer .row-note { font: 700 1.8rem "Montserrat"; color: #000; }
+.cheer .row-note { font: 700 1.8rem "Montserrat", "Archivo", Arial, sans-serif; color: #000; }
 /* UP NEXT block: same rows, compact */
 .game.next .row { min-height: 8rem; padding: .6rem 1.2rem; }
 .game.next .locker { min-height: 6.6rem; } .game.next .locker b { font-size: 3.6rem; }
@@ -111,7 +114,7 @@ main.split { gap: .7rem; }
    hook: section.next-bar[data-slot=next] with data-bind=time. Black on white 21:1; label is a word, not color. */
 .next-bar { display: flex; align-items: center; justify-content: center; gap: 1.6rem; width: 100%; box-sizing: border-box;
   background: #fff; color: #000; border: .3rem solid #000; border-radius: 1rem; padding: .3rem 2rem;
-  font: 900 2.8rem "Montserrat"; letter-spacing: .2rem; box-shadow: 0 .4rem 1.2rem rgba(0,0,0,.6); }
+  font: 900 2.8rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .2rem; box-shadow: 0 .4rem 1.2rem rgba(0,0,0,.6); }
 .next-bar .nb-time { letter-spacing: .05rem; }
 main.split .next-bar { margin-top: 1.6rem; }
 /* next games read as secondary: slightly smaller + dimmed (black on dimmed gold ≥10:1, #d9d9d9 on black ≥14:1) */
@@ -132,8 +135,30 @@ main.split .band.next .side { font-size: 2.5rem; min-width: 13rem; padding: .4re
 main.split { gap: 1.1rem; }
 main.split .next-bar { margin-top: 2rem; }
 
-/* ---- Added by Devon (NOT Sage's design; for Sage to restyle): states the approved mockup doesn't draw ----
-   1. A Full Court game in a split day (e.g. West/East live, next game on Full): its court spans both columns.
-   2. data-state="empty": a court with nothing live in that band, or a day with nothing left. */
+/* ---- States the mockup doesn't draw (Sage restyle of Devon's placeholder block) ---- */
+/* (a) Full Court game inside a split day: its court spans both columns.
+   Next on Full after West/East live: one full-width dimmed next row under the UP NEXT bar; the bar names the court (text). */
 .band .court[data-court="full"] { grid-column: 1 / -1; }
-.game[data-state="empty"] .empty-note { font: 700 2.6rem "Montserrat"; color: #fff; text-align: center; text-shadow: 0 .2rem .5rem #000; padding: 2rem 0; }
+.next-bar:has(+ .band.next .court[data-court="full"]) .nb-time::after { content: " · Full Court"; }
+/* Full live then West/East next: the next band has no tabs, so name each court in text (home-first order kept by markup) */
+main.split:has(.band.now .court[data-court="full"]) .band.next .court:not([data-court="full"])::before {
+  content: attr(data-court) " court"; text-transform: uppercase; align-self: flex-start; font: 800 2rem "Montserrat", sans-serif;
+  letter-spacing: .2rem; color: #fff; background: #000; border: .2rem solid #fff; border-radius: .6rem; padding: .2rem 1.2rem; }
+
+/* (b) data-state="empty": a court with nothing live / nothing next. Calm placeholder, same height as the other court's
+   game (band stretches), text + muted dashed frame, no status color. #d6d9e0 on ~#141a26 ≈ 12:1. */
+.band { align-items: stretch; }
+.band .court > .game[data-state="empty"] { flex: 1 1 auto; }
+.game[data-state="empty"] { display: flex; align-items: center; justify-content: center; min-height: 14rem;
+  background: rgba(10,14,22,.82); border: .3rem dashed #8a90a6; border-radius: 1.4rem; }
+.game.next[data-state="empty"] { min-height: 12rem; }
+.game[data-state="empty"] .empty-note { font: 700 3.2rem "Montserrat", sans-serif; color: #d6d9e0; text-align: center; letter-spacing: .1rem; }
+/* whole day done: one centered calm card */
+main.full > .court > .game[data-state="empty"] { min-height: 26rem; margin-top: 8rem; }
+main.full > .court > .game[data-state="empty"] .empty-note { font-size: 5.2rem; }
+
+/* Offline / reconnecting (html[data-conn]): text pill + dashed, frozen clocks; never color alone. */
+html[data-conn="offline"] body::after, html[data-conn="connecting"] body::after {
+  content: "⟳ Reconnecting… scores may be out of date"; position: fixed; left: 2rem; top: 1.4rem; z-index: 5;
+  font: 800 2rem "Montserrat", sans-serif; color: #ffe08a; background: #2a2208; border: .2rem dashed #ffe08a; border-radius: 3rem; padding: .4rem 1.6rem; }
+html[data-conn="offline"] .status .clock, html[data-conn="connecting"] .status .clock { color: #d9d9d9; outline: .2rem dashed #8a90a6; outline-offset: .2rem; }
