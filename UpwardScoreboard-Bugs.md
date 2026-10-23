@@ -20,5 +20,6 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 
 ## Rule changes (planned)
 
+- **Shipped 2026-10 (six periods + young-grade scores):** all games are 6 periods, 3 per half (halftime after P3). Labels everywhere: "1st Half · P1–P3", "2nd Half · P4–P6", "OT"/"OT2" (the old "Q1"/plain number labels are gone). Team fouls and bonus reset at halftime; timeouts are 2 per half and refill at halftime; overtime continues the 2nd half (no reset). Scheduled games were migrated; finals and active games keep their old rules. Kindergarten–2nd Grade games show no score on TV, overlay, lobby or /api/public/* (scorekeeper still records it). Judge period/score-display bugs against these rules.
 - Cheer: "one cheer squad per game" will change to **one squad per time slot** (date + start time, shared across West, East and Full; optional). Bugs about per-game cheer should be judged against the new rule once it ships. See docs/plans/locker-rooms-coaches.md and docs/POC.md "Next feature".
 
