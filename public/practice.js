@@ -2,6 +2,7 @@
 // renders Sage's mockup markup (deliverables/mockups/practice) with its hooks, rotates pages per practice-view.js.
 import { planPractice, rotation, parsePracticeDemo, ampm, COURTS, COURT_NAME, DAY, toMin } from './practice-view.js';
 import { mascotHtml } from './logo-badge.js';
+import { nextEvent, nextEventText, addDays } from './next-event.js';
 
 const kind = /\/practice\/cheer\/?$/.test(location.pathname) ? 'cheer' : 'basketball';
 const qs = new URLSearchParams(location.search);
@@ -20,6 +21,8 @@ function fit() { const s = Math.min(innerWidth / 1920, innerHeight / 1080); body
   body.style.setProperty('--x', `${Math.max(0, (innerWidth - 1920 * s) / 2)}px`); body.style.setProperty('--y', `${Math.max(0, (innerHeight - 1080 * s) / 2)}px`); }
 fit(); addEventListener('resize', fit);
 
+let gameDays = [];
+async function loadGames() { try { gameDays = (await (await fetch('/api/public/game-days')).json()).days || []; } catch {} }
 async function load() { try { const r = await fetch('/api/public/practice'); data = await r.json(); offset = data.serverNow - Date.now(); } catch {} render(); }
 function nowParts() {
   if (demo) {
@@ -43,7 +46,10 @@ function render() {
   if (plan.mode === 'idle') {
     $('[data-bind="header"]').textContent = plan.header; page.hidden = true;
     main.className = 'idle'; main.removeAttribute('data-list');
-    setHtml(main, `<div class="idle-card"><div class="idle-title">No practice right now</div>${plan.next ? `<div class="idle-next" data-bind="next">${esc(plan.next)}</div>` : ''}</div>`);
+    // Next event: practice night (this screen's kind) or game day, whichever is first. Demo day shifts the date.
+    const today = data.now.date ? addDays(data.now.date, (dow - data.now.dow + 7) % 7) : null;
+    const next = today ? nextEventText(nextEvent({ today, now: hm, gameDays, practice: data, kind }), today) : plan.next;
+    setHtml(main, `<div class="idle-card"><div class="idle-title">No practice right now</div>${next ? `<div class="idle-next" data-bind="next">${esc(next)}</div>` : ''}</div>`);
     foot.textContent = ''; return;
   }
   const t = Math.floor((Date.now() - loadedAt) / 1000);
@@ -66,4 +72,4 @@ function render() {
   const nxt = plan.pages[r.index + 1];
   setHtml(foot, [plan.startsText && `<b>${esc(plan.startsText)}</b>`, r.state === 'next' ? 'Up next' : nxt ? `Up next: <b>${ampm(nxt.time)}</b>` : 'Last practice slot tonight', 'Cheer squads: see the cheer screen'].filter(Boolean).join(' · '));
 }
-load(); setInterval(load, 60000); setInterval(render, 1000);
+loadGames().then(load); setInterval(load, 60000); setInterval(loadGames, 5 * 60000); setInterval(render, 1000);

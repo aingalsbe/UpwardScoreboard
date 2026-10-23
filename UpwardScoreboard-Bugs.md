@@ -26,6 +26,9 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 
 ## Rule changes (planned)
 
+- **Idle screens show the next event (2026-10-23, branch):** lobby + practice TVs show the next game day or practice night, whichever is first (public/next-event.js; /api/public/practice now also returns now.date).
+- **Closed, not wanted (Aaron, 2026-10-23):** practice cancellations; coach double-booking warnings.
+- **Proposed:** reschedule a game, see docs/plans/reschedule-games.md.
 - **Branch feature/practice-schedule (2026-10-23):** Mon–Thu practice TVs (/upwardbasketballscores/practice/{basketball,cheer}), Admin > Practice editor, practice_days + practice_slots tables (additive), demo week; mascot logos (or initial badge) on the lobby and practice TVs only.
 - **Shipped 2026-10-23 (logos):** Sage's mascot logos (commit 3a9ae22, approved by Aaron) for all 44 demo teams and 4 cheer squads, served from /team-logos/ (image/png, 1-day cache); seed fills them; `dist/src/load-logos.js [--dry-run] [--overwrite]` fills existing DBs (only empty logos by default, idempotent). Admin accepts the bundled /team-logos/... path as a logo URL.
 - **Shipped 2026-10-23 (round 2):** K–2nd Grade scorekeeper keeps only clock, period and possession (server refuses SCORE/FOUL/TIMEOUT and undo/redo of them, code score-hidden). Lobby halftime roll-up: at halftime (P3 0:00 or P4+) a court's game leaves the lobby, its next game takes the top slot showing "Tip-Off: <time>" until it is started (status active), Up Next shows the one after; Full Court the same; cheer row follows the top slot; demo ?at halftime from tip-off +18 min.

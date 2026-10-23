@@ -3,6 +3,7 @@
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
 import { mascotHtml } from './logo-badge.js';
 import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText } from './lobby-view.js';
+import { nextEvent, nextEventText } from './next-event.js';
 
 // Alias (data-needs.md): /lobby?practice=cheer|basketball opens that practice TV (other query params kept).
 { const pq = new URLSearchParams(location.search), pr = pq.get('practice');
@@ -26,7 +27,14 @@ let gameDays = null, gameDaysAt = 0, gameToday = null;
 async function loadGameDays() {
   if (gameDays && Date.now() - gameDaysAt < 5 * 60000) return gameDays;
   try { const j = await (await fetch('/api/public/game-days')).json(); gameDays = j.days || []; gameToday = j.today; gameDaysAt = Date.now(); } catch { gameDays = gameDays || []; }
+  try { practice = await (await fetch('/api/public/practice')).json(); } catch {}
   return gameDays;
+}
+let practice = null;
+/** Idle line: next game day or practice night, whichever is first (from the lobby's day + demo/league time). */
+function idleLine() {
+  const now = demo?.at || (practice?.now?.date === snap.date ? practice.now.hm : '23:59');
+  return nextEventText(nextEvent({ today: snap.date, now, gameDays, practice }), snap.date);
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const main = document.querySelector('main');
@@ -71,8 +79,8 @@ function renderIdle() {
   document.querySelector('[data-bind="header"]').textContent = 'UPWARD BASKETBALL';
   main.className = 'idle';
   main.innerHTML = `<section class="idle" data-state="idle"><div class="idle-title" data-bind="idle-title">${had ? 'No more games today' : 'No games today'}</div>
-<div class="idle-next" data-bind="idle-next">${esc(gameDays ? idleText(gameDays, snap.date) : '')}</div></section>`;
-  if (!gameDays || Date.now() - gameDaysAt > 5 * 60000) loadGameDays().then(() => { const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleText(gameDays, snap.date); });
+<div class="idle-next" data-bind="idle-next">${esc(gameDays ? idleLine() : '')}</div></section>`;
+  if (!gameDays || Date.now() - gameDaysAt > 5 * 60000) loadGameDays().then(() => { const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleLine(); });
 }
 
 function render() {

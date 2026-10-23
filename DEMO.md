@@ -61,11 +61,13 @@ The scorekeeper lists today's games on its court; when there are none today it l
 
 **Lobby logos:** the lobby shows each team's mascot beside its name (live and Up Next rows) and the squad's logo on the cheer row; no logo -> a round initial badge. Court TVs, overlay and scorekeeper are unchanged. **Last game of the day:** if a court has nothing after its live game, that game stays on the lobby through the 2nd half until it goes final (no early "No more games"). **One court rolled:** Up Next is one time slot (the soonest start not already on top); the top cheer row follows the slot still being played.
 
+**Idle screens (no games, no practice):** the lobby and both practice TVs show the next event, whichever comes first: "Next: Games Saturday, Oct 24 · First tip-off 9:00 AM" or "Next: Practice Monday, Oct 26 · 5:00 PM" (the cheer TV counts only nights with cheer; tonight's practice counts until it ends). With nothing scheduled: "No games or practices scheduled". Try `/lobby?day=sat&at=22:00`, `/practice/cheer?day=tue&at=12:00`.
+
 ## Practice TVs (Mon–Thu)
 
 - Basketball: `/upwardbasketballscores/practice/basketball` (alias `/practice/basketball`, or `/lobby?practice=basketball`). Pages are the night's 1-hour slots (West 1/2, East 1/2; empty = "Open"): the current slot (from 10 min before it starts) 12 s, then the next slot 8 s. Before the first slot, all slots page at 12 s with "Starts 5:00 PM".
 - Cheer: `/upwardbasketballscores/practice/cheer` (alias `/practice/cheer`): one card per room, all evening (no times), 9 per page.
-- On from 60 min before the night's first slot to 15 min after its end; otherwise "No practice right now" + next practice. Each team/squad shows its mascot logo, or the initial badge.
+- On from 60 min before the night's first slot to 15 min after its end; otherwise "No practice right now" + the next event. Each team/squad shows its mascot logo, or the initial badge.
 - Demo: `?day=mon&at=17:10` (also `day=wed&at=16:40`, `day=fri` for the idle screen). The route shows bottom right for the first minute (`?setup=1` always, `?setup=0` never).
 - Demo week (seeded with the demo weekend): Mon + Tue 5–9 PM, Wed 4:30–6:30 PM, Thu 5–6 PM (44 teams, once each); cheer Mon + Thu: Room 20, Room 28/30, Kids Street, Foundry.
 - Edit: Admin > **Practice (Mon–Thu)** (`/admin/practice`): night on/off + hours, a team per court per slot, cheer rooms, "Copy this night to", Save week.

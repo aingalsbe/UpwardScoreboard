@@ -1074,9 +1074,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   }
   // Mon–Thu practice displays: the fixed weekly schedule + league-local "now" (day of week 0–6, HH:MM).
   if (p === '/api/public/practice') {
-    const now = (await pool.query(`SELECT extract(isodow FROM now() AT TIME ZONE $1)::int % 7 AS dow, to_char(now() AT TIME ZONE $1, 'HH24:MI') AS hm`, [LEAGUE_TZ])).rows[0];
+    const now = (await pool.query(`SELECT extract(isodow FROM now() AT TIME ZONE $1)::int % 7 AS dow, to_char(now() AT TIME ZONE $1, 'HH24:MI') AS hm, to_char(now() AT TIME ZONE $1, 'YYYY-MM-DD') AS date`, [LEAGUE_TZ])).rows[0];
     const sched = await loadPractice(pool);
-    return json(res, 200, { serverNow: Date.now(), now: { dow: now.dow, hm: now.hm }, days: sched.days,
+    return json(res, 200, { serverNow: Date.now(), now: { dow: now.dow, hm: now.hm, date: now.date }, days: sched.days,
       basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, ...x }) => x) });
   }
   // ---- everything below needs the admin session
