@@ -3,7 +3,7 @@
 @font-face { font-family: "Anton"; src: url(/fonts/Anton-Regular-latin.woff2) format("woff2"); }
 @font-face { font-family: "Montserrat"; src: url(/fonts/Montserrat-Variable-latin.woff2) format("woff2"); font-weight: 100 900; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 10px; --gold: #ffc72c; --maroon: #800000; --pink: #f47cc6; --teal: #5ce1e6; }
+html { font-size: 10px; --gold: var(--season-light); --maroon: var(--season-dark); --pink: var(--season-light); --teal: color-mix(in srgb, var(--season-dark) 55%, #fff); } /* SAGE: season vars (were #ffc72c / #800000 / #f47cc6 / #5ce1e6) */
 body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", sans-serif; color: #fff; position: relative;
   background: radial-gradient(ellipse 55% 30% at 50% 100%, transparent 62%, rgba(255,255,255,.35) 63%, transparent 65%),
               linear-gradient(90deg, rgba(0,0,0,.08) 0 2px, transparent 2px 120px) , linear-gradient(180deg,#a8652c,#c98a4b 45%,#9a5a25); }
@@ -60,3 +60,10 @@ main.idle { display: grid; place-items: center; height: 80rem; }
 .idle-next { margin-top: 2rem; font: 800 4.8rem "Montserrat", sans-serif; color: var(--gold); }   /* gold on black 13.5:1 */
 .demo { position: absolute; z-index: 2; right: 2rem; top: 1.4rem; font: 800 2.8rem "Montserrat", sans-serif; background: var(--maroon); color: #fff; padding: .4rem 1.6rem; border-radius: 1rem; } /* white on maroon 10.9:1 */
 [hidden] { display: none !important; }
+
+/* SAGE: season colors only (Aaron 2026-10-23): court cards = season light with --season-light-fg text; the room pills
+   alternate season light / a light tint of the season dark (black text); demo tag = season dark. Live via season.js. */
+.court { color: var(--season-light-fg); }
+.court .label { background: var(--season-light-fg); color: var(--season-light); }
+.court[data-empty] .team { color: color-mix(in srgb, var(--season-light-fg) 70%, var(--season-light)); }
+.demo { color: var(--season-dark-fg); }

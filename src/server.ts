@@ -280,7 +280,7 @@ async function gameViewNorm(gameId: number) {
 }
 
 // -------------------------------------------------------------- websockets
-interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule'; authed: boolean; qrVer?: number | null; date?: string; }
+interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule' | 'season'; authed: boolean; qrVer?: number | null; date?: string; }
 const clients = new Set<Client>();
 
 /**
@@ -304,6 +304,16 @@ function scheduleChanged() {
     for (const [date, list] of byDate) { try { const snap = await scheduleSnapshot(date); for (const c of list) send(c, snap); } catch (e) { console.error(e); } }
   }, 150);
 }
+// Every screen (lobby, practice TVs, court TV, overlay, scorekeeper, admin) follows the season colors live:
+// public/season.js holds a role=season socket and gets this on connect and after every season save.
+const seasonMsg = () => ({ type: 'state', kind: 'season', serverNow: Date.now(), season: { ...season } });
+function broadcastSeason() { const m = seasonMsg(); for (const c of clients) if (c.role === 'season') send(c, m); }
+/** Inline <style> with the season variables, injected into every HTML page so the first paint already has them. */
+function seasonStyle() {
+  const ok = (h: string) => (/^#[0-9A-Fa-f]{6}$/.test(h) ? h : '#808080');
+  const fg = (h: string) => (lum(ok(h)) > 0.179 ? '#111111' : '#FFFFFF');
+  return `<style id="season-vars">:root{--season-light:${ok(season.light)};--season-dark:${ok(season.dark)};--season-light-fg:${fg(season.light)};--season-dark-fg:${fg(season.dark)}}</style>`;
+}
 async function broadcastCourt(slug: string) {
   scheduleChanged();
   const targets = [...clients].filter((c) => c.court === slug);
@@ -324,7 +334,7 @@ function attachWs(server: http.Server) {
   wss.on('connection', (ws, req) => {
     const u = new URL(req.url || '/', 'http://x');
     const court = u.searchParams.get('court') || '';
-    const role = (['tv', 'overlay', 'score', 'schedule'].includes(u.searchParams.get('role') || '') ? u.searchParams.get('role') : 'viewer') as Client['role'];
+    const role = (['tv', 'overlay', 'score', 'schedule', 'season'].includes(u.searchParams.get('role') || '') ? u.searchParams.get('role') : 'viewer') as Client['role'];
     const client: Client = { ws, court, role, authed: false };
     if (role === 'schedule') client.date = resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now());
     if (role === 'score' && validToken(tokenFrom(req))) client.authed = true; // admin may score any court
@@ -343,13 +353,14 @@ function attachWs(server: http.Server) {
       ws.ping();
       send(client, { type: 'time', serverNow: Date.now() }); // also feeds the client-side watchdog
     }, 2000);
-    ws.on('close', () => { clearInterval(hb); clients.delete(client); if (role !== 'schedule') void broadcastCourt(court); });
+    ws.on('close', () => { clearInterval(hb); clients.delete(client); if (role !== 'schedule' && role !== 'season') void broadcastCourt(court); });
     ws.on('message', async (raw) => {
       lastSeen = Date.now();
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return send(client, { type: 'error', error: 'bad json' }); }
       try {
         if (msg.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
+        if (role === 'season') return msg.type === 'resync' ? send(client, seasonMsg()) : undefined; // read-only
         if (msg.type === 'resync') { const s = role === 'schedule' ? await scheduleSnapshot(client.date!) : await courtSnapshot(court); return s && send(client, s); }
         if (role === 'schedule') return send(client, { type: 'error', error: 'read-only schedule screen' });
         if (msg.type === 'auth') {
@@ -445,6 +456,7 @@ function attachWs(server: http.Server) {
       } catch (e: any) { send(client, { type: 'error', id: msg?.id, error: String(e?.message || e) }); }
     });
     void (async () => {
+      if (role === 'season') return send(client, seasonMsg());
       if (role === 'schedule') return send(client, await scheduleSnapshot(client.date!));
       const s = await courtSnapshot(court);
       if (!s) { send(client, { type: 'error', error: `unknown court "${court}"` }); return; }
@@ -772,7 +784,7 @@ async function scheduleSnapshot(date: string) {
   const cheerSlots = (await pool.query(`SELECT s.id, to_char(s.slot_start, 'HH24:MI') AS start, s.locker, q.id AS squad_id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo
     FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date = $1::date ORDER BY s.slot_start`, [date])).rows
     .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: x.locker || null, logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
-  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, cheerSlots, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, games };
+  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, cheerSlots, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season: { ...season }, games };
 }
 
 /**
@@ -1187,6 +1199,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     return json(res, 200, { token: t }, { 'set-cookie': `sb_admin=${t}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200` });
   }
   if (p === '/api/logout') return json(res, 200, { ok: true }, { 'set-cookie': 'sb_admin=; Path=/; Max-Age=0' });
+  if (p === '/api/public/season' && m === 'GET') return json(res, 200, { ...season });
   if (p === '/api/public/courts') {
     const { rows } = await pool.query('SELECT slug, name, location, current_game_id FROM courts ORDER BY id');
     return json(res, 200, rows);
@@ -1294,7 +1307,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       if (lum(dark) >= lum(light)) throw new HttpError(400, 'the dark color must be darker than the light color');
       const name = String(b.name ?? season.name).trim().slice(0, 40) || season.name;
       for (const [k, v] of [['season_name', name], ['season_dark', dark], ['season_light', light]]) await pool.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
-      await loadSeason(); await refreshAllCourts();
+      await loadSeason(); await refreshAllCourts(); broadcastSeason(); scheduleChanged();
       return json(res, 200, season);
     }
   }
@@ -1577,7 +1590,20 @@ const server = http.createServer(async (req, res) => {
     let file = page ? page[1] : u.pathname.replace(/^\/+/, '');
     const full = path.resolve(PUBLIC_DIR, file);
     if (!full.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(full) || fs.statSync(full).isDirectory()) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found'); }
-    res.writeHead(200, { 'content-type': MIME[path.extname(full)] || 'application/octet-stream', 'cache-control': 'no-cache' });
+    // Never stale after a deploy: HTML is no-cache + must-revalidate (and carries the current season colors inline);
+    // JS/CSS/fonts are no-cache with an ETag, so a browser always revalidates and gets a cheap 304 when unchanged.
+    const st = fs.statSync(full), ext = path.extname(full);
+    if (ext === '.html') {
+      const html = fs.readFileSync(full, 'utf8').replace('</head>', `${seasonStyle()}</head>`);
+      const etag = `"h-${crypto.createHash('sha1').update(html).digest('base64url').slice(0, 16)}"`;
+      const hdr = { 'content-type': MIME[ext], 'cache-control': 'no-cache, must-revalidate', etag };
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304, hdr); return res.end(); }
+      res.writeHead(200, hdr); return res.end(html);
+    }
+    const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    const hdr = { 'content-type': MIME[ext] || 'application/octet-stream', 'cache-control': 'no-cache', etag, 'last-modified': st.mtime.toUTCString() };
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, hdr); return res.end(); }
+    res.writeHead(200, hdr);
     fs.createReadStream(full).pipe(res);
   } catch (e: any) {
     const msg = String(e?.message || e);

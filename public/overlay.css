@@ -3,7 +3,7 @@
    The church tag sits outside .bug (markup), stacked directly above it. No cheer squads here. */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: transparent !important; }
-html { --home-color: #ffc72c; --home-accent: #800000; --away-color: #800000; --away-accent: #ffc72c; --season-light: #ffc72c; --season-dark: #800000; }
+html { --home-color: var(--season-light); --home-accent: var(--season-dark); --away-color: var(--season-dark); --away-accent: var(--season-light); /* SAGE: season vars */ }
 body { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 8px; padding: 48px;
   font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; color: #fff; }
 .church { display: inline-flex; align-items: center; gap: 8px; background: #0d1018; color: #fff; font-size: 17px; font-weight: 800; letter-spacing: .5px;

@@ -429,3 +429,6 @@ async function openHistory(id) {
   $('#history-dlg').showModal();
 }
 $('#history-close')?.addEventListener('click', () => $('#history-dlg').close());
+
+// Season colors live in other admin tabs too (season.js role=season socket): team-list swatches follow without a reload.
+window.addEventListener('season', (e) => { if (!seasonColors) return; seasonColors = { ...seasonColors, ...e.detail }; try { renderTeams(); } catch {} });

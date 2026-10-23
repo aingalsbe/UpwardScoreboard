@@ -127,3 +127,28 @@ test('API: season hex (#RGB / #RRGGBB) stored uppercase, bad = 400; game colors 
   const games = (await api('/api/games')).body;
   assert.ok(games.length && games.every((g: any) => !Object.keys(g).some((k) => /primary|secondary/.test(k))), 'game rows carry no team colors');
 });
+
+test('season colors reach every screen: public season API, inline season-vars in HTML, season WS role, revalidated assets', async () => {
+  await api('/api/settings/season', 'PUT', { name: 'Spring', dark: '#4e7afd', light: '#ffc72c' });
+  const pub = await fetch(`${BASE}/api/public/season`).then((x) => x.json());
+  assert.equal(pub.dark, '#4E7AFD'); assert.equal(pub.light, '#FFC72C');
+  for (const p of ['/upwardbasketballscores/lobby', '/practice/basketball', '/practice/cheer', '/admin']) {
+    const r = await fetch(BASE + p); const html = await r.text();
+    assert.match(html, /<style id="season-vars">:root\{--season-light:#FFC72C;--season-dark:#4E7AFD;/, p);
+    assert.match(html, /<script src="\/season\.js"><\/script>/, p);
+    assert.match(r.headers.get('cache-control') || '', /no-cache, must-revalidate/, p);
+    const et = r.headers.get('etag')!; assert.ok(et, p);
+    assert.equal((await fetch(BASE + p, { headers: { 'if-none-match': et } })).status, 304, p);
+  }
+  const css = await fetch(`${BASE}/lobby.css`); assert.match(css.headers.get('cache-control') || '', /no-cache/); assert.ok(css.headers.get('etag'));
+  const { WebSocket } = await import('ws');
+  const ws = new WebSocket(BASE.replace('http', 'ws') + '/ws?court=*&role=season');
+  const msgs: any[] = []; ws.on('message', (m) => msgs.push(JSON.parse(String(m))));
+  const until = async (f: () => boolean) => { for (let i = 0; i < 50 && !f(); i++) await new Promise((r) => setTimeout(r, 50)); };
+  await until(() => msgs.some((m) => m.kind === 'season'));
+  assert.equal(msgs.find((m) => m.kind === 'season').season.dark, '#4E7AFD');
+  await api('/api/settings/season', 'PUT', { name: 'Spring', dark: '#224466', light: '#ffdd88' });
+  await until(() => msgs.some((m) => m.kind === 'season' && m.season.dark === '#224466'));
+  assert.ok(msgs.some((m) => m.kind === 'season' && m.season.light === '#FFDD88'), 'season push arrives live');
+  ws.close();
+});

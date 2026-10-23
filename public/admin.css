@@ -106,10 +106,10 @@ button[data-reopen]::before { content: "↺ "; }
 
 /* ---------- Weekly QR codes ---------- */
 .qr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.qr-card { background: #fff; color: #111; border-radius: 16px; padding: 18px; text-align: center; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 4px #ffc72c; }
+.qr-card { background: #fff; color: #111; border-radius: 16px; padding: 18px; text-align: center; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 4px var(--season-light); } /* SAGE: was #ffc72c */
 .qr-card a, .qr-card code { color: #111; background: #f1f1f1; }
 .qr-court { font-size: 24px; font-weight: 900; margin: 0; color: #111; }
-.qr-court::after { content: ""; display: block; width: 60px; height: 5px; margin: 8px auto 0; border-radius: 3px; background: #800000; }
+.qr-court::after { content: ""; display: block; width: 60px; height: 5px; margin: 8px auto 0; border-radius: 3px; background: var(--season-dark); } /* SAGE: was #800000 */
 .qr-code svg { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
 .qr-help { font-weight: 800; font-size: 16px; }
 .qr-help::before { content: "Scan to keep score. "; display: block; font-size: 20px; }

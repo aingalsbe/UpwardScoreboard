@@ -3,7 +3,7 @@
    tv-off, two-controllers; #pin-err[data-kind], .toast[data-kind], #confirm-dialog[data-kind],
    .pick[data-status], .status-badge[data-status]. Team panels use the season tones via --home-color etc. */
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html { --home-color: #ffc72c; --home-accent: #800000; --away-color: #800000; --away-accent: #ffc72c;
+html { --home-color: var(--season-light); --home-accent: var(--season-dark); --away-color: var(--season-dark); --away-accent: var(--season-light); /* SAGE: season vars */
   --bg: #0f1320; --panel: #171c2e; --raised: #262d45; --line: #3a4262; --ink: #fff; --muted: #b9bfd3; --blue: #7cc4ff; --blue-bg: #13294a; }
 body { background: var(--bg); color: var(--ink); font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; padding: 12px; min-height: 100vh; user-select: none; overflow-x: hidden; }
 button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action: manipulation; }

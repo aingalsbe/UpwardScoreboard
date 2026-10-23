@@ -78,6 +78,35 @@ try {
   ok((await rows()).every((x) => x.text === '#FFCC33 / #003366') && !/1E90FF/i.test(await p.textContent('#team-rows')), 'list still shows the season colors only');
   ok(adminLoads === 0, 'admin page was not reloaded');
   await call(`/api/teams/${tNew}`, 'DELETE');
+  // 9) EVERY screen (Aaron: season colors only): lobby, both practice TVs, court TV, overlay, scorekeeper, admin and the
+  //    practice editor start on the season colors (inline <style id="season-vars">) and follow a season save LIVE.
+  await call('/api/settings/season', 'PUT', { name: season0.name, dark: '#4E7AFD', light: '#FFC72C' });
+  const SCREENS = { lobby: '/upwardbasketballscores/lobby', 'practice/basketball': '/practice/basketball', 'practice/cheer': '/practice/cheer',
+    'court TV': `/tv/${slug}`, overlay: `/overlay/${slug}`, scorekeeper: `/score/${slug}`, admin: '/admin', 'admin/practice': '/admin/practice' };
+  const scr = {}; for (const [n, path] of Object.entries(SCREENS)) scr[n] = await open(path);
+  const vars = (d) => d.pg.evaluate(() => { const cs = getComputedStyle(document.documentElement); return [cs.getPropertyValue('--season-light').trim().toUpperCase(), cs.getPropertyValue('--season-dark').trim().toUpperCase()]; });
+  const waitVars = async (d, want, ms = 5000) => { const t = Date.now(); let v; while (Date.now() - t < ms) { v = await vars(d); if (v[0] === want[0] && v[1] === want[1]) return v; await d.pg.waitForTimeout(150); } return v; };
+  for (const [n, d] of Object.entries(scr)) ok((await waitVars(d, ['#FFC72C', '#4E7AFD'])).join() === '#FFC72C,#4E7AFD', `${n} starts on the season #FFC72C / #4E7AFD`);
+  // the lobby's rows really paint with them (away row = season dark, home row = season light; no fixed maroon/gold)
+  const rowBg = (sel) => scr.lobby.pg.evaluate((q) => [...document.querySelectorAll(q)].map((e) => getComputedStyle(e).backgroundColor), sel);
+  const hasAway = (await rowBg('.row.away')).length > 0;
+  if (hasAway) ok((await rowBg('.row.away')).every((c) => c === 'rgb(78, 122, 253)'), 'lobby away rows = season dark #4E7AFD');
+  if (hasAway) ok((await rowBg('.row.home')).every((c) => c === 'rgb(255, 199, 44)'), 'lobby home rows = season light #FFC72C');
+  const css0 = await (await fetch(BASE + '/lobby.css')).text();
+  ok(!/#800000|#f47cc6/i.test(css0.replace(/\/\*[\s\S]*?\*\//g, '')), 'lobby.css has no fixed maroon/pink outside comments');
+  const r9 = await call('/api/settings/season', 'PUT', { name: season0.name, dark: '#224466', light: '#FFDD88' });
+  ok(r9.status === 200, 'season changed to #FFDD88 / #224466');
+  for (const [n, d] of Object.entries(scr)) ok((await waitVars(d, ['#FFDD88', '#224466'])).join() === '#FFDD88,#224466', `${n} follows the season change live`);
+  if (hasAway) ok((await rowBg('.row.away')).every((c) => c === 'rgb(34, 68, 102)'), 'lobby away rows repainted #224466 live');
+  for (const [n, d] of Object.entries(scr)) ok(d.loads() === 1, `${n} was never reloaded`);
+  // HTML can't go stale after a deploy: no-cache + must-revalidate; JS/CSS revalidate with an ETag (304)
+  const h = await fetch(BASE + '/upwardbasketballscores/lobby');
+  ok(/no-cache/.test(h.headers.get('cache-control') || '') && /must-revalidate/.test(h.headers.get('cache-control') || ''), `lobby HTML cache-control "${h.headers.get('cache-control')}"`);
+  ok((await h.text()).includes('--season-dark:#224466'), 'lobby HTML carries the current season colors inline');
+  const a = await fetch(BASE + '/lobby.js'), et = a.headers.get('etag');
+  ok(/no-cache/.test(a.headers.get('cache-control') || '') && !!et, `lobby.js no-cache with ETag ${et}`);
+  ok((await fetch(BASE + '/lobby.js', { headers: { 'if-none-match': et } })).status === 304, 'unchanged lobby.js revalidates as 304');
+  for (const d of Object.values(scr)) await d.pg.close();
   await call('/api/settings/season', 'PUT', season0);
 } finally { await b.close(); }
 console.log(`result: ${pass} passed, ${fail} failed`);

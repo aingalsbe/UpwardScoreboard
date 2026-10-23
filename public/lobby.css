@@ -12,7 +12,7 @@
 @font-face { font-family: "Anton"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/Anton-Regular-latin.woff2") format("woff2"); }
 @font-face { font-family: "Montserrat"; font-style: normal; font-weight: 400 900; font-display: swap; src: url("/fonts/Montserrat-Variable-latin.woff2") format("woff2"); }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 10px; --gold: #ffc72c; --maroon: #800000; --ink: #fff; --pink: #f47cc6; }
+html { font-size: 10px; --gold: var(--season-light); --maroon: var(--season-dark); --ink: #fff; --pink: color-mix(in srgb, var(--season-light) 45%, #fff); } /* SAGE: season vars (were #ffc72c / #800000 / #f47cc6) */
 body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", "Archivo", Arial, sans-serif; color: var(--ink);
   background:
     radial-gradient(ellipse 60% 35% at 50% 18%, rgba(120,150,200,.35), transparent 70%),
@@ -196,3 +196,16 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 .game[data-moved] { position: relative; }
 .moved-note { position: absolute; top: -1.4rem; right: 1.6rem; z-index: 2; padding: .2rem 1.2rem; border-radius: 99rem;
   background: #fff3c4; color: #5a3b00; border: .2rem solid #c98a00; font: 800 1.6rem "Montserrat", sans-serif; letter-spacing: .05rem; white-space: nowrap; }
+
+/* SAGE: season colors only (Aaron 2026-10-23). Home rows = season light, away rows = season dark, cheer = a light tint of
+   the season light; text on them = --season-*-fg (#111/#fff by contrast). Values come from the <style id="season-vars">
+   the server injects into the page and update live via season.js (role=season WebSocket). Replaces the old fixed
+   gold / black-with-maroon-rim / pink rows. */
+.row.home { color: var(--season-light-fg); }
+.row.away { background: var(--season-dark); color: var(--season-dark-fg); border-color: #000; }
+.home .coach { color: color-mix(in srgb, var(--season-light-fg) 85%, var(--season-light)); }
+.away .coach { color: color-mix(in srgb, var(--season-dark-fg) 85%, var(--season-dark)); }
+.home .locker, .home .side { background: var(--season-light-fg); color: var(--season-light); }
+.away .locker, .away .side { background: var(--season-dark-fg); color: var(--season-dark); box-shadow: none; }
+.cheer .coach { color: color-mix(in srgb, #000 85%, var(--pink)); }
+.mascot.badge { color: var(--season-light); }
