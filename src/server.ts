@@ -1554,6 +1554,6 @@ async function main() {
   if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.\n' + formatReport(await loadLogos(pool)));
   await loadSeason();
   attachWs(server);
-  server.listen(PORT, () => console.log(`Scoreboard listening on :${PORT}`));
+  server.listen(PORT, () => console.log(`Scoreboard listening on :${(server.address() as any)?.port ?? PORT}`)); // PORT=0 -> OS-picked port (tests)
 }
 main().catch((e) => { console.error(e); process.exit(1); });

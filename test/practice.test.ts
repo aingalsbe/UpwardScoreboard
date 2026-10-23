@@ -7,6 +7,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { validatePractice, slotStarts, DEMO_PRACTICE_DAYS } from '../src/practice.js';
+import { startServer } from './_server.js';
 
 const PUB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public');
 const noPub = !fs.existsSync(path.join(PUB, 'practice-view.js')) && 'public/ not present';
@@ -76,7 +77,8 @@ test('practice screens render logo or initial badge (shared helper)', { skip: no
 const BASE_URL = process.env.TEST_DATABASE_URL || '';
 const skip = !BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BASE_URL).pathname) ? 'TEST_DATABASE_URL database name must contain "test"' : false;
 let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null; let URL_ = '';
-const PORT = 37000 + Math.floor(Math.random() * 2000), BASE = `http://127.0.0.1:${PORT}`, ADMIN = 'practice-admin-pw';
+let PORT = 0, BASE = ''; // PORT=0: the OS picks a free port (test/_server.ts)
+const ADMIN = 'practice-admin-pw';
 before(async () => {
   if (skip) return;
   const u = new URL(BASE_URL); const name = u.pathname.slice(1) + '_practice'; u.pathname = '/' + name; URL_ = u.toString();
@@ -104,10 +106,9 @@ test('DB: additive migration, demo seed = 44 teams once a week on one court + 4 
   const tid = (await pool.query(`SELECT team_id FROM practice_slots WHERE kind='basketball' ORDER BY id LIMIT 1`)).rows[0].team_id;
   await pool.query(`UPDATE teams SET logo_url=NULL WHERE id=$1`, [tid]);
 
-  srv = spawn(process.execPath, [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/server.js')], {
-    env: { ...process.env, DATABASE_URL: URL_, PORT: String(PORT), ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let log = ''; srv.stdout!.on('data', (x) => (log += x)); srv.stderr!.on('data', (x) => (log += x));
-  for (let i = 0; i < 100 && !/listening/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; PORT = started.port; BASE = `http://127.0.0.1:${PORT}`;
+  const log = started.log();
   const pub = await (await fetch(BASE + '/api/public/practice')).json();
   assert.equal(pub.basketball.length, 44); assert.equal(pub.cheer.length, 8);
   assert.ok(pub.now.dow >= 0 && pub.now.dow <= 6); assert.match(pub.now.hm, /^\d\d:\d\d$/);

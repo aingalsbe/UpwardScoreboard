@@ -6,13 +6,15 @@ import path from 'node:path';
 import { spawn, ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { startServer } from './_server.js';
 
 const PUB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public');
 const noPub = !fs.existsSync(path.join(PUB, 'lobby-view.js')) && 'public/ not present';
 const BASE_URL = process.env.TEST_DATABASE_URL || '';
 const skip = !BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BASE_URL).pathname) ? 'TEST_DATABASE_URL database name must contain "test"' : false;
 let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null; let URL_ = '';
-const PORT = 39000 + Math.floor(Math.random() * 900), BASE = `http://127.0.0.1:${PORT}`, ADMIN = 'resched-admin-pw';
+let PORT = 0, BASE = ''; // PORT=0: the OS picks a free port (test/_server.ts)
+const ADMIN = 'resched-admin-pw';
 
 test('lobby note: "Moved from Sat 11/7 9:00 AM" (date changed) / "Moved from 9:00 AM" (same day) until final', { skip: noPub }, async () => {
   const { movedText } = await import(path.join(PUB, 'lobby-view.js'));
@@ -63,10 +65,9 @@ test('DB: reschedule rules, audit, lobby note, CSV round-trip, plain PUT checks'
     await pool.query(`INSERT INTO cheer_slots(date, slot_start, squad_id) VALUES ('2026-11-07', $1, $2)`, [s, q]);
   }
 
-  srv = spawn(process.execPath, [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/server.js')], {
-    env: { ...process.env, DATABASE_URL: URL_, PORT: String(PORT), ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let log = ''; srv.stdout!.on('data', (x) => (log += x)); srv.stderr!.on('data', (x) => (log += x));
-  for (let i = 0; i < 100 && !/listening/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; PORT = started.port; BASE = `http://127.0.0.1:${PORT}`;
+  const log = started.log();
   assert.equal((await fetch(`${BASE}/api/games/${g1}/reschedule`, { method: 'POST', body: '{}' })).status, 401, 'admin only');
   const login = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: ADMIN }) });
   const h = { cookie: (login.headers.get('set-cookie') || '').split(';')[0], 'content-type': 'application/json' };

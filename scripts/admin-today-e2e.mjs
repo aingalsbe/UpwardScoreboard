@@ -1,6 +1,6 @@
 // Browser e2e for bug A1 (Admin Today list): a completed game shows FINAL with its score, the active game shows LIVE
 // and updates live over the WebSocket (score, complete, reopen) without a reload; at 390px nothing scrolls sideways.
-// Creates two games today on East (09:00 final, 10:00 live; inside the 08:00–21:00 game hours) with its own teams, and removes them afterwards.
+// Creates two games on the next Fri/Sat (today if it is one) on East (09:00 final, 10:00 live; inside the 08:00–21:00 game hours) with its own teams, and removes them afterwards.
 // Screenshots: OUT_DIR (default: <tmp>/upward-admin-today, so a run never overwrites the tracked docs/screenshots/admin;
 // set OUT_DIR=docs/screenshots/admin on purpose to refresh those)/admin-today-{390,1440}.png
 // Usage: [BASE_URL=http://localhost:3000] [CHROME_PATH=/usr/bin/google-chrome] node scripts/admin-today-e2e.mjs
@@ -24,7 +24,11 @@ const H = { authorization: `Bearer ${token}`, 'content-type': 'application/json'
 const api = async (p, o = {}) => (await fetch(BASE + p, { ...o, headers: { ...H, ...(o.headers || {}) } })).json();
 const csv = (body) => api('/api/import/schedule.csv', { method: 'POST', body, headers: { 'content-type': 'text/csv' } });
 const tz = (await api('/api/me')).tz;
-const today = new Date().toLocaleDateString('sv-SE', { timeZone: tz });
+const realToday = new Date().toLocaleDateString('sv-SE', { timeZone: tz });
+// Pinned game day: today if it's a Friday/Saturday, else the next Friday (plain edits that move a game must stay on
+// Fri/Sat, 08:00–21:00). When that isn't today, the browser clock is set to that day so Admin "Today" lists it.
+const dow = new Date(`${realToday}T12:00:00Z`).getUTCDay();
+const today = dow === 5 || dow === 6 ? realToday : new Date(Date.parse(`${realToday}T12:00:00Z`) + ((5 - dow + 7) % 7) * 86_400_000).toISOString().slice(0, 10);
 for (const g of (await api('/api/games')).filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
 const RUN = Date.now().toString(36).slice(-5);
 const mk = async (n) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `${n}-${RUN}`, short_name: n.slice(0, 3), grade: '3rd Grade', gender: 'Boys' }) })).id;
@@ -41,7 +45,9 @@ await send({ type: 'auth', pin: PIN_EAST, device: 'admin-today-e2e' });
 await send({ type: 'cmd', cmd: { type: 'SCORE', team: 'home', pts: 2 } });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const page = await (await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })).newPage();
+const bctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+if (today !== realToday) { await bctx.clock.setSystemTime(new Date(`${today}T17:00:00Z`)); console.log(`  (browser clock set to ${today}, the next game day)`); }
+const page = await bctx.newPage();
 page.on('pageerror', (e) => ok(false, `page error: ${e.message}`));
 fs.mkdirSync(OUT, { recursive: true });
 await page.goto(`${BASE}/admin#today`);

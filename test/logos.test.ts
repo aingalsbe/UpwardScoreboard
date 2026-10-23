@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { LOGO_DIR, LOGO_MAX_BYTES, readManifest, norm, logoFile, logoUrl } from '../src/logo-files.js';
 import { safeLogoUrl } from '../src/logo.js';
+import { startServer } from './_server.js';
 
 const noFiles = !fs.existsSync(path.join(LOGO_DIR, 'manifest.json')) && 'deliverables/logos not present';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -34,7 +35,7 @@ test('manifest: 44 teams + 4 cheer, unique, every file a 512x512 PNG <= 300 KB',
 const BASE_URL = process.env.TEST_DATABASE_URL || '';
 const skip = noFiles || (!BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BASE_URL).pathname) ? 'TEST_DATABASE_URL database name must contain "test"' : false);
 let db: typeof import('../src/db.js'); let lf: typeof import('../src/logo-files.js'); let srv: ChildProcess | null = null; let URL_ = '';
-const PORT = 35000 + Math.floor(Math.random() * 2000), BASE = `http://127.0.0.1:${PORT}`;
+let PORT = 0, BASE = ''; // PORT=0: the OS picks a free port (test/_server.ts)
 before(async () => {
   if (skip) return;
   const u = new URL(BASE_URL); const name = u.pathname.slice(1) + '_logos'; u.pathname = '/' + name; URL_ = u.toString();
@@ -78,10 +79,9 @@ test('loader: demo seed covers 44/44 teams + 4/4 squads; fills only empty; idemp
 });
 
 test('static route: /team-logos/... -> image/png with cache headers; bad paths 404', { skip }, async () => {
-  srv = spawn(process.execPath, [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/server.js')], {
-    env: { ...process.env, DATABASE_URL: URL_, PORT: String(PORT), ADMIN_PASSWORD: 'x-test', TZ: 'America/Chicago', SEED: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let log = ''; srv.stdout!.on('data', (x) => (log += x)); srv.stderr!.on('data', (x) => (log += x));
-  for (let i = 0; i < 100 && !/listening/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: 'x-test', TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; PORT = started.port; BASE = `http://127.0.0.1:${PORT}`;
+  const log = started.log();
   const r = await fetch(BASE + '/team-logos/cheer/lenexa-lil-cheer.png');
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png');
   assert.match(r.headers.get('cache-control') || '', /max-age=86400/); assert.equal(r.headers.get('x-content-type-options'), 'nosniff');

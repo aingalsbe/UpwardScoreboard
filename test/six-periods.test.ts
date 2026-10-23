@@ -11,6 +11,7 @@ import WebSocket from 'ws';
 import { initialState, apply, periodLabel, DEFAULT_RULES, timeoutCap, isBonus } from '../src/game.js';
 import { hidesScore, publicView, scorekeeperView, leaksHiddenScore } from '../src/payload.js';
 import { gradeOrder } from '../src/schedule.js';
+import { startServer } from './_server.js';
 
 const T0 = 1_000_000;
 
@@ -92,7 +93,8 @@ const BASE_URL = process.env.TEST_DATABASE_URL || '';
 const skip = !BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BASE_URL).pathname) ? 'TEST_DATABASE_URL database name must contain "test" (it is wiped)' : false;
 let URL_ = '';
 let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null;
-const PORT = 33000 + Math.floor(Math.random() * 2000), BASE = `http://127.0.0.1:${PORT}`, ADMIN = 'test-admin-pw';
+let PORT = 0, BASE = ''; // PORT=0: the OS picks a free port (test/_server.ts)
+const ADMIN = 'test-admin-pw';
 
 before(async () => {
   if (skip) return;
@@ -159,12 +161,9 @@ test('server: 2nd Grade game hides score on tv/overlay/viewer/lobby + public HTT
     await pool.query(`UPDATE games SET status='active', court_id=(SELECT id FROM courts WHERE slug=$2), history=$3 WHERE id=$1`, [id, court, JSON.stringify({ present: st, past: [], future: [] })]);
     await pool.query(`UPDATE courts SET current_game_id=$1 WHERE slug=$2`, [id, court]);
   }
-  srv = spawn(process.execPath, [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/server.js')], {
-    env: { ...process.env, DATABASE_URL: URL_, PORT: String(PORT), ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let log = ''; srv.stdout!.on('data', (x) => (log += x)); srv.stderr!.on('data', (x) => (log += x));
-  for (let i = 0; i < 100 && !/listening/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
-  assert.match(log, /listening/, log);
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; PORT = started.port; BASE = `http://127.0.0.1:${PORT}`;
+  const log = started.log();
   const token = (await (await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: ADMIN }) })).json()).token;
 
   const west = await (await fetch(BASE + '/api/public/court/west')).json();

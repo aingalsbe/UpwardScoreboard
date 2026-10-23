@@ -8,10 +8,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { hasCoachKey } from '../src/payload.js';
+import { startServer } from './_server.js';
 
 const URL_ = process.env.TEST_DATABASE_URL || '';
 const skip = !URL_ ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(URL_).pathname) ? 'TEST_DATABASE_URL database name must contain "test" (it is wiped)' : false;
-const PORT = 31000 + Math.floor(Math.random() * 2000), BASE = `http://127.0.0.1:${PORT}`, ADMIN = 'test-admin-pw';
+let PORT = 0, BASE = ''; // PORT=0: the OS picks a free port (test/_server.ts)
+const ADMIN = 'test-admin-pw';
 let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null; let token = '';
 
 const api = async (p: string, opts: { method?: string; body?: unknown; csv?: string } = {}) => {
@@ -58,12 +60,9 @@ test('migration: backfills squads + hour slots from per-game cheer, reports conf
 });
 
 test('server: warnings, CRUD, CSV round-trip + legacy files, scorekeeper never gets a coach', { skip }, async () => {
-  srv = spawn(process.execPath, [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/server.js')], {
-    env: { ...process.env, DATABASE_URL: URL_, PORT: String(PORT), ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let log = ''; srv.stdout!.on('data', (d) => (log += d)); srv.stderr!.on('data', (d) => (log += d));
-  for (let i = 0; i < 100 && !/listening/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
-  assert.match(log, /listening/, log);
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; PORT = started.port; BASE = `http://127.0.0.1:${PORT}`;
+  const log = started.log();
   token = (await api('/api/login', { body: { password: ADMIN } })).body.token;
 
   // conflict -> warning with candidates; picking a squad for the slot clears it
