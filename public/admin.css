@@ -236,4 +236,4 @@ input.hex { font-family: ui-monospace, Menlo, Consolas, monospace; text-transfor
 input.hex.bad { border-color: #e5484d; outline: 2px solid rgba(229,72,77,.4); }
 .season-swatch input.hex { margin-top: 8px; }
 /* SAGE: team-list color swatch + hex (stopgap) */
-.team-color { white-space: nowrap; } .team-color .hex-val { font-size: 12px; opacity: .85; } .season-tag { font-size: 11px; }
+.team-color { white-space: nowrap; } .team-color .hex-val { font-size: 12px; opacity: .85; }

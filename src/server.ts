@@ -208,9 +208,9 @@ const CHEER_JOIN = `LEFT JOIN cheer_slots cs ON cs.date = ${slotDateSql('g.sched
 const GAME_SELECT = `
   SELECT g.*, c.slug AS court_slug, c.name AS court_name,
     h.grade AS home_grade, a.grade AS away_grade, h.gender AS home_gender, a.gender AS away_gender,
-    h.name AS home_name, h.short_name AS home_short, h.primary_color AS home_primary, h.secondary_color AS home_secondary,
+    h.name AS home_name, h.short_name AS home_short,
     h.logo_url AS home_logo_url, (h.logo_data IS NOT NULL) AS home_has_logo,
-    a.name AS away_name, a.short_name AS away_short, a.primary_color AS away_primary, a.secondary_color AS away_secondary,
+    a.name AS away_name, a.short_name AS away_short,
     a.logo_url AS away_logo_url, (a.logo_data IS NOT NULL) AS away_has_logo,
     h.coach AS home_coach, a.coach AS away_coach,
     cs.id AS cheer_slot_id, to_char(cs.date, 'YYYY-MM-DD') AS cheer_slot_date, to_char(cs.slot_start, 'HH24:MI') AS cheer_slot_start, cs.locker AS cheer_locker,
@@ -223,7 +223,6 @@ const GAME_SELECT = `
 function normalizeRow(r: any) {
   for (const side of ['home', 'away']) {
     r[`${side}_team_name`] = r[`${side}_name`]; r[`${side}_team_short`] = r[`${side}_short`];
-    r[`${side}_team_primary`] = r[`${side}_primary`]; r[`${side}_team_secondary`] = r[`${side}_secondary`];
     r[`${side}_team_logo_url`] = r[`${side}_logo_url`]; r[`${side}_team_has_logo`] = r[`${side}_has_logo`];
   }
   return r;
@@ -488,15 +487,13 @@ function color(v: any, d: string | null, field: string): string | null {
 
 const genderOf = (v: unknown) => { try { return normalizeGender(v); } catch (e: any) { throw new HttpError(400, e.message); } };
 const gradeOf = (v: unknown) => { try { return normalizeGrade(v); } catch (e: any) { throw new HttpError(400, e.message); } };
-function teamValues(b: any, strictColors = true) {
+function teamValues(b: any) {
   const name = String(b.name || '').trim();
   if (!name) throw new HttpError(400, 'name required');
   if (name.length > 30) throw new HttpError(400, 'name longer than 30 characters');
-  // Team colors are no longer used (season colors apply); kept only when a valid one is sent.
-  // API: a bad color is a 400; teams.csv (old files with color columns): bad colors are ignored as before.
-  const opt = (v: any, f: string) => (strictColors ? color(v, null, f) : normHex(v));
-  return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), opt(b.primary_color, 'primary_color'),
-    opt(b.secondary_color, 'secondary_color'), safeLogoUrl(b.logo_url), gradeOf(b.grade), genderOf(b.gender)] as const;
+  // Aaron 2026-10-23: season colors only, no individual team colors. primary_color/secondary_color are ignored on
+  // input (API and teams.csv) and never exported or read by any display; the DB columns and their data are kept as is.
+  return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), null, null, safeLogoUrl(b.logo_url), gradeOf(b.grade), genderOf(b.gender)] as const;
 }
 /** Resolve a team by name (+ optional grade). Without a grade the name must be unambiguous. */
 async function findTeam(name: string, grade: string | null, gender: string | null = null): Promise<{ id: number; grade: string | null; gender: string | null } | { error: string } | null> {
@@ -513,15 +510,15 @@ async function findTeam(name: string, grade: string | null, gender: string | nul
 }
 const dupTeam = (e: any, b: any) => /teams_grade_gender_name_uk|teams_grade_name_uk|teams_name_key/.test(e.message)
   ? new HttpError(409, `A team named "${String(b.name || '').trim()}" already exists${divisionLabel(gradeOf(b.grade), genderOf(b.gender)) ? ' in ' + divisionLabel(gradeOf(b.grade), genderOf(b.gender)) : ''}. Team names must be unique within a grade and gender.`) : e;
-async function upsertTeam(b: any, id?: number, strictColors = true) {
-  try { return await upsertTeamRaw(b, id, strictColors); } catch (e: any) { throw dupTeam(e, b); }
+async function upsertTeam(b: any, id?: number) {
+  try { return await upsertTeamRaw(b, id); } catch (e: any) { throw dupTeam(e, b); }
 }
-async function upsertTeamRaw(b: any, id?: number, strictColors = true) {
-  const vals = teamValues(b, strictColors);
+async function upsertTeamRaw(b: any, id?: number) {
+  const vals = teamValues(b);
   coachOf(b.coach); // validate before any write
   const logo = decodeLogo(b.logo_data_url);
   if (id) {
-    await pool.query('UPDATE teams SET name=$2, short_name=$3, primary_color=COALESCE($4, primary_color), secondary_color=COALESCE($5, secondary_color), logo_url=$6 WHERE id=$1', [id, ...vals.slice(0, 5)]);
+    await pool.query('UPDATE teams SET name=$2, short_name=$3, logo_url=$4 WHERE id=$1', [id, vals[0], vals[1], vals[4]]); // team colors: never written (season colors only)
     if ('grade' in b) await pool.query('UPDATE teams SET grade=$2, grade_order=$3 WHERE id=$1', [id, vals[5], gradeOrder(vals[5])]);
     if ('gender' in b) await pool.query('UPDATE teams SET gender=$2 WHERE id=$1', [id, vals[6]]);
     if ('coach' in b) await pool.query('UPDATE teams SET coach=$2 WHERE id=$1', [id, coachOf(b.coach)]);
@@ -529,7 +526,7 @@ async function upsertTeamRaw(b: any, id?: number, strictColors = true) {
     if (b.remove_logo) await pool.query('UPDATE teams SET logo_data=NULL, logo_mime=NULL WHERE id=$1', [id]);
     return id;
   }
-  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order, gender, coach) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#FFFFFF'),$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6], coachOf(b.coach)]);
+  const r = await pool.query(`INSERT INTO teams(name, short_name, logo_url, logo_data, logo_mime, grade, grade_order, gender, coach) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [vals[0], vals[1], vals[4], logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6], coachOf(b.coach)]);
   return r.rows[0].id as number;
 }
 
@@ -838,16 +835,18 @@ async function importTeams(text: string): Promise<ImportResult> {
   const { headers, rows } = parseCsvTable(text);
   requireColumns(headers, ['name'], 'teams.csv');
   const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] }; const seen = new Map<string, number>();
+  const colorCols = headers.filter((h) => h === 'primary_color' || h === 'secondary_color');
+  if (colorCols.length) out.warnings = [`${colorCols.join(' and ')} ignored: every team uses the season colors (set them on Admin → Teams → Season colors).`];
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
     try {
-      const v = teamValues(r, false); const hasGrade = headers.includes('grade'), hasGender = headers.includes('gender');
+      const v = teamValues(r); const hasGrade = headers.includes('grade'), hasGender = headers.includes('gender');
       const key = `${hasGrade ? v[5] ?? '' : '*'}|${hasGender ? v[6] ?? '' : '*'}|${v[0].toLowerCase()}`;
       if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (skipped)`); continue; }
       seen.set(key, line);
       // Match on grade + name. Old files without a grade column match by name (must be unambiguous).
       // A team that has no grade yet is adopted by a row naming it with a grade (instead of creating a twin).
-      let sameName = (await pool.query('SELECT id, name, short_name, primary_color, secondary_color, logo_url, grade, gender, coach FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
+      let sameName = (await pool.query('SELECT id, name, short_name, logo_url, grade, gender, coach FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
       // With a gender column: match grade + gender + name; a team without a gender yet is adopted (no twin).
       if (hasGender) { const exact = sameName.filter((t) => t.gender === v[6]); sameName = exact.length ? exact : sameName.filter((t) => t.gender == null); }
       else delete (r as any).gender;
@@ -857,11 +856,11 @@ async function importTeams(text: string): Promise<ImportResult> {
         if (sameName.length > 1) throw new HttpError(400, `"${v[0]}" exists in ${sameName.map((t) => t.grade || 'no grade').join(' and ')}; add a grade column`);
         ex = sameName[0]; delete (r as any).grade; // keep the team's grade
       }
-      if (!ex) { await upsertTeam(r, undefined, false); out.created++; continue; }
+      if (!ex) { await upsertTeam(r); out.created++; continue; }
       const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]) && (!hasGender || (ex.gender ?? null) === v[6])
         && (!headers.includes('coach') || (ex.coach ?? null) === coachOf(r.coach)); // color columns are ignored (season colors); absent coach column = keep
       if (same) { out.skipped++; continue; }
-      await upsertTeam(r, ex.id, false); out.updated++;
+      await upsertTeam(r, ex.id); out.updated++;
     } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
   }
   return out;
@@ -1242,9 +1241,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
 
   if (seg[1] === 'teams') {
     const id = seg[2] ? Number(seg[2]) : undefined;
-    if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, grade, grade_order, gender, coach, primary_color, secondary_color, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)')).rows);
-    if (m === 'POST') return json(res, 201, { id: await upsertTeam(await readJson(req)) });
-    if (m === 'PUT' && id) { await upsertTeam(await readJson(req), id); await refreshAllCourts(); return json(res, 200, { id }); }
+    if (m === 'GET') return json(res, 200, (await pool.query('SELECT id, name, short_name, grade, grade_order, gender, coach, logo_url, (logo_data IS NOT NULL) AS has_logo FROM teams ORDER BY grade_order, grade NULLS LAST, gender NULLS LAST, lower(name)')).rows);
+    // Team colors are ignored (season colors only); say so instead of erroring.
+    const colorNote = (b: any) => (b && (b.primary_color != null || b.secondary_color != null) ? { warnings: ['primary_color/secondary_color ignored: every team uses the season colors.'] } : {});
+    if (m === 'POST') { const b = await readJson(req); return json(res, 201, { id: await upsertTeam(b), ...colorNote(b) }); }
+    if (m === 'PUT' && id) { const b = await readJson(req); await upsertTeam(b, id); await refreshAllCourts(); return json(res, 200, { id, ...colorNote(b) }); }
     if (m === 'DELETE' && id) {
       const t = (await pool.query('SELECT name, (SELECT count(*)::int FROM games WHERE home_team_id=$1 OR away_team_id=$1) AS n FROM teams WHERE id=$1', [id])).rows[0];
       if (!t) return json(res, 404, { error: 'team not found' });

@@ -98,23 +98,6 @@
   const chip = (fg, bg, txt = 'Aa', cls = '') => `<span class="cw-chip ${cls}" style="color:${esc(fg)};background:${esc(bg)}">${esc(txt)}</span>`;
   const btn = (input, val, label) => `<button type="button" class="sm" data-apply="${esc(input)}" data-val="${esc(val)}">${esc(label)}</button>`;
 
-  function teamRows(f) {
-    const P = f.elements.primary_color.value, A = f.elements.secondary_color.value, rows = [];
-    const r1 = C.ratio(A, P);
-    if (r1 < 4.5) {
-      const fg = C.bestText(P), s = C.suggest(A, P);
-      rows.push(`${chip(A, P)} ${esc(nm(A))} accent text on ${esc(nm(P))} is <b>${C.fmt(r1)}</b> (logo letter, controller chip).
-        Displays will use ${fg === C.DARK ? 'dark' : 'white'} text (${C.fmt(C.ratio(fg, P))}) ${chip(fg, P)}${s ? `, or try <code>${s}</code> ${chip(s, P)} ${btn('secondary_color', s, 'Use ' + s)}` : ''}`);
-    }
-    const r2 = C.ratio(A, '#1b2340');
-    if (r2 < 4.5) {
-      const s = C.suggest(A, '#1b2340');
-      rows.push(`${chip(A, '#1b2340', 'NAME', 'cw-tv')} Accent as the team name on the dark TV is <b>${C.fmt(r2)}</b>. The TV will lighten it to <code>${s}</code> ${chip(s, '#1b2340', 'NAME', 'cw-tv')} (${C.fmt(C.ratio(s, '#1b2340'))}).`);
-    }
-    const w = C.ratio('#ffffff', P);
-    if (w < 4.5) rows.push(`${chip('#fff', P)} White text on ${esc(nm(P))} is <b>${C.fmt(w)}</b>. Scores and buttons on this color will use dark text ${chip(C.DARK, P)} (${C.fmt(C.ratio(C.DARK, P))}).`);
-    return rows;
-  }
   function gameRows(f) {
     const rows = [];
     [['homeColor', 'useHomeColor', 'Home'], ['awayColor', 'useAwayColor', 'Away']].forEach(([k, use, lbl]) => {
@@ -129,7 +112,7 @@
   function update() {
     boxes.forEach((box) => {
       const f = document.getElementById(box.dataset.contrastFor); if (!f) return;
-      const rows = box.dataset.contrastFor === 'team-form' ? teamRows(f) : gameRows(f);
+      const rows = gameRows(f); // team colors are retired (season colors only)
       const html = rows.map((r) => `<div class="cw-row">⚠ ${r}</div>`).join('');
       if (last.get(box) === html) return;
       last.set(box, html); box.innerHTML = html; box.hidden = !rows.length;

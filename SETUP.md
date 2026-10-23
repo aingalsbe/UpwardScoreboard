@@ -155,7 +155,9 @@ None. UpwardScoreboard has no cron jobs and no `DIGEST_CRON_ENABLED` or `WEATHER
 
 ### Colors
 
-All colors (season dark/light, per-game Home/Away overrides, legacy team colors) are hex: Admin shows a hex text box next to the swatch; the API accepts `#RGB` or `#RRGGBB` in any case and stores uppercase `#RRGGBB` (`src/color.ts`). Anything else is a 400 (`dark "rgb(0,0,0)" is not a color; use hex like #1E90FF (#RGB or #RRGGBB)`); old teams.csv color columns are still ignored when invalid. At every start `migrateColors()` (src/db.ts) converts stored `rgb()`/`rgba()`/lowercase/3-digit values to `#RRGGBB` (only color fields, idempotent, safe with games scheduled or live; unreadable values are left and logged). A saved change reaches open TVs, overlays and scorekeepers over the WebSocket with no reload (`scripts/colors-e2e.mjs`).
+**Every team uses the season colors** (light at home, dark away; "Swap colors" flips a game); there are no individual team colors. The teams API and teams.csv ignore `primary_color`/`secondary_color` (the import result and API response carry a `warnings` note), don't export them, and nothing reads the old DB columns (kept, data untouched). The only other colors are optional per-game Home/Away overrides.
+
+All colors (season dark/light, per-game Home/Away overrides) are hex: Admin shows a hex text box next to the swatch; the API accepts `#RGB` or `#RRGGBB` in any case and stores uppercase `#RRGGBB` (`src/color.ts`). Anything else is a 400 (`dark "rgb(0,0,0)" is not a color; use hex like #1E90FF (#RGB or #RRGGBB)`); old teams.csv color columns are still ignored when invalid. At every start `migrateColors()` (src/db.ts) converts stored season and per-game `rgb()`/`rgba()`/lowercase/3-digit values to `#RRGGBB` (only color fields, idempotent, safe with games scheduled or live; unreadable values are left and logged). A saved change reaches open TVs, overlays and scorekeepers over the WebSocket with no reload (`scripts/colors-e2e.mjs`).
 
 ### Test clock (e2e only)
 

@@ -75,23 +75,25 @@ try {
   await call(`/api/games/${g.id}`, 'PUT', { court_id: g.court_id, home_team_id: g.home_team_id, away_team_id: g.away_team_id, scheduled_at: at, division: g.division ?? '', theme: {} });
   ok(await waitCss(tv, g.swap_colors ? '--home-color' : '--away-color', '#003366') === '#003366', 'TV shows the new season dark live');
   for (const [n, d] of Object.entries(D)) ok(d.loads() === 1, `${n} was never reloaded`);
-  // 8) Admin team list: effective saved colors (team's own if set, else season default), live after saves
+  // 8) Admin team list (Aaron: season colors only): every row shows the season light/dark hex, live after saves
   const RUN = Date.now().toString(36).slice(-5);
   const tNew = (await call('/api/teams', 'POST', { name: `Swatch-${RUN}`, short_name: 'SW', grade: '3rd Grade', gender: 'Boys' })).body.id;
   await p.goto(BASE + '/admin#teams'); await p.waitForTimeout(800);
   let adminLoads = 0; p.on('load', () => adminLoads++);
-  const row = () => p.evaluate((id) => { const e = document.querySelector(`[data-team-row="${id}"] .team-color`); return e && { src: e.dataset.colorSrc, title: e.title, text: e.textContent.trim(), bg: e.querySelector('.swatch').style.background }; }, tNew);
-  const waitRow = async (pred, ms = 5000) => { const t = Date.now(); let r; while (Date.now() - t < ms) { r = await row(); if (r && pred(r)) return r; await p.waitForTimeout(150); } return r; };
-  let rw = await waitRow((r) => r.src === 'season');
-  ok(rw?.src === 'season' && /#FFC72C|#003366/.test(rw.text) && /season default/.test(rw.text) && /Season default: light .* \/ dark #003366/.test(rw.title), `new team shows the season default with hex: "${rw?.text}" / "${rw?.title}"`);
-  // season save from the form -> list re-renders
+  const rows = () => p.evaluate(() => [...document.querySelectorAll('#team-rows .team-color')].map((e) => ({ title: e.title, text: e.textContent.trim(), bg: e.querySelector('.swatch').style.background })));
+  const nTeams = await p.evaluate(() => document.querySelectorAll('#team-rows tr').length);
+  const waitAll = async (want, ms = 5000) => { const t = Date.now(); let r; while (Date.now() - t < ms) { r = await rows(); if (r.length === nTeams && r.every((x) => x.text === want)) return r; await p.waitForTimeout(150); } return r; };
+  let rw = await waitAll(`${season0.light.toUpperCase()} / #003366`);
+  ok(rw.length === nTeams && rw.every((x) => x.text === `${season0.light.toUpperCase()} / #003366` && /Season colors: light .* \(home\) \/ dark #003366 \(away\)/.test(x.title)), `all ${nTeams} team rows show the season hex "${rw[0]?.text}"`);
+  ok(!(await p.$('#team-rows .season-tag')) && !/season default/i.test(await p.textContent('#team-rows')), 'no "season default" tag');
   await p.fill('#season-form [name=light]', '#FC3'); await p.$eval('#season-form', (f) => f.requestSubmit());
-  rw = await waitRow((r) => r.text.includes('#FFCC33'));
-  ok(rw?.text.startsWith('#FFCC33 / #003366'), `after a season save the default row shows ${rw?.text}`);
-  // team's own colors (API only; the team form has no color field) -> WS refresh, no reload
-  await call(`/api/teams/${tNew}`, 'PUT', { name: `Swatch-${RUN}`, short_name: 'SW', grade: '3rd Grade', gender: 'Boys', primary_color: '#1e90ff', secondary_color: '#fff' });
-  rw = await waitRow((r) => r.src === 'team');
-  ok(rw?.src === 'team' && rw.text === '#1E90FF / #FFFFFF' && /rgb\(30, 144, 255\)/.test(rw.bg) && /Team colors #1E90FF \/ #FFFFFF/.test(rw.title), `team's own colors shown live: "${rw?.text}" (${rw?.bg})`);
+  rw = await waitAll('#FFCC33 / #003366');
+  ok(rw.every((x) => x.text === '#FFCC33 / #003366' && /255, 204, 51/.test(x.bg)), `after a season save every row shows ${rw[0]?.text} live`);
+  // a team color sent through the API is ignored (note in the response) and changes nothing on the list
+  const put = await call(`/api/teams/${tNew}`, 'PUT', { name: `Swatch-${RUN}`, short_name: 'SW', grade: '3rd Grade', gender: 'Boys', primary_color: '#1e90ff', secondary_color: '#fff' });
+  ok(put.status === 200 && /ignored/.test(put.body?.warnings?.[0] || ''), `team color via API ignored with a note: "${put.body?.warnings?.[0]}"`);
+  await p.waitForTimeout(800);
+  ok((await rows()).every((x) => x.text === '#FFCC33 / #003366') && !/1E90FF/i.test(await p.textContent('#team-rows')), 'list still shows the season colors only');
   ok(adminLoads === 0, 'admin page was not reloaded');
   await call(`/api/teams/${tNew}`, 'DELETE');
   await call('/api/settings/season', 'PUT', season0);

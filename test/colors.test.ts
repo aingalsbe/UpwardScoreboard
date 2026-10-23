@@ -43,7 +43,7 @@ before(async () => {
 });
 after(async () => { srv?.kill(); await db?.pool.end(); });
 
-test('DB: startup migration converts rgb()/lowercase colors, idempotent, leaves scheduled/live games alone otherwise', { skip }, async () => {
+test('DB: startup migration converts rgb()/lowercase season + game colors, idempotent; retired team colors untouched', { skip }, async () => {
   const { pool } = db;
   await db.migrate();
   await pool.query(`INSERT INTO courts(slug, name) VALUES ('full','Full') ON CONFLICT DO NOTHING`);
@@ -55,9 +55,9 @@ test('DB: startup migration converts rgb()/lowercase colors, idempotent, leaves 
   await pool.query(`UPDATE courts SET current_game_id=$1 WHERE slug='full'`, [g]);
   const g2 = (await pool.query(`INSERT INTO games(court_id, scheduled_at, home_team_id, away_team_id, theme) VALUES ((SELECT id FROM courts WHERE slug='full'), now() + interval '1 day', $1, $2, '{}') RETURNING id`, [A, B])).rows[0].id;
   const n1 = await db.migrateColors();
-  assert.ok(n1 >= 5, `converted ${n1}`);
+  assert.ok(n1 >= 3, `converted ${n1}`);
   const t = (await pool.query('SELECT name, primary_color p, secondary_color s FROM teams ORDER BY id')).rows;
-  assert.deepEqual(t.map((r: any) => [r.p, r.s]), [['#1E90FF', '#FFFFFF'], ['#7A1020', 'not-a-color']], 'unconvertible value is left as is');
+  assert.deepEqual(t.map((r: any) => [r.p, r.s]), [['rgb(30, 144, 255)', '#fff'], ['#7a1020', 'not-a-color']], 'team colors are retired: data left exactly as it was');
   const st = Object.fromEntries((await pool.query(`SELECT key, value FROM settings WHERE key LIKE 'season_%'`)).rows.map((r: any) => [r.key, r.value]));
   assert.equal(st.season_dark, '#800000'); assert.equal(st.season_light, '#FFC72C');
   const gr = (await pool.query('SELECT status, theme FROM games WHERE id=$1', [g])).rows[0];
@@ -93,12 +93,23 @@ test('API: hex accepted (#RGB / #RRGGBB, any case) and stored uppercase; bad col
     assert.equal(r.status, 400, bad); assert.match(r.body.error, /homeColor ".*" is not a color; use hex like #1E90FF/);
   }
   assert.equal((await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme.homeColor, '#1E90FF', 'a rejected save changes nothing');
-  // Team API colors (retired field, still validated)
+  // Team colors (Aaron: season colors only): not exported, ignored on input with a note, DB data untouched
   const tm = (await api('/api/teams')).body[0];
-  r = await api(`/api/teams/${tm.id}`, 'PUT', { ...tm, primary_color: 'rgb(1,2,3)' });
-  assert.equal(r.status, 400); assert.match(r.body.error, /primary_color "rgb\(1,2,3\)" is not a color/);
-  r = await api(`/api/teams/${tm.id}`, 'PUT', { ...tm, primary_color: '#abc', secondary_color: '#ddeeff' });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  const t2 = (await db.pool.query('SELECT primary_color p, secondary_color s FROM teams WHERE id=$1', [tm.id])).rows[0];
-  assert.deepEqual([t2.p, t2.s], ['#AABBCC', '#DDEEFF']);
+  assert.ok(!('primary_color' in tm) && !('secondary_color' in tm), 'GET /api/teams has no team colors');
+  const before = (await db.pool.query('SELECT primary_color p, secondary_color s FROM teams WHERE id=$1', [tm.id])).rows[0];
+  for (const pc of ['rgb(1,2,3)', '#abc']) {
+    r = await api(`/api/teams/${tm.id}`, 'PUT', { ...tm, primary_color: pc, secondary_color: '#ddeeff' });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.match(r.body.warnings[0], /ignored: every team uses the season colors/);
+  }
+  assert.deepEqual((await db.pool.query('SELECT primary_color p, secondary_color s FROM teams WHERE id=$1', [tm.id])).rows[0], before, 'stored team colors untouched');
+  r = await api('/api/teams', 'POST', { name: 'NoColor', grade: '5th Grade', gender: 'Boys', primary_color: '#123456' });
+  assert.equal(r.status, 201); assert.match(r.body.warnings[0], /ignored/);
+  assert.equal((await db.pool.query('SELECT primary_color p FROM teams WHERE id=$1', [r.body.id])).rows[0].p, '#333333', 'column default, not the sent color');
+  const imp = await fetch(`${BASE}/api/import/teams.csv`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'text/csv' }, body: 'name,grade,gender,primary_color,secondary_color\nCsvTeam,5th Grade,Boys,#ff0000,bogus\n' }).then((x) => x.json());
+  assert.equal(imp.created, 1); assert.deepEqual(imp.errors, []);
+  assert.match(imp.warnings[0], /primary_color and secondary_color ignored: every team uses the season colors/);
+  const csvOut = await fetch(`${BASE}/api/export/teams.csv`, { headers: { authorization: `Bearer ${token}` } }).then((x) => x.text());
+  assert.doesNotMatch(csvOut.split('\n')[0], /color/, 'teams.csv export has no color columns');
+  const games = (await api('/api/games')).body;
+  assert.ok(games.length && games.every((g: any) => !Object.keys(g).some((k) => /primary|secondary/.test(k))), 'game rows carry no team colors');
 });

@@ -37,20 +37,13 @@ function route() {
 window.addEventListener('hashchange', route);
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString([], { timeZone: leagueTz, weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
-// Team-list color: the team's own saved colors (teams.primary/secondary_color) when they're set (not the untouched
-// column defaults #333333/#FFFFFF), else the season colors (light = home, dark = away), marked as the season default.
-// Game displays (TV/overlay/scorekeeper) always use the season colors or a per-game override, never these columns.
+// Team-list color (Aaron: season colors only, no individual team colors): every team wears the season light at home
+// and the season dark away, so every row shows those two hex values. Re-rendered after a season save and on the
+// admin WebSocket push (refreshLive).
 let seasonColors = null;
-const TEAM_DEFAULT = ['#333333', '#FFFFFF'];
-function teamColors(t) {
-  const p = String(t.primary_color || '').toUpperCase(), a = String(t.secondary_color || '').toUpperCase();
-  if (p && a && (p !== TEAM_DEFAULT[0] || a !== TEAM_DEFAULT[1])) return { src: 'team', main: p, edge: a, title: `Team colors ${p} / ${a} (saved on the team; game displays use the season colors)` };
-  if (!seasonColors) return null;
+const swatch = () => { if (!seasonColors) return '';
   const L = seasonColors.light.toUpperCase(), D = seasonColors.dark.toUpperCase();
-  return { src: 'season', main: L, edge: D, title: `Season default: light ${L} (home) / dark ${D} (away)` };
-}
-const swatch = (t) => { const c = teamColors(t); if (!c) return '';
-  return `<span class="team-color" data-color-src="${c.src}" title="${esc(c.title)}"><span class="swatch" style="background:${esc(c.main)};border-color:${esc(c.edge)}"></span> <code class="hex-val">${esc(c.main)} / ${esc(c.edge)}</code>${c.src === 'season' ? ' <span class="tag season-tag">season default</span>' : ''}</span>`; };
+  return `<span class="team-color" title="${esc(`Season colors: light ${L} (home) / dark ${D} (away)`)}"><span class="swatch" style="background:${esc(L)};border-color:${esc(D)}"></span> <code class="hex-val">${esc(L)} / ${esc(D)}</code></span>`; };
 
 function renderTeams(tf = $('#team-grade-filter').value) {
   $('#team-rows').innerHTML = teams.filter((t) => !tf || t.grade === tf).map((t) => `<tr data-team-row="${t.id}"><td>${t.has_logo || t.logo_url ? `<img class="mini" src="${t.has_logo ? `/logos/${t.id}?v=${Date.now()}` : esc(t.logo_url)}" alt=""> ` : ''}${swatch(t)}</td>

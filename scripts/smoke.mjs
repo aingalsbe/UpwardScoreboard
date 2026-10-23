@@ -217,7 +217,7 @@ ok(dupGame.status === 409 && new RegExp(`already in use: game #${g1.id}|already 
 
 console.log('10. Explicit CSV errors (QA #8)');
 const badColor = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,primary_color,secondary_color,logo_url\nPurples-${RUN},PUR,purple,#ffffff,\n` });
-ok(badColor.body.created === 1 && badColor.body.errors.length === 0, 'old teams.csv with color columns still imports (team colors are ignored; season colors apply)');
+ok(badColor.body.created === 1 && badColor.body.errors.length === 0 && /primary_color and secondary_color ignored: every team uses the season colors/.test((badColor.body.warnings || []).join(' ')), `old teams.csv with color columns still imports, colors ignored with a note: "${(badColor.body.warnings || [])[0]}"`);
 const badUrl = await api('/api/import/teams.csv', { method: 'POST', body: 'name,logo_url\nXSS,javascript:alert(1)\n' });
 ok(badUrl.body.created === 0 && /http/.test(badUrl.body.errors[0]), `javascript: logo URL rejected: ${badUrl.body.errors[0]}`);
 const missing = await api('/api/import/schedule.csv', { method: 'POST', body: 'date,court,home,away\n2026-11-07,west,Lions,Eagles\n' });
