@@ -1,7 +1,8 @@
 // Practice TV (Mon–Thu): /upwardbasketballscores/practice/{cheer,basketball}. Polls /api/public/practice each minute,
 // renders Sage's mockup markup (deliverables/mockups/practice) with its hooks, rotates pages per practice-view.js.
 import { planPractice, rotation, parsePracticeDemo, ampm, COURTS, COURT_NAME, DAY, toMin } from './practice-view.js';
-import { mascotHtml } from './logo-badge.js';
+import { mascotHtml, installLogoFallback } from './logo-badge.js';
+installLogoFallback(); // broken logo URL -> initial badge
 import { nextEvent, nextEventText, addDays } from './next-event.js';
 
 const kind = /\/practice\/cheer\/?$/.test(location.pathname) ? 'cheer' : 'basketball';
@@ -58,7 +59,7 @@ function render() {
     $('[data-bind="header"]').textContent = plan.header; page.hidden = false;
     setHtml(page, `ALL EVENING · <b>${i + 1} of ${plan.pages.length}</b>`);
     main.className = 'cheer-grid'; main.dataset.list = 'cheer'; main.dataset.page = String(i + 1);
-    setHtml(main, plan.pages[i].map((x, k) => `<div class="card ${k % 2 ? 'teal' : 'pink'}" data-slot-id="${x.slotId}"><span class="room" data-bind="room">${esc(x.room)}</span>${who(x.squad.name, x.squad.coach, x.squad.logo)}</div>`).join(''));
+    setHtml(main, plan.pages[i].map((x, k) => `<div class="card ${k % 2 ? 'teal' : 'pink'}"><span class="room" data-bind="room">${esc(x.room)}</span>${who(x.squad.name, x.squad.coach, x.squad.logo)}</div>`).join(''));
     setHtml(foot, plan.startsText ? `<b>${esc(plan.startsText)}</b> · find your squad's room` : `Cheer practice: <b>find your squad's room</b> · Basketball on West &amp; East Courts`);
     return;
   }

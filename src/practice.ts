@@ -80,6 +80,7 @@ export function validatePractice(input: any): { schedule: PSchedule; errors: str
     const n = day(q?.day), r = String(q?.room ?? '').trim().replace(/\s+/g, ' '), id = Number(q?.squadId);
     const dn = DAY_NAMES[n] || `day ${q?.day}`;
     if (!n) { errors.push(`${dn}: practice days are Mon–Thu`); continue; }
+    if (!days.some((x) => x.day === n)) { errors.push(`${dn}: set the practice hours before assigning cheer rooms`); continue; }
     if (!r || r.length > 40) { errors.push(`${dn}: room name is required (40 characters max)`); continue; }
     if (!Number.isInteger(id) || id <= 0) { errors.push(`${dn} ${r}: pick a squad`); continue; }
     if (cheer.some((x) => x.day === n && roomKey(x.room) === roomKey(r))) { errors.push(`${dn}: ${r} is double-booked`); continue; }

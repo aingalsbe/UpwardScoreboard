@@ -19,7 +19,7 @@ test('split: live + exactly one next per court; cheer for the live and next hour
   const p = planLobby([w13, w10, w11, e11, w12, e12, f16], [{ start: '11:00', name: 'Pep' }, { start: '12:00', name: 'Spirit' }]);
   assert.deepEqual(ids(p.now), { west: w11.id, east: e11.id }); assert.equal(p.now.layout, 'split');
   assert.deepEqual(ids(p.next), { west: w12.id, east: e12.id });
-  assert.equal(p.header, '11:05'); assert.equal(p.nextTime, '12:00');
+  assert.equal(p.header, '11:00', 'earliest game on top wins'); assert.equal(p.nextTime, '12:00');
   assert.deepEqual([p.cheer.now?.name, p.cheer.next?.name], ['Pep', 'Spirit']);
 });
 

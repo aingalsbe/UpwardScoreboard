@@ -24,7 +24,7 @@ export function nextEvent({ today, now = '00:00', gameDays = [], practice = null
     const has = (day) => lists.some((l) => l.some((x) => x.day === day));
     for (let k = 0; k < 8 && !prac; k++) {
       const date = addDays(today, k), d = (practice.days || []).find((x) => x.day === dowOf(date));
-      if (d && has(d.day) && (k > 0 || n < toMin(d.end))) prac = { type: 'practice', date, time: d.start };
+      if (d && has(d.day) && (k > 0 || n < toMin(d.end))) prac = { type: 'practice', date, time: d.start, ...(k === 0 && n >= toMin(d.start) ? { now: true } : {}) };
     }
   }
   if (!game) return prac;
@@ -35,6 +35,7 @@ export function nextEvent({ today, now = '00:00', gameDays = [], practice = null
 /** "Next: Games Saturday, Oct 24 · First tip-off 9:00 AM" / "Next: Practice Monday, Oct 26 · 5:00 PM" / "No games or practices scheduled". */
 export function nextEventText(ev, today) {
   if (!ev) return 'No games or practices scheduled';
+  if (ev.now) return 'Practice tonight · now'; // QA: practice already under way
   const [, mo, dd] = ev.date.split('-').map(Number);
   const when = ev.date === today ? 'Today' : `${LONG[dowOf(ev.date)]}, ${MON[mo - 1]} ${dd}`;
   return ev.type === 'game' ? `Next: Games ${when} · First tip-off ${ampm(ev.time)}` : `Next: Practice ${when} · ${ampm(ev.time)}`;

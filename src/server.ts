@@ -1077,7 +1077,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     const now = (await pool.query(`SELECT extract(isodow FROM now() AT TIME ZONE $1)::int % 7 AS dow, to_char(now() AT TIME ZONE $1, 'HH24:MI') AS hm, to_char(now() AT TIME ZONE $1, 'YYYY-MM-DD') AS date`, [LEAGUE_TZ])).rows[0];
     const sched = await loadPractice(pool);
     return json(res, 200, { serverNow: Date.now(), now: { dow: now.dow, hm: now.hm, date: now.date }, days: sched.days,
-      basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, ...x }) => x) });
+      basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, slotId, ...x }) => x) });
   }
   // ---- everything below needs the admin session
   if (!validToken(tokenFrom(req))) return json(res, 401, { error: 'admin login required' });
@@ -1088,11 +1088,17 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     return json(res, 200, { ...(await loadPractice(pool)), teams, squads });
   }
   if (p === '/api/practice' && m === 'PUT') {
-    const { schedule, errors } = validatePractice(await readJson(req));
+    const body = await readJson(req).catch(() => null);
+    // A well-formed week is { days: [], basketball: [], cheer: [] }; clearing the week needs exactly that (all empty).
+    if (!body || typeof body !== 'object' || Array.isArray(body) || !['days', 'basketball', 'cheer'].every((k) => Array.isArray(body[k]))) {
+      const e = 'malformed practice schedule: send { days: [...], basketball: [...], cheer: [...] }';
+      return json(res, 400, { error: e, errors: [e] });
+    }
+    const { schedule, errors } = validatePractice(body);
     if (errors.length) return json(res, 400, { error: errors[0], errors });
     const client = await pool.connect();
     try { await client.query('BEGIN'); await savePractice(client, schedule); await client.query('COMMIT'); }
-    catch (e: any) { await client.query('ROLLBACK'); if (e.code === '23503') throw new HttpError(400, 'unknown team or cheer squad'); throw e; }
+    catch (e: any) { await client.query('ROLLBACK'); if (e.code === '23503') return json(res, 400, { error: 'unknown team or cheer squad', errors: ['unknown team or cheer squad (reload the page; it may have been deleted)'] }); throw e; }
     finally { client.release(); }
     return json(res, 200, { ok: true, ...(await loadPractice(pool)) });
   }

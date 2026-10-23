@@ -1,7 +1,8 @@
 // Lobby TV v2 logic (no styling): picks live + next per court (lobby-view.js) and renders Sage's mockup markup
 // (deliverables/mockups/lobby-v2) with its hooks. Live clocks tick from server time like the TV.
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
-import { mascotHtml } from './logo-badge.js';
+import { mascotHtml, installLogoFallback } from './logo-badge.js';
+installLogoFallback(); // broken logo URL -> initial badge
 import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText } from './lobby-view.js';
 import { nextEvent, nextEventText } from './next-event.js';
 

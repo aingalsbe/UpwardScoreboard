@@ -28,7 +28,8 @@ test('practice next: after Saturday games, Monday practice beats next Friday', {
   assert.deepEqual(ev, { type: 'practice', date: '2026-10-26', time: '17:00' });
   assert.equal(nextEventText(ev, '2026-10-24'), 'Next: Practice Monday, Oct 26 · 5:00 PM');
   // tonight's practice still counts until it ends; the cheer screen skips Wednesday (no cheer that night)
-  assert.equal(nextEventText(nextEvent({ today: '2026-10-26', now: '20:30', gameDays, practice }), '2026-10-26'), 'Next: Practice Today · 5:00 PM');
+  assert.equal(nextEventText(nextEvent({ today: '2026-10-26', now: '20:30', gameDays, practice }), '2026-10-26'), 'Practice tonight · now', 'under way -> tonight · now');
+  assert.equal(nextEventText(nextEvent({ today: '2026-10-26', now: '16:00', gameDays, practice }), '2026-10-26'), 'Next: Practice Today · 5:00 PM');
   assert.deepEqual(nextEvent({ today: '2026-10-27', now: '12:00', gameDays, practice, kind: 'cheer' }), { type: 'game', date: '2026-10-30', time: '17:30' });
   assert.deepEqual(nextEvent({ today: '2026-10-27', now: '12:00', gameDays, practice, kind: 'basketball' }), { type: 'practice', date: '2026-10-28', time: '16:30' });
   // a game day today whose first tip already passed is skipped

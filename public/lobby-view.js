@@ -80,7 +80,10 @@ export function planLobby(games, cheerSlots = []) {
     const t0 = times(next)[0];
     next = { ...next, courts: Object.fromEntries(Object.entries(next.courts).map(([c, g]) => [c, g && g.time === t0 ? g : null])) };
   }
-  const nowTime = mixedTop ? times(now)[0] : times(now).pop() || null; // otherwise the latest start on top = the current slot
+  // QA (Avery, practice NO-GO): the header and top cheer row follow the EARLIEST game still on top (e.g. West 12:00 live,
+  // East 11:00 still in its 1st half -> header 11:00 and the 11:00 cheer). Earliest wins; the later hour's cheer shows
+  // once the earlier game leaves the top (or as Up Next's cheer when Up Next is that hour).
+  const nowTime = times(now)[0] || null;
   const nextTime = times(next)[0] || null;
   const slotAt = (hm) => (hm ? cheerSlots.find((s) => s.start === hourOf(hm)) || null : null);
   const cheerNow = slotAt(nowTime);

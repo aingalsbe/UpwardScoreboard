@@ -59,9 +59,9 @@ The scorekeeper lists today's games on its court; when there are none today it l
 
 **Mascot logos (Sage, 2026-10):** the demo seed gives all 44 teams and 4 cheer squads a logo from `deliverables/logos/manifest.json` (served at `/team-logos/teams/<slug>.png` and `/team-logos/cheer/<slug>.png`). An existing database that was seeded earlier: `node dist/src/load-logos.js --dry-run`, then without `--dry-run` (fills only empty logos; an Admin upload or URL is kept).
 
-**Lobby logos:** the lobby shows each team's mascot beside its name (live and Up Next rows) and the squad's logo on the cheer row; no logo -> a round initial badge. Court TVs, overlay and scorekeeper are unchanged. **Last game of the day:** if a court has nothing after its live game, that game stays on the lobby through the 2nd half until it goes final (no early "No more games"). **One court rolled:** Up Next is one time slot (the soonest start not already on top); the top cheer row follows the slot still being played.
+**Lobby logos:** the lobby shows each team's mascot beside its name (live and Up Next rows) and the squad's logo on the cheer row; no logo -> a round initial badge. Court TVs, overlay and scorekeeper are unchanged. **Last game of the day:** if a court has nothing after its live game, that game stays on the lobby through the 2nd half until it goes final (no early "No more games"). **Header + top cheer:** with two hours on top (West 12:00 live, East 11:00 still playing) the header and cheer row follow the earliest game (11:00). **Broken logo:** a logo that fails to load shows the initial badge. **One court rolled:** Up Next is one time slot (the soonest start not already on top); the top cheer row follows the slot still being played.
 
-**Idle screens (no games, no practice):** the lobby and both practice TVs show the next event, whichever comes first: "Next: Games Saturday, Oct 24 · First tip-off 9:00 AM" or "Next: Practice Monday, Oct 26 · 5:00 PM" (the cheer TV counts only nights with cheer; tonight's practice counts until it ends). With nothing scheduled: "No games or practices scheduled". Try `/lobby?day=sat&at=22:00`, `/practice/cheer?day=tue&at=12:00`.
+**Idle screens (no games, no practice):** the lobby and both practice TVs show the next event, whichever comes first: "Next: Games Saturday, Oct 24 · First tip-off 9:00 AM" or "Next: Practice Monday, Oct 26 · 5:00 PM" (the cheer TV counts only nights with cheer). While tonight's practice is under way the lobby says "Practice tonight · now". With nothing scheduled: "No games or practices scheduled". Try `/lobby?day=sat&at=22:00`, `/practice/cheer?day=tue&at=12:00`.
 
 ## Practice TVs (Mon–Thu)
 
@@ -70,7 +70,7 @@ The scorekeeper lists today's games on its court; when there are none today it l
 - On from 60 min before the night's first slot to 15 min after its end; otherwise "No practice right now" + the next event. Each team/squad shows its mascot logo, or the initial badge.
 - Demo: `?day=mon&at=17:10` (also `day=wed&at=16:40`, `day=fri` for the idle screen). The route shows bottom right for the first minute (`?setup=1` always, `?setup=0` never).
 - Demo week (seeded with the demo weekend): Mon + Tue 5–9 PM, Wed 4:30–6:30 PM, Thu 5–6 PM (44 teams, once each); cheer Mon + Thu: Room 20, Room 28/30, Kids Street, Foundry.
-- Edit: Admin > **Practice (Mon–Thu)** (`/admin/practice`): night on/off + hours, a team per court per slot, cheer rooms, "Copy this night to", Save week.
+- Edit: Admin > **Practice (Mon–Thu)** (`/admin/practice`): night on/off + hours, a team per court per slot, cheer rooms, "Copy this night to", Save week. Changing a night's hours never drops teams silently: slots outside the new hours are listed and you confirm removing them (or Cancel).
 
 ## Optional: sign in with the QR code
 

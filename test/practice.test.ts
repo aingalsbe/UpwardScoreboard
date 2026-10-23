@@ -21,7 +21,7 @@ test('slots: 1-hour starts in each night\'s range (Wed 4:30–6:30)', () => {
 test('validatePractice: double-bookings, one court/room per team/squad all season, slot grid, Mon–Thu only', () => {
   const days = [{ day: 1, start: '17:00', end: '19:00' }, { day: 3, start: '16:30', end: '18:30' }];
   const ok = validatePractice({ days, basketball: [{ day: 1, start: '17:00', court: 'west1', teamId: 1 }, { day: 3, start: '16:30', court: 'west1', teamId: 1 }],
-    cheer: [{ day: 1, room: ' Room  28/30 ', squadId: 1 }, { day: 4, room: 'room 28/30', squadId: 1 }] });
+    cheer: [{ day: 1, room: ' Room  28/30 ', squadId: 1 }, { day: 3, room: 'room 28/30', squadId: 1 }] });
   assert.deepEqual(ok.errors, []); assert.equal(ok.schedule.cheer[0].room, 'Room 28/30', '"28/30" is one room, spacing tidied');
   const bad = validatePractice({ days: [...days, { day: 5, start: '17:00', end: '18:00' }, { day: 2, start: '17:00', end: '17:30' }], basketball: [
     { day: 1, start: '17:00', court: 'west1', teamId: 1 }, { day: 1, start: '17:00', court: 'west1', teamId: 2 }, // court double-booked
@@ -30,9 +30,9 @@ test('validatePractice: double-bookings, one court/room per team/squad all seaso
     { day: 1, start: '17:30', court: 'west2', teamId: 3 },  // not a slot start
     { day: 3, start: '16:30', court: 'north', teamId: 4 },  // unknown court
     { day: 4, start: '17:00', court: 'west1', teamId: 5 }], // Thursday has no hours
-  cheer: [{ day: 1, room: 'Foundry', squadId: 1 }, { day: 1, room: 'foundry', squadId: 2 }, { day: 1, room: 'Room 20', squadId: 1 }, { day: 2, room: 'Room 22', squadId: 1 }] });
+  cheer: [{ day: 1, room: 'Foundry', squadId: 1 }, { day: 1, room: 'foundry', squadId: 2 }, { day: 1, room: 'Room 20', squadId: 1 }, { day: 3, room: 'Room 22', squadId: 1 }, { day: 4, room: 'Gym', squadId: 3 }] });
   const e = bad.errors.join('\n');
-  for (const re of [/Mon–Thu/, /no full 1-hour slot/, /west1 is double-booked/, /two courts/, /one court all season/, /not a slot start/, /unknown court/, /set the practice hours/, /Foundry is double-booked|foundry is double-booked/, /two rooms/, /one room all season/])
+  for (const re of [/Mon–Thu/, /no full 1-hour slot/, /west1 is double-booked/, /two courts/, /one court all season/, /not a slot start/, /unknown court/, /set the practice hours/, /Foundry is double-booked|foundry is double-booked/, /two rooms/, /one room all season/, /Thursday: set the practice hours before assigning cheer rooms/])
     assert.match(e, re);
 });
 
@@ -137,4 +137,33 @@ test('DB: additive migration, demo seed = 44 teams once a week on one court + 4 
   assert.deepEqual((await pool.query(`SELECT count(*)::int n FROM practice_slots WHERE day_of_week=3`)).rows[0], { n: 1 });
   const fk = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ ...wed, cheer: [{ day: 1, room: 'X', squadId: 99999 }] }) });
   assert.equal(fk.status, 400);
+  // QA NO-GO (Avery): unknown team/squad -> errors[]; malformed bodies never wipe the week; hours change never drops silently
+  assert.ok(Array.isArray((await fk.json()).errors), 'unknown squad has errors[]');
+  const before = (await pool.query(`SELECT count(*)::int n FROM practice_slots`)).rows[0].n;
+  for (const bad of ['null', '[]', '{}', '{"days":[]}', 'not json']) {
+    const r = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: bad });
+    assert.equal(r.status, 400, bad); assert.ok((await r.json()).errors.length, bad);
+  }
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots`)).rows[0].n, before, 'malformed bodies changed nothing');
+  // Thursday 5–6 PM -> 5:30–6:30: the 5:00 teams no longer fit -> 400 with errors, nothing saved (was: silently dropped, "Saved")
+  const thu = { ...wed, days: wed.days.map((d: any) => (d.day === 4 ? { ...d, start: '17:30', end: '18:30' } : d)) };
+  const rThu = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify(thu) });
+  assert.equal(rThu.status, 400); assert.match((await rThu.json()).errors.join(' '), /Thursday 17:00: not a slot start/);
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots WHERE day_of_week=4 AND kind='basketball'`)).rows[0].n, 4, 'Thursday teams kept');
+  // hours widened: every slot still fits -> saved, teams kept
+  const thu2 = { ...wed, days: wed.days.map((d: any) => (d.day === 4 ? { ...d, start: '17:00', end: '19:00' } : d)) };
+  assert.equal((await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify(thu2) })).status, 200);
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots WHERE day_of_week=4 AND kind='basketball'`)).rows[0].n, 4);
+  // cheer room on a night with no hours -> 400
+  const noHours = { ...thu2, days: thu2.days.filter((d: any) => d.day !== 2), basketball: thu2.basketball.filter((b: any) => b.day !== 2), cheer: [{ day: 2, room: 'Room 20', squadId: cur.squads[0].id }] };
+  const rc = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify(noHours) });
+  assert.equal(rc.status, 400); assert.match((await rc.json()).errors.join(' '), /Tuesday: set the practice hours before assigning cheer rooms/);
+  // public payload: no slotId / ids
+  const pub2 = await (await fetch(BASE + '/api/public/practice')).json();
+  assert.ok(pub2.cheer.length && pub2.cheer.every((x: any) => !('slotId' in x) && !('squadId' in x)));
+  // explicit, well-formed empty week clears it
+  assert.equal((await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ days: [], basketball: [], cheer: [] }) })).status, 200);
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots`)).rows[0].n, 0);
+  const adminSrc = fs.readFileSync(path.join(PUB, 'practice-admin.js'), 'utf8');
+  assert.match(adminSrc, /confirm\(`These \$\{out.length\} practice slot/, 'editor asks before removing out-of-hours slots');
 });

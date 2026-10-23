@@ -72,7 +72,17 @@ document.addEventListener('change', (e) => {
 async function save() {
   $('#errors').innerHTML = '';
   // drop basketball slots that fell outside a night's changed hours
-  week.basketball = week.basketball.filter((b) => slots(week.days.find((d) => d.day === b.day)).includes(b.start));
+  // QA: never drop teams silently. Assignments outside a night's new hours are listed; the admin confirms removing
+  // them (or cancels and fixes the hours). The server also refuses them with errors[].
+  const out = week.basketball.filter((b) => !slots(week.days.find((d) => d.day === b.day)).includes(b.start));
+  if (out.length) {
+    const name = (b) => teams.find((t) => t.id === b.teamId)?.name || 'team';
+    const list = out.map((b) => `${DAYS[b.day].slice(0, 3)} ${b.start} ${b.court}: ${name(b)}`);
+    if (!confirm(`These ${out.length} practice slot(s) are outside the night's hours and would be removed:\n\n${list.join('\n')}\n\nRemove them and save? (Cancel to keep them and change the hours.)`)) {
+      msg('Not saved: some teams are outside the new hours.', true); $('#errors').innerHTML = list.map((x) => `<li>${esc(x)} is outside the hours</li>`).join(''); return;
+    }
+    week.basketball = week.basketball.filter((b) => !out.includes(b));
+  }
   try { fromServer({ teams, squads, ...(await api('/api/practice', { method: 'PUT', body: JSON.stringify(week) })) }); msg('Saved. The practice TVs update within a minute.'); render(); }
   catch (e) { if (e.message === 'login') return; msg('Not saved: fix the items below.', true); $('#errors').innerHTML = (e.errors || [e.message]).map((x) => `<li>${esc(x)}</li>`).join(''); }
 }
