@@ -12,6 +12,7 @@ import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
+import { logoFile, loadLogos, formatReport } from './logo-files.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal,
@@ -1358,6 +1359,13 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': r.logo_mime, 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
       return res.end(r.logo_data);
     }
+    // Mascot logos (deliverables/logos): immutable-ish static PNGs, cached a day.
+    if (u.pathname.startsWith('/team-logos/')) {
+      const f = logoFile(u.pathname);
+      if (!f) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found'); }
+      res.writeHead(200, { 'content-type': 'image/png', 'content-length': fs.statSync(f).size, 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' });
+      return fs.createReadStream(f).pipe(res);
+    }
     // Retired full-day schedule screen: 404 like any unknown path (the /upwardbasketballscores/<slug> TV rule would match it).
     if (/^\/(upwardbasketballscores\/)?schedule\/?$/.test(u.pathname)) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found'); }
     const page = PAGES.find(([re]) => re.test(u.pathname));
@@ -1383,7 +1391,7 @@ async function main() {
     }
   }
   if (process.env.SEED === 'true' && (await seedIfEmpty())) console.log('Seeded demo teams, courts and games.');
-  if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.');
+  if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.\n' + formatReport(await loadLogos(pool)));
   await loadSeason();
   attachWs(server);
   server.listen(PORT, () => console.log(`Scoreboard listening on :${PORT}`));

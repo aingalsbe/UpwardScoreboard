@@ -16,6 +16,10 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY public ./public
+# Mascot logos only (~10 MB); the contact sheets stay out of the image.
+COPY deliverables/logos/manifest.json ./deliverables/logos/
+COPY deliverables/logos/teams ./deliverables/logos/teams
+COPY deliverables/logos/cheer ./deliverables/logos/cheer
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1

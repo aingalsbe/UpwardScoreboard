@@ -99,6 +99,18 @@ docker compose restart app
 
 **NAS backup is not set up yet** for UpwardScoreboard. GitHub holds the code only; keep dumps somewhere safe yourself.
 
+### Mascot logos
+
+Logos live in git under `deliverables/logos/{teams,cheer}/` with `manifest.json` (512x512 PNG, 300 KB max); the Docker image copies only those (about 11 MB, not the contact sheets). The server serves them at `/team-logos/...` (image/png, cached 1 day) and the DB stores only the path in `teams.logo_url` / `cheer_squads.logo_url` (an uploaded logo still wins). The demo seed fills them. For a database that already has teams:
+
+```
+docker compose exec upward-app node dist/src/load-logos.js --dry-run   # report only
+docker compose exec upward-app node dist/src/load-logos.js             # fill empty logos (safe to re-run)
+docker compose exec upward-app node dist/src/load-logos.js --overwrite # replace existing logos too (not normally needed)
+```
+
+Teams match on name + division ("5th Grade Boys"), squads on name, ignoring case and extra spaces. The report lists matched, filled, skipped (already set), manifest entries with no team, and teams/squads with no logo.
+
 ## 8. URLs, ports and dev logins
 
 App on **http://localhost:3000** (health: `/api/health`). Postgres is not published to the host.
@@ -124,6 +136,7 @@ None. UpwardScoreboard has no cron jobs and no `DIGEST_CRON_ENABLED` or `WEATHER
 - [ ] http://localhost:3000/api/health returns 200
 - [ ] Admin login works with the dev password
 - [ ] A scorekeeper tap shows on the matching TV (3rd Grade or older; K–2nd Grade show no score on the TV, and their scorekeeper has no points/fouls/timeouts, by design)
+- [ ] `curl -I http://localhost:3000/team-logos/cheer/lenexa-lil-cheer.png` returns 200 image/png; a team page/TV shows its mascot
 - [ ] Lobby halftime roll-up: `/lobby?day=sat&at=11:18` shows the 12:00 games on top with "Tip-Off: 12:00 PM" and 1:00 in Up Next
 - [ ] The TV period reads like "1st Half · P1" and a new game's clock starts at 6:00
 - [ ] Optional, with Node 20: `npm ci` then `npm test`; `npm run smoke` against the running app

@@ -28,10 +28,11 @@ export function decodeLogo(dataUrl: unknown): { data: Buffer; mime: string } | n
   return { data, mime: real };
 }
 
-/** Accept only absolute http(s) URLs (or empty). Rejects javascript:, data:, relative paths, etc. */
+/** Accept only absolute http(s) URLs, a bundled /team-logos/... path, or empty. Rejects javascript:, data:, relative paths, etc. */
 export function safeLogoUrl(v: unknown): string | null {
   const s = typeof v === 'string' ? v.trim() : '';
   if (!s) return null;
+  if (/^\/team-logos\/(teams|cheer)\/[a-z0-9][a-z0-9-]*\.png$/.test(s)) return s; // bundled mascot logo (deliverables/logos)
   let u: URL;
   try { u = new URL(s); } catch { throw new HttpError(400, `logo_url "${s.slice(0, 60)}" is not a valid http(s) URL`); }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new HttpError(400, `logo_url must start with http:// or https:// (got ${u.protocol})`);

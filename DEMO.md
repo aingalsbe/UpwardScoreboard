@@ -57,6 +57,8 @@ The demo seed is one weekend, picked relative to today (America/Chicago): today 
 
 The scorekeeper lists today's games on its court; when there are none today it lists the court's next game day (the demo weekend), with the day in front of the time.
 
+**Mascot logos (Sage, 2026-10):** the demo seed gives all 44 teams and 4 cheer squads a logo from `deliverables/logos/manifest.json` (served at `/team-logos/teams/<slug>.png` and `/team-logos/cheer/<slug>.png`). An existing database that was seeded earlier: `node dist/src/load-logos.js --dry-run`, then without `--dry-run` (fills only empty logos; an Admin upload or URL is kept).
+
 ## Optional: sign in with the QR code
 
 1. Admin > Courts > Print QR codes.
