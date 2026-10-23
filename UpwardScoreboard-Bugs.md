@@ -12,7 +12,7 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 | ID | Fixed | Commit | Issue |
 |----|-------|--------|-------|
 | P1 | 2026-10-23 | 11a734e | **/admin/practice silently dropped a night's teams when its hours changed, and said "Saved"** (Avery, medium, NO-GO). The editor now lists slots outside the new hours and asks before removing them (Cancel keeps them); the server refuses out-of-hours slots with errors[] (it never drops). Tests: practice. |
-| P2 | 2026-10-23 | 11a734e | **Broken logo URL (404) showed a broken image** on the lobby and both practice TVs (Avery, medium). A capturing error listener swaps it for the initial badge and remembers the URL (no flicker). Court TVs/overlay unchanged (awaiting Aaron). Tests: qa-practice-nogo. |
+| P2 | 2026-10-23 | 11a734e | **Broken logo URL (404) showed a broken image** on the lobby and both practice TVs (Avery, medium). A capturing error listener swaps it for the initial badge and remembers the URL (no flicker). Court TVs/overlay keep their logos as they are (Aaron). Tests: qa-practice-nogo. |
 | P3 | 2026-10-23 | 11a734e | **Practice API lows** (Avery): PUT with null/[]/{} returned 200 and wiped the week -> 400 (clearing needs an explicit `{days:[],basketball:[],cheer:[]}`); public cheer[].slotId removed; a cheer room on a night without hours is refused; unknown team/squad 400 now has errors[]. |
 | P4 | 2026-10-23 | 11a734e | **Lobby idle said "Next: Practice Today 5:00 PM" during practice** -> "Practice tonight · now" (chosen over skipping ahead). |
 | P5 | 2026-10-23 | 11a734e | **Lobby header jumped to 12:00 and the 11:00 cheer dropped** while East's 11:00 was still in its 1st half and West's 12:00 was live. Header and top cheer row now follow the EARLIEST game on top (earliest wins); the later hour's cheer appears when the earlier game leaves the top. Tests: qa-practice-nogo, lobby-view. |
@@ -31,6 +31,7 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 
 ## Rule changes (planned)
 
+- **Logos (Aaron, 2026-10-23):** lobby, practice screens, court TV and overlay keep logos; the scorekeeper never shows them. scorekeeperView now strips all logo fields (test: scorekeeper-no-logos).
 - **Idle screens show the next event (2026-10-23, branch):** lobby + practice TVs show the next game day or practice night, whichever is first (public/next-event.js; /api/public/practice now also returns now.date).
 - **Closed, not wanted (Aaron, 2026-10-23):** practice cancellations; coach double-booking warnings.
 - **Proposed:** reschedule a game, see docs/plans/reschedule-games.md.

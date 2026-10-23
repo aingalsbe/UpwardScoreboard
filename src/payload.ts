@@ -19,7 +19,25 @@ export function scorekeeperView(msg: any): any {
   if (!msg || typeof msg !== 'object') return msg;
   let m = msg;
   if (m.type === 'state' && m.game) { const { cheer, ...game } = m.game; m = { ...m, game }; }
-  return stripCoaches(m);
+  return stripLogos(stripCoaches(m));
+}
+
+/** Aaron (2026-10-23): logos show on the lobby, practice TVs, court TV and overlay, never on the scorekeeper. */
+const isLogoKey = (k: string) => k === 'logo' || /logo/i.test(k);
+export function stripLogos<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(stripLogos) as unknown as T;
+  if (v && typeof v === 'object' && !(v instanceof Date)) {
+    const o: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (!isLogoKey(k)) o[k] = stripLogos(x);
+    return o as T;
+  }
+  return v;
+}
+/** True if a logo key appears anywhere in `v`. */
+export function hasLogoKey(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some(hasLogoKey);
+  if (v && typeof v === 'object') return Object.entries(v as Record<string, unknown>).some(([k, x]) => isLogoKey(k) || hasLogoKey(x));
+  return false;
 }
 
 /** True if a `coach` key appears anywhere in `v` (test helper and a last-line guard). */

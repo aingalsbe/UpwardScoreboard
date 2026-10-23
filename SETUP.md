@@ -111,6 +111,8 @@ docker compose exec upward-app node dist/src/load-logos.js --overwrite # replace
 
 Teams match on name + division ("5th Grade Boys"), squads on name, ignoring case and extra spaces. The report lists matched, filled, skipped (already set), manifest entries with no team, and teams/squads with no logo.
 
+**Logos** (team mascots, cheer squads) appear on the lobby, both practice screens, the court TV and the overlay, never on the scorekeeper (the server strips every logo field from scorekeeper messages). A missing or broken logo shows the initial badge on the lobby and practice screens.
+
 ### Practice schedule (Mon–Thu)
 
 Tables `practice_days` (day 1–4, basketball hours) and `practice_slots` (basketball: day, 1-hour start, court west1/west2/east1/east2, team; cheer: day, room, squad) are created by the normal start-up migration (additive, no data change). The demo seed fills a demo week; an existing database: `docker compose exec upward-app node dist/src/seed-practice.js` (only when no practice schedule exists). Real teams: Admin > Practice (`/admin/practice`). Displays: `/upwardbasketballscores/practice/basketball` and `/upwardbasketballscores/practice/cheer`.
