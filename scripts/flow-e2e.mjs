@@ -8,20 +8,20 @@ import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared
 import { chromium } from 'playwright-core';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
-// Safety (Avery R21e): this script completes, creates and DELETEs games. Refuse before touching anything unless
-//   (the DATABASE_URL db name contains "test", like colors.test, OR E2E_DESTRUCTIVE=1)  AND
-//   (BASE_URL is a localhost test port, i.e. not :3000 / not another host, OR E2E_DESTRUCTIVE=1).
-// scripts/run-e2e.sh sets E2E_DESTRUCTIVE=1 and DATABASE_URL for its own throwaway server + *_test_e2e database.
+// Safety (Avery R21f): this script completes, creates and DELETEs games. Before ANY request it refuses (exit 2) unless
+// ALL hold: E2E_DESTRUCTIVE=1; the DATABASE_URL db name matches /(^|_)test(_|$)/i (not "contest"/"prod_attestation");
+// BASE_URL host is localhost/127.0.0.1 AND its port equals E2E_PORT (default 18610), i.e. run-e2e.sh's throwaway server.
+// E2E_GUARD_ONLY=1: evaluate the guard, print the verdict and exit (0 = accepted, 2 = refused) without any network I/O.
 {
-  const optIn = process.env.E2E_DESTRUCTIVE === '1';
-  let dbName = ''; try { dbName = new URL(process.env.DATABASE_URL || '').pathname.replace(/^\//, ''); } catch {}
-  const u = new URL(BASE), local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
-  const realApp = !local || (u.port || (u.protocol === 'https:' ? '443' : '80')) === '3000';
-  const dbOk = /test/i.test(dbName) || optIn, baseOk = !realApp || optIn;
-  if (!dbOk || !baseOk) {
-    console.error(`flow-e2e: refusing to run (it deletes games): ${!dbOk ? `DATABASE_URL db "${dbName || '(unset)'}" does not contain "test" and E2E_DESTRUCTIVE=1 is not set` : ''}${!dbOk && !baseOk ? '; ' : ''}${!baseOk ? `BASE_URL ${BASE} looks like the real app (:3000 or not localhost) and E2E_DESTRUCTIVE=1 is not set` : ''}. Use scripts/run-e2e.sh flow-e2e.mjs.`);
-    process.exit(2);
-  }
+  const why = [];
+  if (process.env.E2E_DESTRUCTIVE !== '1') why.push('E2E_DESTRUCTIVE=1 is not set');
+  let dbName = ''; try { dbName = decodeURIComponent(new URL(process.env.DATABASE_URL || '').pathname.replace(/^\//, '')); } catch {}
+  if (!/(^|_)test(_|$)/i.test(dbName)) why.push(`DATABASE_URL db "${dbName || '(unset)'}" is not a *_test_* database`);
+  const want = String(process.env.E2E_PORT || '18610');
+  let host = '', port = ''; try { const u = new URL(BASE); host = u.hostname; port = u.port || (u.protocol === 'https:' ? '443' : '80'); } catch {}
+  if (!['localhost', '127.0.0.1'].includes(host) || port !== want) why.push(`BASE_URL ${BASE} is not localhost/127.0.0.1:${want} (E2E_PORT)`);
+  if (why.length) { console.error(`flow-e2e: refusing to run (it deletes games): ${why.join('; ')}. Use scripts/run-e2e.sh flow-e2e.mjs.`); process.exit(2); }
+  if (process.env.E2E_GUARD_ONLY === '1') { console.log(`flow-e2e guard: accepted (db ${dbName}, ${host}:${port})`); process.exit(0); }
 }
 const ADMIN = process.env.ADMIN_PASSWORD || 'change-me-admin';
 let pass = 0, fail = 0;

@@ -16,12 +16,9 @@ if [ -n "${E2E_TEST_NOW:-}" ] && [ "${E2E_REAL_CLOCK:-}" != 1 ]; then
   dow=$(TZ=America/Chicago date -d "$E2E_TEST_NOW" +%u 2>/dev/null) || { echo "E2E_TEST_NOW=$E2E_TEST_NOW is not a valid time"; exit 2; }
   if [ "$dow" != 5 ] && [ "$dow" != 6 ]; then echo "E2E_TEST_NOW=$E2E_TEST_NOW is $(TZ=America/Chicago date -d "$E2E_TEST_NOW" '+%a %H:%M') league time: pick a Fri/Sat time"; exit 2; fi
 fi
-# flow-e2e deletes games: prove its guard refuses without the opt-in (no DATABASE_URL, real-app BASE_URL) before
-# anything else runs. It exits 2 before any request, so nothing at :3000 is touched.
+# flow-e2e deletes games: dry-run its guard (E2E_GUARD_ONLY=1 = no network request at all) for the exact env it will get.
 case " $* " in *" flow-e2e.mjs "*)
-  g=$(cd "$D" && env -u E2E_DESTRUCTIVE -u DATABASE_URL BASE_URL=http://localhost:3000 timeout 20 node scripts/flow-e2e.mjs 2>&1); gc=$?
-  if [ $gc -eq 2 ] && echo "$g" | grep -q "refusing to run"; then echo "flow-e2e guard: refuses without opt-in (exit 2) OK"
-  else echo "FAIL flow-e2e guard did not refuse without opt-in (exit $gc)"; rc=1; fi;;
+  if ! (cd "$D" && E2E_GUARD_ONLY=1 E2E_DESTRUCTIVE=1 E2E_PORT=$PORT DATABASE_URL=$PG/$DB BASE_URL=http://localhost:$PORT node scripts/flow-e2e.mjs); then echo "FAIL flow-e2e guard refused run-e2e's own test server"; rc=1; fi;;
 esac
 for s in "$@"; do
   if [ "${E2E_REAL_CLOCK:-}" = 1 ]; then unset SCOREBOARD_TEST_NOW SCOREBOARD_TEST_CLOCK
@@ -32,7 +29,7 @@ for s in "$@"; do
   (cd "$D"; exec env DATABASE_URL=$PG/$DB PORT=$PORT ADMIN_PASSWORD=change-me-admin SESSION_SECRET=x-test-secret-long-enough COURT_PINS=full:1111,west:2222,east:3333 SEED=true TZ=America/Chicago GAME_MINUTES=60 LEAGUE_NAME="Lenexa Baptist Church Youth Basketball" CHURCH_NAME="Lenexa Baptist Church" node dist/src/server.js > /tmp/e2e-srv.log 2>&1) & SRV=$!
   for i in $(seq 40); do curl -sf localhost:$PORT/ >/dev/null && break; sleep 0.5; done
   echo "=== $s (clock: ${SCOREBOARD_TEST_NOW:-real})"
-  out=$(cd "$D" && E2E_DESTRUCTIVE=1 DATABASE_URL=$PG/$DB BASE_URL=http://localhost:$PORT TZ=America/Chicago timeout 600 node scripts/$s 2>&1); code=$?
+  out=$(cd "$D" && E2E_DESTRUCTIVE=1 E2E_PORT=$PORT DATABASE_URL=$PG/$DB BASE_URL=http://localhost:$PORT TZ=America/Chicago timeout 600 node scripts/$s 2>&1); code=$?
   echo "$out" | grep -E "FAIL|result|passed|Error" ; [ $code -ne 0 ] && { echo "  (exit $code)"; echo "$out" | tail -5; rc=1; }
   echo "$out" | grep -q "FAIL" && rc=1
   kill $SRV; wait $SRV 2>/dev/null
