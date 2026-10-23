@@ -27,8 +27,25 @@ const east = (await api('/api/courts')).find((c) => c.slug === 'east');
 const t = async (n) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `${n}-${RUN}`, grade: '5th Grade' }) })).id;
 const A = await t('Eagles'), B = await t('Lions');
 const now = Math.floor(Date.now() / 60000) * 60000;
-const g1 = (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: east.id, home_team_id: A, away_team_id: B, scheduled_at: new Date(now).toISOString() }) })).id;
-const g2 = (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: east.id, home_team_id: B, away_team_id: A, scheduled_at: new Date(now + 3_600_000).toISOString() /* an hour later: same court can't overlap */ }) })).id;
+// Two games today on East in free slots (like colors-e2e §11): the server refuses East overlaps, the shared East/Full
+// floor and anything outside 08:00-21:00 Fri/Sat, so try today's 30-min steps from now (then earlier) until it accepts.
+const offsets = []; for (let m = 0; m <= 13 * 60; m += 30) offsets.push(m); for (let m = -30; m >= -13 * 60; m -= 30) offsets.push(m);
+const today = new Date(now).toDateString(); let lastErr = '';
+const mkGame = async (home, away, avoid) => {
+  for (const m of offsets) {
+    const at = now + m * 60_000; if (new Date(at).toDateString() !== today || avoid.some((x) => Math.abs(x - at) < 3_600_000)) continue;
+    const r = await fetch(BASE + '/api/games', { method: 'POST', headers: H, body: JSON.stringify({ court_id: east.id, home_team_id: home, away_team_id: away, scheduled_at: new Date(at).toISOString() }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.id) return { id: j.id, at };
+    lastErr = `${r.status} ${j.error || ''}`;
+  }
+  return { id: undefined, at: NaN };
+};
+const c1 = await mkGame(A, B, []), c2 = await mkGame(B, A, [c1.at]);
+const [first, second] = c1.at <= c2.at ? [c1, c2] : [c2, c1]; // g1 = the earlier one (loaded first, completed first)
+const g1 = first.id, g2 = second.id;
+ok(!!g1 && !!g2, `created two East games today (${g1} @ ${new Date(first.at).toTimeString().slice(0, 5)}, ${g2} @ ${new Date(second.at).toTimeString().slice(0, 5)})${g1 && g2 ? '' : ' last error: ' + lastErr}`);
+if (!g1 || !g2) { console.log(`Flow e2e result: ${pass} passed, ${fail} failed`); process.exit(1); }
 const qr = (await api('/api/qr')).find((q) => q.slug === 'east');
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
