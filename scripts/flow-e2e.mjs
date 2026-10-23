@@ -8,6 +8,21 @@ import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared
 import { chromium } from 'playwright-core';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
+// Safety (Avery R21e): this script completes, creates and DELETEs games. Refuse before touching anything unless
+//   (the DATABASE_URL db name contains "test", like colors.test, OR E2E_DESTRUCTIVE=1)  AND
+//   (BASE_URL is a localhost test port, i.e. not :3000 / not another host, OR E2E_DESTRUCTIVE=1).
+// scripts/run-e2e.sh sets E2E_DESTRUCTIVE=1 and DATABASE_URL for its own throwaway server + *_test_e2e database.
+{
+  const optIn = process.env.E2E_DESTRUCTIVE === '1';
+  let dbName = ''; try { dbName = new URL(process.env.DATABASE_URL || '').pathname.replace(/^\//, ''); } catch {}
+  const u = new URL(BASE), local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  const realApp = !local || (u.port || (u.protocol === 'https:' ? '443' : '80')) === '3000';
+  const dbOk = /test/i.test(dbName) || optIn, baseOk = !realApp || optIn;
+  if (!dbOk || !baseOk) {
+    console.error(`flow-e2e: refusing to run (it deletes games): ${!dbOk ? `DATABASE_URL db "${dbName || '(unset)'}" does not contain "test" and E2E_DESTRUCTIVE=1 is not set` : ''}${!dbOk && !baseOk ? '; ' : ''}${!baseOk ? `BASE_URL ${BASE} looks like the real app (:3000 or not localhost) and E2E_DESTRUCTIVE=1 is not set` : ''}. Use scripts/run-e2e.sh flow-e2e.mjs.`);
+    process.exit(2);
+  }
+}
 const ADMIN = process.env.ADMIN_PASSWORD || 'change-me-admin';
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  PASS', m); } else { fail++; console.log('  FAIL', m); } };
@@ -28,13 +43,15 @@ const t = async (n) => (await api('/api/teams', { method: 'POST', body: JSON.str
 const A = await t('Eagles'), B = await t('Lions');
 const now = Math.floor(Date.now() / 60000) * 60000;
 // Two games today on East in free slots (like colors-e2e §11): the server refuses East overlaps, the shared East/Full
-// floor and anything outside 08:00-21:00 Fri/Sat, so try today's 30-min steps from now (then earlier) until it accepts.
-const offsets = []; for (let m = 0; m <= 13 * 60; m += 30) offsets.push(m); for (let m = -30; m >= -13 * 60; m -= 30) offsets.push(m);
+// floor and anything outside 08:00-21:00 Fri/Sat, so try 30-min steps from now forward to the 21:00 cutoff, then back
+// to 08:00, until it accepts (Sat 06:00 -> the morning; Fri 21:01 -> earlier today).
+const at21 = new Date(now); at21.setHours(21, 0, 0, 0); const at08 = new Date(now); at08.setHours(8, 0, 0, 0);
+const offsets = []; for (let m = 0; now + m * 60_000 <= at21.getTime(); m += 30) offsets.push(m); for (let m = -30; now + m * 60_000 >= at08.getTime(); m -= 30) offsets.push(m);
 const today = new Date(now).toDateString(); let lastErr = '';
 const hhmm = (t) => (Number.isFinite(t) ? new Date(t).toTimeString().slice(0, 5) : '--:--');
 const create = async (home, away, at) => {
   const r = await fetch(BASE + '/api/games', { method: 'POST', headers: H, body: JSON.stringify({ court_id: east.id, home_team_id: home, away_team_id: away, scheduled_at: new Date(at).toISOString() }) });
-  const j = await r.json().catch(() => ({})); if (r.ok && j.id) return j.id; lastErr = `${r.status} ${j.error || ''}`.trim(); return null;
+  const j = await r.json().catch(() => ({})); if (r.ok && j.id) return j.id; lastErr = `slot ${hhmm(at)} rejected: ${r.status} ${j.error || ''}`.trim(); return null;
 };
 const mkGame = async (home, away, avoid) => {
   for (const m of offsets) {
@@ -60,7 +77,7 @@ if (c1) for (const x of await api('/api/games')) if (x.court === 'East' && x.sta
   && new Date(x.scheduled_at).toDateString() === today && Date.parse(x.scheduled_at) < c1.at) await fetch(`${BASE}/api/games/${x.id}`, { method: 'DELETE', headers: H });
 // every expected string below comes from the created games' real home/away
 const gm = Object.fromEntries((await api('/api/games')).filter((x) => [g1, g2].includes(x.id)).map((x) => [x.id, x]));
-ok(!g1 || (gm[g1]?.home_team_id === A && gm[g1]?.away_team_id === B), 'g1 (earlier) is Eagles home vs Lions away');
+ok(!!g1 && (gm[g1]?.home_team_id === A && gm[g1]?.away_team_id === B), 'g1 (earlier) is Eagles home vs Lions away');
 if (!g1 || !g2) { console.log(`Flow e2e result: ${pass} passed, ${fail} failed`); process.exit(1); }
 const qr = (await api('/api/qr')).find((q) => q.slug === 'east');
 
