@@ -68,10 +68,10 @@ for (const [slug, name, conflicts_with] of [['full', 'Full', 'west east'], ['wes
 courtsNow = (await api('/api/courts')).body;
 const C1 = courtsNow.find((c) => c.slug === 'west'), C2 = courtsNow.find((c) => c.slug === 'east'), CF = courtsNow.find((c) => c.slug === 'full');
 const mkGame = async (court, h, a) => {
-  // morning league hours (07:00-12:00 Chicago start), whole minutes; avoids the ambiguous DST fall-back
-  // hour and the afternoon slots section 14 uses for the shared-floor tests
-  const day = new Date(); day.setUTCHours(12, 0, 0, 0);
-  const at = new Date(day.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000 + (60 + Math.floor(Math.random() * 300)) * 60_000).toISOString();
+  // a random future Fri/Sat morning (create follows the Fri/Sat + 08:00–21:00 game-hours rule): 14:00-16:59 UTC =
+  // 08:00-11:59 Chicago (CST or CDT), whole minutes; avoids the DST fall-back hour and section 14's afternoon slots
+  const day = new Date(); day.setUTCHours(14, 0, 0, 0); day.setUTCDate(day.getUTCDate() + ((5 - day.getUTCDay() + 7) % 7 || 7)); // next Friday
+  const at = new Date(day.getTime() + (Math.floor(Math.random() * 120) * 7 + Math.floor(Math.random() * 2)) * 86_400_000 + Math.floor(Math.random() * 180) * 60_000).toISOString();
   const id = (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: court.id, home_team_id: h.id, away_team_id: a.id, scheduled_at: at, division: `Smoke ${RUN}` }) })).body.id;
   return { id, home: h.name, away: a.name, home_team_id: h.id, away_team_id: a.id, court_id: court.id, scheduled_at: at };
 };
@@ -539,7 +539,7 @@ const sch2 = await api('/api/import/schedule.csv', { method: 'POST', body: `date
 g17 = (await all17()).filter((g) => g.home_team_id === D2.body.id);
 ok(sch2.body.created === 1 && g17[0]?.away_team_id === W2.body.id && /unknown home team .* in 3rd Grade|within one grade/.test(sch2.body.errors[0] || ''), `schedule CSV grade column picks 2nd Grade Dup vs Twin (${sch2.body.errors[0]})`);
 const [dL, tL2] = local(nowMin + 5 * 86400_000);
-const cg = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: D5.body.id, away_team_id: M5.body.id, scheduled_at: new Date(nowMin + 5 * 86400_000).toISOString(), cheer: 'Dup Cheer', cheer_logo_data_url: tiny }) });
+const cg = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: D5.body.id, away_team_id: M5.body.id, scheduled_at: iso(D + 3 * 3_600_000), cheer: 'Dup Cheer', cheer_logo_data_url: tiny }) });
 const CG = cg.body.id;
 const ex17 = await fetch(BASE + '/api/export/cheer_squads.csv', { headers: auth }).then((r) => r.text());
 const hdr17 = ex17.split(/\r?\n/)[0], line17 = ex17.split(/\r?\n/).find((l) => l.startsWith('Dup Cheer,'));
@@ -550,7 +550,7 @@ const re17 = await api('/api/import/cheer_squads.csv', { method: 'POST', body: h
 const lr2 = await fetch(logoUrl);
 ok(re17.body.skipped === 1 && !re17.body.errors.length && lr2.status === 200, `re-importing the export keeps the uploaded squad logo (${JSON.stringify(re17.body)})`);
 console.log('18. Round 4 CSV + ticker fixes');
-const [dX, tX] = local(nowMin + 6 * 86400_000);
+const [dX, tX] = local(D + 4 * 3_600_000); // a legal Sat evening slot
 const copyR4 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away,cheer,cheer_logo\n${dX},${tX},${fc.slug},5th Grade,Mate-${RUN},Dup-${RUN},Copy Cheer,${logoUrl}\n` });
 const copiedR4 = (await all17()).find((g) => g.home_team_id === M5.body.id);
 ok(copyR4.body.created === 1 && !copyR4.body.errors.length && copiedR4 && copiedR4.cheer === 'Copy Cheer' && !copiedR4.cheer_logo_url && !copiedR4.cheer_has_logo, `legacy cheer column maps to the time slot; another squad's uploaded logo is not carried over (${JSON.stringify(copyR4.body.warnings)})`);
@@ -653,7 +653,7 @@ console.log('19. Gender / division, schedule warnings, lobby feed (live) + retir
   ok(emp.games.length === 0 && emp.cheerSlots.length === 0, 'empty day: no games, no cheer slots');
   // A3: a game completed by CSV import (never ran here) reopens with its stored final, not 0–0.
   for (const g of (await api('/api/games')).body.filter((g) => g.status === 'active' && ['West', 'East', 'Full'].includes(g.court))) await api(`/api/games/${g.id}/complete`, { method: 'POST' });
-  const a3 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away\n2031-01-07,09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN}\n` });
+  const a3 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away\n2031-01-10,09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN}\n` });
   const a3g = (await api('/api/games')).body.find((g) => g.home_team_id === gb.body.id && g.away_team_id === b2.body.id && g.court === 'West' && g.status === 'scheduled');
   await api('/api/import/schedule.csv', { method: 'POST', body: `id,status,home_score,away_score\n${a3g.id},complete,10,16\n` });
   const ro = await api(`/api/games/${a3g.id}/reopen`, { method: 'POST', body: JSON.stringify({ force: true }) });

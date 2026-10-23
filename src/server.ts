@@ -679,6 +679,10 @@ const dayLabel = (date: string, hm: string) => `${DOW[new Date(`${date}T12:00:00
  * Errors -> 409 { errors[], preview }. time is optional (defaults to the current tip-off).
  */
 /** Parse an admin timestamp; a bad one (2026-02-30T10:00) is a 400, not a 500. */
+/** League-local date + HH:MM of a timestamp (for gameTimeErrors). */
+async function leagueLocal(ts: Date): Promise<{ d: string; t: string }> {
+  return (await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'YYYY-MM-DD') AS d, to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS t`, [ts, LEAGUE_TZ])).rows[0];
+}
 async function tsOf(v: unknown): Promise<Date> {
   const sv = String(v);
   const m = /^(\d{4}-\d{2}-\d{2})/.exec(sv);
@@ -936,7 +940,11 @@ async function importSchedule(text: string): Promise<ImportResult> {
       if (date || time) { // both empty = "not scheduled yet" (allowed; exports write it that way)
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, `date "${r.date}" must be YYYY-MM-DD (or leave date and time both empty)`);
         if (!/^\d{1,2}:\d{2}$/.test(time)) throw new HttpError(400, `time "${r.time}" must be HH:MM (24h, league time)`);
+        if (!isIsoDate(date)) throw new HttpError(400, `date "${r.date}" is not a real calendar date`);
       }
+      // Fri/Sat + tip-off window, same validator as create / reschedule. Checked below for new games and changed times
+      // (an exported row whose time is unchanged still round-trips).
+      const timeErrs = date ? gameTimeErrors(date, time.padStart(5, '0')) : [];
       const slug = (r.court || '').trim();
       const court = slug ? (await pool.query('SELECT id FROM courts WHERE slug=lower($1)', [slug])).rows[0] : { id: null };
       if (!court) throw new HttpError(400, `unknown court "${r.court}" (use a slug from courts.csv, e.g. west)`);
@@ -996,6 +1004,8 @@ async function importSchedule(text: string): Promise<ImportResult> {
         if (mv) { out.warnings!.push(movedMsg(mv)); out.skipped++; continue; }
       }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
+      const timeChanged = !!ts && (!ex || +new Date(ex.scheduled_at ?? 0) !== +ts);
+      if (timeChanged && timeErrs.length) throw new HttpError(400, `${date} ${time}: ${timeErrs.join(' ')} (row not imported)`);
       if (!ex) {
         const clash = await floorConflict(court.id, ts, dur, null);
         if (clash) throw new HttpError(409, clash);
@@ -1288,7 +1298,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       if (gmis) throw new HttpError(400, `Can't schedule: ${gmis}.`);
       let r;
       const dur = parseMinutes(b.duration_min);
-      const ts = b.scheduled_at ? (await pool.query('SELECT $1::timestamptz AS t', [b.scheduled_at])).rows[0].t : null;
+      const ts = b.scheduled_at ? await tsOf(b.scheduled_at) : null;
+      if (ts) { // same rules as reschedule / edit: Fri/Sat + tip-off window
+        const lt = await leagueLocal(ts); const errs = gameTimeErrors(lt.d, lt.t);
+        if (errs.length) throw Object.assign(new HttpError(409, `Can't schedule: ${errs[0]}`), { extra: { errors: errs } });
+      }
       const clash = await floorConflict(b.court_id || null, ts, dur, null);
       if (clash) throw new HttpError(409, `Can't schedule: ${clash}.`);
       try {

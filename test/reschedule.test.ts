@@ -164,6 +164,27 @@ test('DB: reschedule rules, audit, lobby note, CSV round-trip, plain PUT checks'
   for (const t of ['08:00', '21:00']) assert.equal((await rs(g4, { date: '2026-11-07', time: t, dryRun: true })).status, 200, t);
   for (const d of ['2026-02-30', '2026-02-31', '2026-13-01']) { const r = await rs(g4, { date: d, time: '10:00' }); assert.equal(r.status, 400, d); assert.match(r.body.error, /calendar date/); }
 
+  // Follow-up: create (POST /api/games) and CSV import use the same Fri/Sat + 08:00–21:00 validator.
+  const mk = (at: string, hh = 'H', aa = 'I') => fetch(`${BASE}/api/games`, { method: 'POST', headers: h, body: JSON.stringify({ court_id: null, home_team_id: T[hh], away_team_id: T[aa], scheduled_at: at }) }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  let c = await mk('2026-11-09T10:00:00-06:00'); assert.equal(c.status, 409); assert.match(c.body.errors.join(' '), /Friday or Saturday \(Monday 2026-11-09/);
+  c = await mk('2026-11-07T07:30:00-06:00'); assert.equal(c.status, 409); assert.match(c.body.error, /outside game hours/);
+  c = await mk('2026-11-07T21:30:00-06:00'); assert.equal(c.status, 409);
+  c = await mk('2026-11-08T21:30:00-06:00'); assert.equal(c.body.errors.length, 2, 'Sunday + late: both reasons');
+  c = await mk('2026-02-30T10:00:00-06:00'); assert.equal(c.status, 400);
+  const nBefore = (await pool.query('SELECT count(*)::int n FROM games')).rows[0].n;
+  c = await mk('2026-11-06T21:00:00-06:00'); assert.equal(c.status, 201, 'Fri 21:00 (last tip-off) ok');
+  c = await mk('2026-11-14T08:00:00-06:00', 'J', 'K'); assert.equal(c.status, 201, 'Sat 08:00 ok');
+  assert.equal((await pool.query('SELECT count(*)::int n FROM games')).rows[0].n, nBefore + 2);
+  const ir = await (await fetch(`${BASE}/api/import/schedule.csv`, { method: 'POST', headers: { ...h, 'content-type': 'text/csv' }, body:
+    'date,time,court,home,away\n2026-11-10,10:00,,TH,TL\n2026-11-13,07:00,,TH,TL\n2026-11-13,22:15,,TH,TL\n2026-11-13,18:00,,TH,TL\n2026-11-15,23:00,,TJ,TL\n' })).json();
+  assert.equal(ir.created, 1, JSON.stringify(imp));
+  assert.equal(ir.errors.length, 4, 'every bad row is reported, none silently dropped');
+  assert.match(ir.errors[0], /^row 2: 2026-11-10 10:00: Games can only be on Friday or Saturday \(Tuesday/);
+  assert.match(ir.errors[1], /^row 3: .*outside game hours/); assert.match(ir.errors[2], /^row 4: .*outside game hours/);
+  assert.match(ir.errors[3], /^row 6: .*Friday or Saturday.*outside game hours/);
+  assert.ok(ir.errors.every((e: string) => /row not imported/.test(e)));
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM games WHERE home_team_id=$1 AND away_team_id=$2`, [T.H, T.L])).rows[0].n, 1);
+
   // final -> the note disappears
   await pool.query(`UPDATE games SET status='complete', final_home=1, final_away=0 WHERE id=$1`, [g1]);
   sched = await (await fetch(`${BASE}/api/public/schedule?date=2026-11-07`)).json();
