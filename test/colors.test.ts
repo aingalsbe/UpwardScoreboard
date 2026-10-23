@@ -152,3 +152,16 @@ test('season colors reach every screen: public season API, inline season-vars in
   assert.ok(msgs.some((m) => m.kind === 'season' && m.season.light === '#FFDD88'), 'season push arrives live');
   ws.close();
 });
+
+test('season fg auto-picks black/white (>= 4.5:1) and on-dark falls back to white for near-black seasons (Avery round 21)', async () => {
+  const L = (h: string) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a: string, b: string) => { const x = L(a), y = L(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  for (const [light, dark] of [['#FFF5CC', '#FFF0B0'], ['#010101', '#000000'], ['#777777', '#767676']]) {
+    const r = await api('/api/settings/season', 'PUT', { name: 'Avery', dark, light }); assert.equal(r.status, 200, JSON.stringify(r.body));
+    const html = await fetch(`${BASE}/practice/basketball`).then((x) => x.text());
+    const v = Object.fromEntries([...html.match(/<style id="season-vars">:root\{([^}]*)\}/)![1].matchAll(/(--[\w-]+):(#[0-9A-F]{6})/gi)].map((m) => [m[1], m[2]]));
+    assert.ok(ratio(v['--season-light-fg'], light) >= 4.5, `${light} fg ${v['--season-light-fg']}`);
+    assert.ok(ratio(v['--season-dark-fg'], dark) >= 4.5, `${dark} fg ${v['--season-dark-fg']}`);
+    assert.ok(ratio(v['--season-light-on-dark'], '#000000') >= 4.5, `${light} on black via ${v['--season-light-on-dark']}`);
+  }
+});

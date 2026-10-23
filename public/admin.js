@@ -316,25 +316,37 @@ function seasonCheck() {
   const f = $('#season-form'), box = $('#season-contrast'), C = window.Contrast; if (!C) return;
   const d = normHex(f.elements.dark.value), l = normHex(f.elements.light.value), rows = [];
   if (!d || !l) { box.innerHTML = '<div class="cw-row">⚠ Enter both colors as hex, like #800000 or #FC2.</div>'; box.hidden = false; box.classList.add('bad'); return; }
-  const wd = C.ratio('#ffffff', d), dl = C.ratio(C.DARK, l), dvl = C.ratio(d, l);
-  rows.push(`White text on dark: ${C.fmt(wd)} ${wd >= 4.5 ? '✔' : '⚠ below 4.5:1'}`);
-  rows.push(`Dark text on light: ${C.fmt(dl)} ${dl >= 4.5 ? '✔' : '⚠ below 4.5:1'}`);
-  rows.push(`Dark vs light (side by side): ${C.fmt(dvl)} ${dvl >= 3 ? '✔' : '⚠ hard to tell apart'}`);
+  // Text on each color is picked automatically (black or white, whichever reads better: always >= 4.5:1).
+  const best = (bg) => Math.max(C.ratio('#000000', bg), C.ratio('#ffffff', bg)), dvl = C.ratio(d, l);
+  const tw = (bg) => (C.ratio('#000000', bg) >= C.ratio('#ffffff', bg) ? 'black' : 'white');
+  rows.push(`Text on dark (auto ${tw(d)}): ${C.fmt(best(d))} ✔`);
+  rows.push(`Text on light (auto ${tw(l)}): ${C.fmt(best(l))} ✔`);
+  if (dvl < 1.5) rows.push(`⚠ Dark vs light only ${C.fmt(dvl)} (under 1.5:1): home and away will look almost the same. You can still save.`);
+  else rows.push(`Dark vs light (side by side): ${C.fmt(dvl)} ${dvl >= 3 ? '✔' : 'ℹ fairly close'}`);
   if (C.luminance(d) >= C.luminance(l)) rows.push('⚠ The dark color must be darker than the light color.');
   box.innerHTML = rows.map((r) => `<div class="cw-row">${esc(r)}</div>`).join(''); box.hidden = false;
   box.classList.toggle('bad', rows.some((r) => r.includes('⚠')));
 }
 $('#season-form').addEventListener('input', seasonCheck);
+// P3: the season fields are prefilled from the server only while untouched; typing (a real user input) marks a field
+// touched so a background reload (load() after any change) never overwrites what the user has started typing.
+$('#season-form').addEventListener('input', (e) => { if (e.isTrusted && e.target.name) e.target.dataset.touched = '1'; });
 $('#season-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;
   const r = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify({ name: f.elements.name.value, dark: f.elements.dark.value, light: f.elements.light.value }) });
   seasonColors = r.dark ? r : await api('/api/settings/season'); renderTeams();
-  msg(`Season colors saved (${r.name}). TVs update automatically.`);
+  for (const el of f.elements) delete el.dataset.touched;
+  const C = window.Contrast, dvl = C && r.dark ? C.ratio(r.dark, r.light) : 9;
+  msg(`Season colors saved (${r.name}). TVs update automatically.` + (dvl < 1.5 ? ` ⚠ Warning: dark vs light is only ${C.fmt(dvl)} (under 1.5:1), home and away will look almost the same.` : ''));
 }));
 async function loadSeason() {
   const s = await api('/api/settings/season'); const f = $('#season-form');
   seasonColors = s; renderTeams();
-  f.elements.name.value = s.name; setHex(f, 'dark', s.dark); setHex(f, 'light', s.light); seasonCheck();
+  const fresh = (n) => !f.elements[n].dataset.touched;
+  if (fresh('name')) f.elements.name.value = s.name;
+  if (fresh('dark')) setHex(f, 'dark', s.dark);
+  if (fresh('light')) setHex(f, 'light', s.light);
+  seasonCheck();
 }
 
 for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-courts', '/api/import/courts.csv'], ['#import-schedule', '/api/import/schedule.csv'],

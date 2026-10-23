@@ -107,6 +107,41 @@ try {
   ok(/no-cache/.test(a.headers.get('cache-control') || '') && !!et, `lobby.js no-cache with ETag ${et}`);
   ok((await fetch(BASE + '/lobby.js', { headers: { 'if-none-match': et } })).status === 304, 'unchanged lobby.js revalidates as 304');
   for (const d of Object.values(scr)) await d.pg.close();
+  // 10) Avery round 21 (P2 contrast): text on season-colored bars stays >= 4.5:1 for near-identical light seasons
+  //     (#FFF5CC/#FFF0B0) and near-black seasons (#010101/#000000); fg auto-picks black or white.
+  const CONTRAST = () => {
+    const rgb = (c) => { const m = c.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/); if (m) return [m[1] * 255, m[2] * 255, m[3] * 255, m[4] === undefined ? 1 : +m[4]];
+      const n = (c.match(/[\d.]+/g) || []).map(Number); return [n[0], n[1], n[2], n.length > 3 ? n[3] : 1]; };
+    const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    window.__ratio = (sel) => { const el = document.querySelector(sel); if (!el) return null; const fg = rgb(getComputedStyle(el).color);
+      let e = el, bg = [0, 0, 0, 0]; while (e) { bg = rgb(getComputedStyle(e).backgroundColor); if (bg[3] > 0.5) break; e = e.parentElement; } if (!e) bg = [255, 255, 255, 1];
+      const a = lum(fg), b = lum(bg); return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100; };
+  };
+  const tv10 = await open(`/tv/${slug}`), pr10 = await open('/practice/basketball');
+  for (const d of [tv10, pr10]) await d.pg.evaluate(CONTRAST);
+  // the practice idle card only renders when idle: make sure one is on the page (same markup as practice.js)
+  await pr10.pg.evaluate(() => { if (!document.querySelector('.idle-next')) document.body.insertAdjacentHTML('beforeend', '<main class="idle"><div class="idle-card"><div class="idle-title">No practice right now</div><div class="idle-next">Next: probe</div></div></main>'); });
+  const ELS = [[tv10, '.next-up-label'], [tv10, '.ticker'], [tv10, '.ticker b'], [pr10, '.idle-next']];
+  for (const [light, dark] of [['#FFF5CC', '#FFF0B0'], ['#010101', '#000000']]) {
+    const r10 = await call('/api/settings/season', 'PUT', { name: season0.name, dark, light });
+    ok(r10.status === 200, `Avery season ${light}/${dark} saves (a warning, not a block)`);
+    for (const d of [tv10, pr10]) await waitVars(d, [light, dark]);
+    for (const [d, sel] of ELS) { const r = await d.pg.evaluate((q) => window.__ratio(q), sel); ok(r >= 4.5, `${light}/${dark}: ${sel} contrast ${r}:1 >= 4.5`); }
+  }
+  await tv10.pg.close(); await pr10.pg.close();
+  // admin warns (does not block) when light vs dark is under 1.5:1
+  await p.goto(BASE + '/admin#teams'); await p.waitForTimeout(800);
+  await p.fill('#season-form [name=dark]', '#FFF0B0'); await p.fill('#season-form [name=light]', '#FFF5CC');
+  ok(/under 1\.5:1/.test(await p.textContent('#season-contrast')), 'admin warns: light vs dark under 1.5:1');
+  await p.$eval('#season-form', (f) => f.requestSubmit()); await p.waitForTimeout(800);
+  ok((await call('/api/settings/season')).body.light === '#FFF5CC', 'low-contrast season still saved (warning only)');
+  // P3: the 10 s background reload prefills only untouched fields; a half-typed value survives
+  await p.goto(BASE + '/admin#teams'); await p.waitForTimeout(800);
+  await p.click('#season-form [name=light]'); await p.keyboard.press('Control+A'); await p.keyboard.type('#12');
+  await call('/api/settings/season', 'PUT', { name: season0.name, dark: '#224466', light: '#FFDD88' });
+  await p.waitForTimeout(11500);
+  ok(await p.inputValue('#season-form [name=light]') === '#12', 'typed season light kept across the background reload');
+  ok(/#224466/i.test(await p.inputValue('#season-form [name=dark]')), 'untouched season dark was refreshed to #224466');
   await call('/api/settings/season', 'PUT', season0);
 } finally { await b.close(); }
 console.log(`result: ${pass} passed, ${fail} failed`);

@@ -9,7 +9,7 @@
    No dependencies; also usable as window.Contrast in admin. */
 (function () {
   'use strict';
-  const DARK = '#111111', LIGHT = '#ffffff';
+  const DARK = '#000000', LIGHT = '#ffffff'; // Avery r21: pure black so bestText() is always >= 4.58:1 (#111 could dip to ~4.4:1)
   function parse(c) {
     if (!c) return null;
     c = String(c).trim().toLowerCase();

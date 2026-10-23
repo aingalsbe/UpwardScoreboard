@@ -3,8 +3,8 @@
 /* Lobby v2 mockup (Sage) — static, SAMPLE DATA. Style follows Aaron's lobby slides (uploads/lobby/mockup.pptx):
    condensed grey day/time header with black outline, court tabs (parallelograms), gold HOME row / black AWAY row,
    Locker Room pills, pink CHEER row. Added: LIVE + score/period/clock, UP NEXT + tip-off, coaches, cheer coach.
-   Season reconciliation: Home row = season Gold #FFC72C (slides' gold, brightened to the season value) with black text;
-   Away row = black (as the slides) with a Maroon #800000 rim + maroon pill accents, so the season dark is still there.
+   Season colors (SAGE, Aaron 2026-10-23): Home row = season light, Away row = season dark, cheer = a light tint of the
+   season light; all text on them = --season-*-fg (black or white by contrast). See the SAGE block at the end.
    Hooks follow Devon's plan (docs/plans/locker-rooms-coaches.md): data-court, data-slot=now|next, data-row=home|away|cheer,
    data-bind=name|locker|coach|time|header, data-state=live|upcoming|empty; empty locker pill = data-empty (hidden).
    Coach: small secondary line under the name (Q4 default). 1rem = 10px at 1920x1080. */
@@ -169,10 +169,10 @@ body { position: absolute; left: var(--lobby-x, 0); top: var(--lobby-y, 0); tran
 main.idle { display: flex; justify-content: center; align-items: center; height: 70rem; padding: 0 10rem; }
 main.idle .idle { text-align: center; }
 main.idle .idle-title { font: 800 6rem "Montserrat", Arial, sans-serif; color: #fff; text-shadow: 0 .4rem 1rem #000; }
-main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, sans-serif; color: var(--gold); text-shadow: 0 .3rem .8rem #000; }
+main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, sans-serif; color: var(--season-light-on-dark); /* SAGE */ text-shadow: 0 .3rem .8rem #000; }
 /* DEMO tag */
 .demo-tag { position: absolute; left: 2rem; top: 1.4rem; z-index: 3; font: 800 2rem "Montserrat", Arial, sans-serif; letter-spacing: .2rem;
-  color: #111; background: var(--gold); padding: .5rem 1.4rem; border-radius: 1rem; }
+  color: var(--season-light-fg); /* SAGE: was #111 */ background: var(--gold); padding: .5rem 1.4rem; border-radius: 1rem; }
 /* PRINT: one landscape 16:9 page, backgrounds kept */
 @media print {
   @page { size: 1920px 1080px; margin: 0; }
@@ -188,8 +188,8 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 .who { display: flex; align-items: center; justify-content: center; gap: 1.4rem; }
 .who .txt { min-width: 0; }
 .mascot { flex: none; width: 6.4rem; height: 6.4rem; object-fit: contain; }
-.mascot.badge { display: inline-grid; place-items: center; border-radius: 50%; background: #000; color: #ffc72c; border: .3rem solid #fff;
-  font: 900 3.4rem/1 "Montserrat", "Archivo", Arial, sans-serif; }                 /* gold on black 13.5:1 */
+.mascot.badge { display: inline-grid; place-items: center; border-radius: 50%; background: #000; border: .3rem solid #fff;
+  font: 900 3.4rem/1 "Montserrat", "Archivo", Arial, sans-serif; }
 
 /* SAGE: stopgap "Moved from Sat 11:00 AM" pill for rescheduled games (until final). Sits on the section's top edge so the
    1080p grid height is unchanged; Sage to restyle. */
@@ -208,4 +208,4 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 .home .locker, .home .side { background: var(--season-light-fg); color: var(--season-light); }
 .away .locker, .away .side { background: var(--season-dark-fg); color: var(--season-dark); box-shadow: none; }
 .cheer .coach { color: color-mix(in srgb, #000 85%, var(--pink)); }
-.mascot.badge { color: var(--season-light); }
+.mascot.badge { color: var(--season-light-on-dark); }

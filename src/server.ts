@@ -311,8 +311,12 @@ function broadcastSeason() { const m = seasonMsg(); for (const c of clients) if 
 /** Inline <style> with the season variables, injected into every HTML page so the first paint already has them. */
 function seasonStyle() {
   const ok = (h: string) => (/^#[0-9A-Fa-f]{6}$/.test(h) ? h : '#808080');
-  const fg = (h: string) => (lum(ok(h)) > 0.179 ? '#111111' : '#FFFFFF');
-  return `<style id="season-vars">:root{--season-light:${ok(season.light)};--season-dark:${ok(season.dark)};--season-light-fg:${fg(season.light)};--season-dark-fg:${fg(season.dark)}}</style>`;
+  // fg = black or white, whichever contrasts more (always >= 4.58:1); on-dark = the color itself when it reads >= 4.5:1
+  // on black, else white (for season-colored text on the black cards/pills).
+  const fg = (h: string) => (lum(ok(h)) > 0.179 ? '#000000' : '#FFFFFF');
+  const onDark = (h: string) => ((lum(ok(h)) + 0.05) / 0.05 >= 4.5 ? ok(h) : '#FFFFFF');
+  const L = season.light, D = season.dark;
+  return `<style id="season-vars">:root{--season-light:${ok(L)};--season-dark:${ok(D)};--season-light-fg:${fg(L)};--season-dark-fg:${fg(D)};--season-light-on-dark:${onDark(L)};--season-dark-on-dark:${onDark(D)}}</style>`;
 }
 async function broadcastCourt(slug: string) {
   scheduleChanged();
