@@ -100,7 +100,8 @@
 
   function gameRows(f) {
     const rows = [];
-    [['homeColor', 'useHomeColor', 'Home'], ['awayColor', 'useAwayColor', 'Away']].forEach(([k, use, lbl]) => {
+    [].forEach( // per-game colors are retired (season colors only); kept as a no-op
+([k, use, lbl]) => {
       if (!f.elements[k] || (f.elements[use] && !f.elements[use].checked)) return;
       const P = f.elements[k].value; if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(P.trim())) return;
       const w = C.ratio('#ffffff', P);

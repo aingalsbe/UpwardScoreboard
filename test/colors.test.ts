@@ -43,7 +43,7 @@ before(async () => {
 });
 after(async () => { srv?.kill(); await db?.pool.end(); });
 
-test('DB: startup migration converts rgb()/lowercase season + game colors, idempotent; retired team colors untouched', { skip }, async () => {
+test('DB: startup migration converts rgb()/lowercase season colors, idempotent; retired team + game colors untouched', { skip }, async () => {
   const { pool } = db;
   await db.migrate();
   await pool.query(`INSERT INTO courts(slug, name) VALUES ('full','Full') ON CONFLICT DO NOTHING`);
@@ -55,20 +55,20 @@ test('DB: startup migration converts rgb()/lowercase season + game colors, idemp
   await pool.query(`UPDATE courts SET current_game_id=$1 WHERE slug='full'`, [g]);
   const g2 = (await pool.query(`INSERT INTO games(court_id, scheduled_at, home_team_id, away_team_id, theme) VALUES ((SELECT id FROM courts WHERE slug='full'), now() + interval '1 day', $1, $2, '{}') RETURNING id`, [A, B])).rows[0].id;
   const n1 = await db.migrateColors();
-  assert.ok(n1 >= 3, `converted ${n1}`);
+  assert.equal(n1, 2, `only the two season settings converted (${n1})`);
   const t = (await pool.query('SELECT name, primary_color p, secondary_color s FROM teams ORDER BY id')).rows;
   assert.deepEqual(t.map((r: any) => [r.p, r.s]), [['rgb(30, 144, 255)', '#fff'], ['#7a1020', 'not-a-color']], 'team colors are retired: data left exactly as it was');
   const st = Object.fromEntries((await pool.query(`SELECT key, value FROM settings WHERE key LIKE 'season_%'`)).rows.map((r: any) => [r.key, r.value]));
   assert.equal(st.season_dark, '#800000'); assert.equal(st.season_light, '#FFC72C');
   const gr = (await pool.query('SELECT status, theme FROM games WHERE id=$1', [g])).rows[0];
-  assert.deepEqual(gr.theme, { homeName: 'H', homeColor: '#008000', awayColor: '#AABBCC', awayAccent: '#FFFFFF' });
-  assert.equal(gr.status, 'active', 'live game untouched apart from colors');
+  assert.deepEqual(gr.theme, { homeName: 'H', homeColor: 'rgb(0,128,0)', awayColor: '#abc', awayAccent: 'RGBA(255,255,255,1)' }, 'retired per-game colors: data left exactly as it was');
+  assert.equal(gr.status, 'active', 'live game untouched');
   assert.deepEqual((await pool.query('SELECT theme FROM games WHERE id=$1', [g2])).rows[0].theme, {});
   assert.equal(await db.migrateColors(), 0, 'second run changes nothing');
   await db.migrate(); assert.equal(await db.migrateColors(), 0);
 });
 
-test('API: hex accepted (#RGB / #RRGGBB, any case) and stored uppercase; bad color = 400 with a clear message', { skip }, async () => {
+test('API: season hex (#RGB / #RRGGBB) stored uppercase, bad = 400; game colors ignored with a note, TV shows season colors', { skip }, async () => {
   const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
   srv = started.srv; BASE = `http://127.0.0.1:${started.port}`;
   token = (await api('/api/login', 'POST', { password: ADMIN })).body.token; assert.ok(token);
@@ -78,21 +78,35 @@ test('API: hex accepted (#RGB / #RRGGBB, any case) and stored uppercase; bad col
   assert.deepEqual([(await api('/api/settings/season')).body.dark, (await api('/api/settings/season')).body.light], ['#003366', '#FFC72C']);
   r = await api('/api/settings/season', 'PUT', { name: 'S', dark: 'rgb(0,0,0)', light: '#ffc72c' });
   assert.equal(r.status, 400); assert.match(r.body.error, /dark "rgb\(0,0,0\)" is not a color; use hex like #1E90FF \(#RGB or #RRGGBB\)/);
-  // Game theme override (the "Home color" / "Away color" boxes)
+  // Per-game colors are retired (Aaron): ignored on input with a note, never returned, displays use the season colors
   const gid = (await db.pool.query(`SELECT id FROM games WHERE status='active'`)).rows[0].id;
+  const stored0 = (await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme;
   const cur = (await api('/api/games')).body.find((x: any) => x.id === gid);
+  for (const k of ['homeColor', 'awayColor', 'homeAccent', 'awayAccent']) assert.ok(!(k in (cur.theme || {})), `GET /api/games has no theme.${k}`);
   const put = (theme: any) => api(`/api/games/${gid}`, 'PUT', { court_id: cur.court_id, home_team_id: cur.home_team_id, away_team_id: cur.away_team_id, scheduled_at: null, division: cur.division ?? '', theme, swap_colors: false });
-  r = await put({ homeColor: '#1e90ff', awayColor: '#F0a' });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  const saved = (await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme;
-  assert.equal(saved.homeColor, '#1E90FF'); assert.equal(saved.awayColor, '#FF00AA');
-  const tv = await (await fetch(`${BASE}/api/public/court/full`)).json();
-  assert.equal(tv.game.home.color, '#1E90FF', 'TV snapshot carries the new color');
-  for (const bad of ['rgb(30,144,255)', '#12345', 'blue']) {
-    r = await put({ homeColor: bad });
-    assert.equal(r.status, 400, bad); assert.match(r.body.error, /homeColor ".*" is not a color; use hex like #1E90FF/);
+  for (const th of [{ homeColor: '#1e90ff', awayColor: '#F0a' }, { homeColor: 'rgb(30,144,255)' }, { homeColor: 'blue', awayAccent: '#12345' }]) {
+    r = await put({ homeName: 'HN', ...th });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.match(r.body.warnings.join(' '), /game colors ignored: every game uses the season colors/);
   }
-  assert.equal((await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme.homeColor, '#1E90FF', 'a rejected save changes nothing');
+  const saved = (await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme;
+  assert.equal(saved.homeName, 'HN', 'display name still saved');
+  for (const k of ['homeColor', 'awayColor', 'homeAccent', 'awayAccent']) assert.equal(saved[k], stored0[k], `stored theme.${k} untouched`);
+  r = await put({ homeName: 'HN' }); assert.ok(!r.body.warnings.some((w: string) => /game colors ignored/.test(w)), 'no note without colors');
+  let tv = await (await fetch(`${BASE}/api/public/court/full`)).json();
+  assert.equal(tv.game.home.color, '#FFC72C', 'TV: home = season light'); assert.equal(tv.game.away.color, '#003366', 'TV: away = season dark');
+  assert.ok(!JSON.stringify(tv).includes('rgb(0,128,0)') && !/homeColor|awayColor/.test(JSON.stringify(tv)), 'TV snapshot carries no game colors');
+  r = await api(`/api/games/${gid}`, 'PUT', { swap_colors: true }); assert.equal(r.status, 200, JSON.stringify(r.body));
+  tv = await (await fetch(`${BASE}/api/public/court/full`)).json();
+  assert.equal(tv.game.home.color, '#003366', 'Swap: home = season dark'); assert.equal(tv.game.away.color, '#FFC72C', 'Swap: away = season light');
+  await api(`/api/games/${gid}`, 'PUT', { swap_colors: false });
+  // schedule.csv: color columns ignored with a note, never exported
+  { const csv = `id,home_color,away_color\n${gid},#123456,#654321\n`;
+    const ir = await (await fetch(`${BASE}/api/import/schedule.csv`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'text/csv' }, body: csv })).json();
+    assert.deepEqual(ir.errors, [], JSON.stringify(ir)); assert.match((ir.warnings || []).join(' '), /home_color, away_color game colors ignored/);
+    const th = (await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme;
+    for (const k of ['homeColor', 'awayColor']) assert.equal(th[k], stored0[k], `import left theme.${k} untouched`); }
+  const exp = await (await fetch(`${BASE}/api/export/schedule.csv`, { headers: { authorization: `Bearer ${token}` } })).text();
+  assert.ok(!/color(?!s)|accent|theme/i.test(exp.split('\n')[0].replace('swap_colors', '')), `export header has no game colors: ${exp.split('\n')[0]}`);
   // Team colors (Aaron: season colors only): not exported, ignored on input with a note, DB data untouched
   const tm = (await api('/api/teams')).body[0];
   assert.ok(!('primary_color' in tm) && !('secondary_color' in tm), 'GET /api/teams has no team colors');

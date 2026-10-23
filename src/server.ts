@@ -170,7 +170,7 @@ async function gameHidesScore(gameId: number): Promise<boolean> {
 
 // ------------------------------------------------------------ view models
 // Season colors: every team wears the season's dark or light color. Default home = light, away = dark;
-// games.swap_colors flips it. Advanced per-matchup theme colors (Admin > game > Advanced) still win.
+// games.swap_colors flips it. Per-game theme colors are retired: displays never read them (the stored values stay in the DB, unused).
 let season = { name: '2026–27 Upward', dark: '#800000', light: '#FFC72C' };
 async function loadSeason() {
   const { rows } = await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_name','season_dark','season_light')`);
@@ -192,8 +192,8 @@ function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
     name: theme[`${side}Name`] || r[`${prefix}_name`],
     short: r[`${prefix}_short`] || r[`${prefix}_name`]?.slice(0, 3).toUpperCase(),
     side: wear,
-    color: theme[`${side}Color`] || season[wear],
-    accent: theme[`${side}Accent`] || season[wear === 'light' ? 'dark' : 'light'],
+    color: season[wear],
+    accent: season[wear === 'light' ? 'dark' : 'light'],
     logo: theme[`${side}Logo`] || (r[`${prefix}_has_logo`] ? `/logos/${id}` : r[`${prefix}_logo_url`] || null),
     locker: r[`${side}_locker`] || null, // per game (changes weekly)
     coach: r[`${side}_coach`] || null, // first name; never sent to the scorekeeper (see scorekeeperView)
@@ -263,7 +263,7 @@ async function gameViewNorm(gameId: number) {
   if (!rows.length) return null;
   const r = normalizeRow(rows[0]);
   const rt = await getRuntime(gameId);
-  const theme = r.theme || {};
+  const theme = publicTheme(r.theme); // never the retired color keys
   const s = rt.history.present;
   return {
     id: r.id, division: r.division, scheduledAt: r.scheduled_at,
@@ -752,7 +752,7 @@ async function scheduleSnapshot(date: string) {
     WHERE (g.scheduled_at AT TIME ZONE $1)::date = $2::date ORDER BY g.scheduled_at, c.id, g.id`, [LEAGUE_TZ, date]);
   const games = [];
   for (const raw of rows) {
-    const r = normalizeRow(raw), theme = r.theme || {};
+    const r = normalizeRow(raw), theme = publicTheme(r.theme);
     const live = r.status === 'active' ? await gameViewNorm(r.id) : null;
     const t = await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS hm, to_char($1::timestamptz AT TIME ZONE $2, 'YYYY-MM-DD') AS cd, to_char($3::timestamptz AT TIME ZONE $2, 'YYYY-MM-DD') AS md,
       to_char($3::timestamptz AT TIME ZONE $2, 'HH24:MI') AS mt`, [r.scheduled_at, LEAGUE_TZ, r.moved_from ?? null]);
@@ -897,6 +897,8 @@ async function importSchedule(text: string): Promise<ImportResult> {
   requireColumns(headers, headers.includes('id') ? ['id'] : FULL, 'schedule.csv');
   const out: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [], warnings: [] }; const seen = new Map<string, number>();
   const touched = new Set<number>();
+  const gameColorCols = headers.filter((h) => /^(home|away)_?(color|accent)$/i.test(h) || h === 'theme');
+  if (gameColorCols.length) out.warnings!.push(`${gameColorCols.join(', ')} ${GAME_COLOR_NOTE}`);
   const legacyCheerSlots = new Map<string, { name: string; logo: string | null; line: number }>();
   const team = async (n: string, col: string) => {
     if (!n) throw new HttpError(400, `${col} team is empty`);
@@ -1309,7 +1311,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         ${CHEER_JOIN}
         ORDER BY g.scheduled_at NULLS LAST, g.id`);
       const warn = await loadWarnings();
-      for (const r of rows) r.warnings = warn.filter((w) => w.gameId === r.id).map((w) => w.message);
+      for (const r of rows) { r.warnings = warn.filter((w) => w.gameId === r.id).map((w) => w.message); r.theme = publicTheme(r.theme); }
       return json(res, 200, rows);
     }
     if (m === 'POST' && !id) {
@@ -1336,7 +1338,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       // Validate cheer logos before anything else is written? decodeLogo throws HttpError(400/413) on bad input.
       try { await gameExtrasFromBody(r.rows[0].id, b); } catch (e) { await pool.query('DELETE FROM games WHERE id=$1', [r.rows[0].id]); throw e; }
       scheduleChanged();
-      return json(res, 201, { id: r.rows[0].id, warnings: await warningsFor(r.rows[0].id) });
+      return json(res, 201, { id: r.rows[0].id, warnings: [...(themeHasColors(b.theme) ? [GAME_COLOR_NOTE] : []), ...await warningsFor(r.rows[0].id)] });
     }
     if (m === 'PUT' && id && seg.length === 3) {
       const b = await readJson(req);
@@ -1364,7 +1366,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         if (moved || court !== g.court_id) await logGameEdit(id, g, { court_id: court, scheduled_at: ts, duration_min: dur }, moved && g.scheduled_at ? 'reschedule' : 'edit');
         await refreshAllCourts();
       }
-      if ('theme' in b) await pool.query('UPDATE games SET theme=$2 WHERE id=$1', [id, sanitizeTheme(b.theme)]);
+      if ('theme' in b) await pool.query('UPDATE games SET theme=$2 WHERE id=$1', [id, sanitizeTheme(b.theme, (await pool.query('SELECT theme FROM games WHERE id=$1', [id])).rows[0]?.theme)]);
       if ('division' in b) await pool.query('UPDATE games SET division=$2 WHERE id=$1', [id, String(b.division || '').trim() || null]);
       if (b.home_team_id && b.away_team_id) {
         if (Number(b.home_team_id) === Number(b.away_team_id)) throw new HttpError(400, 'pick two different teams');
@@ -1375,7 +1377,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       await gameExtrasFromBody(id, b);
       // Every court, not just the one playing this game: TVs/overlays also show it in Up next / Today, so a color
       // or name change must reach them live (and the schedule screens via scheduleChanged).
-      await refreshAllCourts(); scheduleChanged(); return json(res, 200, { id, warnings: await warningsFor(id) });
+      await refreshAllCourts(); scheduleChanged(); return json(res, 200, { id, warnings: [...(themeHasColors(b.theme) ? [GAME_COLOR_NOTE] : []), ...await warningsFor(id)] });
     }
     if (m === 'DELETE' && id) { runtimes.delete(id); await pool.query('DELETE FROM games WHERE id=$1', [id]); await refreshAllCourts(); return json(res, 200, { ok: true }); }
     if (m === 'POST' && id && seg[3] === 'start') { // admin "Start on court" (force = start anyway despite the shared floor)
@@ -1502,13 +1504,19 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   json(res, 404, { error: 'not found' });
 }
 
-function sanitizeTheme(t: any) {
+/** Per-game theme colors are retired (season colors only). These keys are ignored on input and never returned. */
+const THEME_COLOR_KEYS = ['homeColor', 'awayColor', 'homeAccent', 'awayAccent'];
+const GAME_COLOR_NOTE = 'game colors ignored: every game uses the season colors (light at home, dark away; "Swap colors" flips them).';
+const themeHasColors = (t: any) => !!t && typeof t === 'object' && THEME_COLOR_KEYS.some((k) => t[k] != null && t[k] !== '');
+/** The theme without its retired color keys (API output). */
+function publicTheme(t: any) { const o = { ...(t || {}) }; for (const k of THEME_COLOR_KEYS) delete o[k]; return o; }
+/** Input theme: names and logos only. `keep` = the stored theme; its retired color keys are carried over untouched. */
+function sanitizeTheme(t: any, keep: any = {}) {
   const o: Record<string, string> = {};
+  for (const k of THEME_COLOR_KEYS) if (keep && keep[k] != null) o[k] = keep[k]; // DB data left as is (unused)
   if (!t || typeof t !== 'object') return o;
   for (const side of ['home', 'away']) {
     if (t[`${side}Name`]) o[`${side}Name`] = String(t[`${side}Name`]).slice(0, 30);
-    // A bad color is a 400 (it used to be dropped silently, which wiped the override on save).
-    for (const k of [`${side}Color`, `${side}Accent`]) { const c = color(t[k], null, k); if (c) o[k] = c; }
     if (t[`${side}Logo`]) o[`${side}Logo`] = safeLogoUrl(t[`${side}Logo`])!;
   }
   return o;

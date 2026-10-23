@@ -87,14 +87,11 @@
         <label>Home locker room <input name="home_locker" maxlength="8" placeholder="CH"></label>
         <label>Away locker room <input name="away_locker" maxlength="8" placeholder="2"></label>
         <p class="muted full">Locker rooms change every week (no default). Cheer squads are set per time slot on the Cheer tab.</p>
-        <details class="full advanced"><summary>Advanced: matchup overrides (display names, alternate colors instead of the season colors)</summary>
+        <details class="full advanced"><summary>Advanced: matchup display names</summary>
           <div class="form">
             <label>Home display name <input name="homeName"></label>
-            <label>Home color <span class="hex-pick"><input type="color" data-hex-for="homeColor" aria-label="Home color swatch"><input class="hex" name="homeColor" placeholder="#1E90FF" maxlength="7" spellcheck="false" autocomplete="off" pattern="#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})" title="Hex color like #1E90FF (#RGB or #RRGGBB)" aria-label="Home color (hex)"></span></label>
             <label>Away display name <input name="awayName"></label>
-            <label>Away color <span class="hex-pick"><input type="color" data-hex-for="awayColor" aria-label="Away color swatch"><input class="hex" name="awayColor" placeholder="#1E90FF" maxlength="7" spellcheck="false" autocomplete="off" pattern="#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})" title="Hex color like #1E90FF (#RGB or #RRGGBB)" aria-label="Away color (hex)"></span></label>
-            <div class="contrast-warn full" data-contrast-for="game-form" role="status" aria-live="polite" hidden></div>
-            <p class="muted full">Type a hex color like #1E90FF (or #F00), or pick one from the swatch. A color you enter is used automatically (✔); clear it to go back to the season color: <label class="inline"><input type="checkbox" name="useHomeColor"> home</label> <label class="inline"><input type="checkbox" name="useAwayColor"> away</label></p>
+            <p class="muted full">Every game uses the season colors: light at home, dark away (tick "Swap colors" to flip them).</p>
           </div>
         </details>
         <div class="actions"><button class="primary" id="game-save">Add game</button><button type="reset" class="link">Clear</button></div>

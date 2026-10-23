@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS games (
   scheduled_at TIMESTAMPTZ,
   division TEXT,
   status TEXT NOT NULL DEFAULT 'scheduled',
-  theme JSONB NOT NULL DEFAULT '{}'::jsonb,   -- per-matchup overrides: homeName, homeColor, awayColor...
+  theme JSONB NOT NULL DEFAULT '{}'::jsonb,   -- per-matchup display names (homeName/awayName); color keys are retired and unused
   rules JSONB NOT NULL DEFAULT '{}'::jsonb,
   history JSONB,                              -- {present, past, future} snapshot (server-authoritative)
   final_home INT,
@@ -155,7 +155,7 @@ export async function migrate(): Promise<void> {
 }
 
 /**
- * Colors -> uppercase #RRGGBB (season colors, per-game theme overrides; retired team colors are not touched). Converts old rgb()/rgba() and
+ * Colors -> uppercase #RRGGBB (season colors only; retired team colors and retired per-game theme colors are not touched). Converts old rgb()/rgba() and
  * lowercase / 3-digit hex. Runs on every start (and after seeding); idempotent: only rows that aren't already
  * canonical are written, and it never touches scores, clocks or schedule fields, so it is safe with games
  * scheduled or live. A value that can't be read as a color is left as is and logged. Returns rows changed.
@@ -168,12 +168,7 @@ export async function migrateColors(): Promise<number> {
   for (const r of (await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_dark','season_light') AND value !~ $1`, [CANON])).rows) {
     const h = fix(r.value, `setting ${r.key}`); if (h && h !== r.value) { await pool.query('UPDATE settings SET value=$2 WHERE key=$1', [r.key, h]); n++; }
   }
-  const KEYS = ['homeColor', 'awayColor', 'homeAccent', 'awayAccent'];
-  for (const r of (await pool.query(`SELECT id, theme FROM games WHERE theme ?| $1::text[]`, [KEYS])).rows) {
-    const t = { ...r.theme }; let ch = false;
-    for (const k of KEYS) if (k in t && !new RegExp(CANON).test(String(t[k]))) { const h = fix(t[k], `game #${r.id} theme.${k}`); if (h) { t[k] = h; ch = true; } }
-    if (ch) { await pool.query('UPDATE games SET theme=$2 WHERE id=$1', [r.id, t]); n++; }
-  }
+  // games.theme color keys are retired (season colors only) and left exactly as they are (an earlier version uppercased them).
   if (n) console.log(`Color migration: ${n} row(s) converted to #RRGGBB.`);
   return n;
 }

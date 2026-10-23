@@ -206,9 +206,6 @@ document.addEventListener('click', guard(async (e) => {
     el.home_team_id.value = g.home_team_id; el.away_team_id.value = g.away_team_id; el.swap_colors.checked = !!g.swap_colors;
     for (const k of ['home_locker', 'away_locker']) el[k].value = g[k] ?? '';
     el.homeName.value = g.theme?.homeName ?? ''; el.awayName.value = g.theme?.awayName ?? '';
-    // Pre-fill the color overrides (an edit used to re-save without them and wipe them).
-    setTimeout(() => { setHex(f, 'homeColor', g.theme?.homeColor); setHex(f, 'awayColor', g.theme?.awayColor);
-      const acc = {}; for (const k of ['homeAccent', 'awayAccent']) if (g.theme?.[k]) acc[k] = g.theme[k]; f.dataset.accents = JSON.stringify(acc); });
     $('#game-save').textContent = 'Save game'; f.scrollIntoView({ behavior: 'smooth' });
   }
   if (b.dataset.resched) openReschedule(games.find((x) => x.id === Number(b.dataset.resched)));
@@ -277,14 +274,11 @@ document.querySelectorAll('input[type=color][data-hex-for]').forEach((sw) => {
   });
   t.addEventListener('change', () => { const h = normHex(t.value); if (h) t.value = h; });
 });
-$('#game-form').addEventListener('reset', () => setTimeout(() => { delete $('#game-form').dataset.accents; for (const n of ['homeColor', 'awayColor']) setHex($('#game-form'), n, ''); }));
 
 $('#game-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target; const el = f.elements;
-  // Keep any accent overrides the game already had (the form has no field for them).
-  const theme = { ...(el.id.value && f.dataset.accents ? JSON.parse(f.dataset.accents) : {}), homeName: el.homeName.value || undefined, awayName: el.awayName.value || undefined };
-  if (el.useHomeColor.checked) theme.homeColor = normHex(el.homeColor.value) || el.homeColor.value; // bad value -> server 400 with the reason
-  if (el.useAwayColor.checked) theme.awayColor = normHex(el.awayColor.value) || el.awayColor.value;
+  // Display names only: every game uses the season colors (per-game colors are retired).
+  const theme = { homeName: el.homeName.value || undefined, awayName: el.awayName.value || undefined };
   const body = {
     court_id: Number(el.court_id.value), home_team_id: Number(el.home_team_id.value), away_team_id: Number(el.away_team_id.value),
     scheduled_at: el.scheduled_at.value || null /* naive local time, interpreted in league TZ by Postgres */, division: el.division.value, theme,
