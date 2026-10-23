@@ -123,7 +123,8 @@ None. UpwardScoreboard has no cron jobs and no `DIGEST_CRON_ENABLED` or `WEATHER
 - [ ] `docker compose ps` shows `app` and `db` running/healthy
 - [ ] http://localhost:3000/api/health returns 200
 - [ ] Admin login works with the dev password
-- [ ] A scorekeeper tap shows on the matching TV (3rd Grade or older; 2nd Grade and below show no score on the TV by design)
+- [ ] A scorekeeper tap shows on the matching TV (3rd Grade or older; K–2nd Grade show no score on the TV, and their scorekeeper has no points/fouls/timeouts, by design)
+- [ ] Lobby halftime roll-up: `/lobby?day=sat&at=11:18` shows the 12:00 games on top with "Tip-Off: 12:00 PM" and 1:00 in Up Next
 - [ ] The TV period reads like "1st Half · P1" and a new game's clock starts at 6:00
 - [ ] Optional, with Node 20: `npm ci` then `npm test`; `npm run smoke` against the running app
 - [ ] `git status` shows no `.env`

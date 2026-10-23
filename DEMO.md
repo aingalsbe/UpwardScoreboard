@@ -78,7 +78,11 @@ The scorekeeper lists today's games on its court; when there are none today it l
 
 Game rules (2026-10): **6 periods of 6:00 (36-minute game), 3 per half**, halftime after P3. Every screen labels the period the same way: **"1st Half · P1"–"1st Half · P3", "2nd Half · P4"–"2nd Half · P6"**, then "OT", "OT2". Show it: tap Next period three times (or let P3's clock run out): the TV shows HALFTIME, team fouls go back to 0 (bonus is per half) and each team has 2 timeouts again. Prev right after an accidental Next restores fouls, timeouts and the clock.
 
-**2nd Grade and below (incl. K and 1st): no score on the TV, overlay or lobby**, only clock and period. The scorekeeper still keeps the score (it notes "score hidden on TV") so the result is on record in Admin and the CSV export. To demo the scoreboard with a score, load a 3rd Grade or older game; load a 2nd Grade game to show the score-free TV.
+**K–2nd Grade (Pre-K, K, 1st, 2nd in any spelling: "2nd Grade", "Gr 2", "grade-1", "Kindergarten", ...): no score on the TV, overlay or lobby**, only clock, period and possession. The scorekeeper for these games has **no points, fouls or timeouts** (buttons hidden; the server refuses them, even from an old screen); it notes "K–2nd Grade: no score, fouls or timeouts". Undo/Redo still work for clock, period and possession taps; Prev/Next period stay. To demo a score, load a 3rd Grade or older game.
+
+**Lobby halftime roll-up:** when a court's live game reaches halftime (P3 at 0:00, or P4 and later) it leaves the lobby; that court's next game moves to the top slot with **"Tip-Off: 12:00 PM"** where the score goes, and Up Next shows the game after it (11:00 at half -> top 12:00, Up Next 1:00). The top game switches to the live display once the scorekeeper starts it (status live). Same for Full Court (if a Full game rolls off, the soonest next game(s) on any court move up). The cheer row follows the top slot's hour.
+
+**Demo it without games running:** `/lobby?day=sat&at=11:10` shows the 11:00 games live (P2); `at=11:18` is halftime (P3 0:00) and already rolled off: top shows 12:00 "Tip-Off", Up Next 1:00. Demo clock: 6:00 periods from tip-off, P1–P3 in minutes 0–18, halftime 18–20, P4–P6 from +20 min.
 
 Point out: Maroon/Gold season colors (home Gold, away Maroon), the grade and gender in the header ("5th Grade Boys"), the church name, and that the TV and schedule need no login. Saturday games with a cheer squad: 09:00 West, 11:00 East, 12:00 West, 14:00 East.
 

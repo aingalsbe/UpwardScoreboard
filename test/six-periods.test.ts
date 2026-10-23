@@ -189,4 +189,20 @@ test('server: 2nd Grade game hides score on tv/overlay/viewer/lobby + public HTT
   assert.equal(leaksHiddenScore(sched), false);
   const sk = await first('court=west&role=score', { authorization: `Bearer ${token}` });
   assert.equal(sk.game.state.home.score, 12, 'scorekeeper still records the score');
+
+  // Round 2: K-2nd Grade games refuse score/foul/timeout from the scorekeeper (even a stale client); clock is fine.
+  const cmd = (court: string, c: any) => new Promise<any>((res, rej) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?court=${court}&role=score`, { headers: { authorization: `Bearer ${token}` } });
+    const id = 'c' + Math.random();
+    ws.on('open', () => ws.send(JSON.stringify({ type: 'cmd', id, cmd: c })));
+    ws.on('message', (m) => { const j = JSON.parse(String(m)); if (j.id === id && (j.type === 'ack' || j.type === 'error')) { ws.close(); res(j); } }); ws.on('error', rej);
+  });
+  for (const c of [{ type: 'SCORE', team: 'home', pts: 2 }, { type: 'FOUL', team: 'away', delta: 1 }, { type: 'TIMEOUT', team: 'home', delta: -1 }]) {
+    const r = await cmd('west', c); assert.equal(r.type, 'error', c.type); assert.equal(r.code, 'score-hidden');
+  }
+  assert.equal((await cmd('west', { type: 'POSSESSION', team: 'toggle' })).type, 'ack');
+  assert.equal((await cmd('west', { type: 'PERIOD', delta: 1 })).type, 'ack');
+  const after = (await pool.query('SELECT history FROM games WHERE id=$1', [young])).rows[0].history.present;
+  assert.deepEqual([after.home.score, after.away.score, after.away.fouls, after.home.timeoutsLeft], [12, 9, 0, 2], 'nothing changed by the refused commands');
+  assert.equal((await cmd('east', { type: 'SCORE', team: 'home', pts: 2 })).type, 'ack', '3rd Grade still scores');
 });

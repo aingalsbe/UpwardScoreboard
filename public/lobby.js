@@ -1,7 +1,7 @@
 // Lobby TV v2 logic (no styling): picks live + next per court (lobby-view.js) and renders Sage's mockup markup
 // (deliverables/mockups/lobby-v2) with its hooks. Live clocks tick from server time like the TV.
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
-import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText } from './lobby-view.js';
+import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText } from './lobby-view.js';
 
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search), query = new URLSearchParams();
@@ -34,8 +34,10 @@ const clockText = (g) => (g?.clock ? fmtClock(clockMs(g.clock, displayNow(conn))
 const locker = (v) => `<div class="locker" data-bind="locker"${v ? '' : ' data-empty'}><small>Locker Room</small><b>${esc(v || '')}</b></div>`;
 /** Name + "Coach X" line under it (first name from the server; the prefix is added here). */
 const who = (name, coach) => `<div class="who"><div class="name" data-bind="name">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div></div>`;
-function teamRow(g, side, live) {
+function teamRow(g, side, live, tip = null) {
   const t = g[side];
+  if (tip && side === 'home') return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}
+      ${who(t.name, t.coach)}<span class="score tipoff" data-bind="tipoff">${esc(tip)}</span><span class="side">${side.toUpperCase()}</span></div>`;
   // 2nd Grade and below (g.hideScore): no score, the server sends none (empty span keeps the grid).
   const score = live && !g.hideScore ? `<span class="score" data-bind="${side}-score">${esc(t.score ?? 0)}</span>` : '<span></span>';
   return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}
@@ -44,9 +46,12 @@ function teamRow(g, side, live) {
 /** One game section. Home is always listed first. */
 function gameSection(g, slot, note = 'No game right now') {
   if (!g) return `<section class="game ${slot === 'now' ? 'live' : 'next'}" data-slot="${slot}" data-state="empty"><div class="empty-note">${esc(note)}</div></section>`;
-  const live = slot === 'now';
-  const status = live ? `<div class="status"><span class="tag live">● LIVE</span><span class="when">${esc(quarter(g.period, g.periods))}</span><span class="clock" data-bind="clock" data-game-id="${g.id}">${esc(clockText(g))}</span></div>` : '';
-  return `<section class="game ${live ? 'live' : 'next'}" data-slot="${slot}" data-state="${live ? 'live' : 'upcoming'}" data-game-id="${g.id}">${status}${teamRow(g, 'home', live)}${teamRow(g, 'away', live)}</section>`;
+  // Top slot: the live game, or (halftime roll-off) the court's next game shown as upcoming until it starts.
+  const top = slot === 'now', live = top && g.status === 'active';
+  const status = live ? `<div class="status"><span class="tag live">● LIVE</span><span class="when">${esc(quarter(g.period, g.periods))}</span><span class="clock" data-bind="clock" data-game-id="${g.id}">${esc(clockText(g))}</span></div>`
+    : '';
+  const tip = tipOffText(g, slot);
+  return `<section class="game ${top ? 'live' : 'next'}" data-slot="${slot}" data-state="${live ? 'live' : 'upcoming'}" data-game-id="${g.id}">${status}${teamRow(g, 'home', live, tip)}${teamRow(g, 'away', live, tip)}</section>`;
 }
 const tab = (c) => `<div class="tab"><span>${COURT_NAME[c] || esc(c.toUpperCase() + ' COURT')}</span></div>`;
 const nextBar = (hm) => `<section class="next-bar" data-slot="next" data-state="upcoming"><span class="nb-label">🕒 UP NEXT</span><span class="nb-dot">·</span><span class="nb-time">Tip-off <span data-bind="time">${esc(ampm(hm))}</span></span></section>`;

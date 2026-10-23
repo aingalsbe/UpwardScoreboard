@@ -111,6 +111,25 @@ export function isBonus(s: GameState, side: Side): boolean {
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 const name = (t: Side) => (t === 'home' ? 'Home' : 'Away');
 
+/** Score, foul and timeout commands: not allowed on score-hidden (K-2nd) games. */
+export function isTeamStatCommand(c: { type: string }): boolean {
+  return c.type === 'SCORE' || c.type === 'FOUL' || c.type === 'TIMEOUT';
+}
+/** True if an undo/redo label is a score/foul/timeout change ("Home +2", "Away foul +1", "Home timeout"). */
+export function isTeamStatLabel(label: string | null | undefined): boolean {
+  return /^(Home|Away) /.test(label ?? '');
+}
+/**
+ * For a score-hidden game: null if the scorekeeper message may run, else the refusal text. Undo/Redo stay
+ * available for clock, period and possession changes, but may not undo or redo a score/foul/timeout change.
+ */
+export function hiddenGameRefusal(msgType: 'cmd' | 'undo' | 'redo', cmd: { type: string } | null, h: History): string | null {
+  const why = 'Scores, fouls and timeouts are not kept for K–2nd Grade games (clock, period and possession only).';
+  if (msgType === 'cmd') return cmd && isTeamStatCommand(cmd) ? why : null;
+  const target = msgType === 'undo' ? (h.past.length ? h.present.lastLabel : null) : h.future[0]?.lastLabel;
+  return isTeamStatLabel(target) ? why : null;
+}
+
 export function isClockCommand(c: Command): boolean {
   return c.type.startsWith('CLOCK_');
 }

@@ -165,3 +165,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 
 /* SAGE: minimal stopgap (2026-10) — longer period label ("1st Half · P2") and the score-hidden note. Restyle freely. */
 .per .no-score-note { font-size: .8em; opacity: .75; }
+
+/* SAGE: stopgap (round 2) — K-2nd Grade games: score, points, fouls and timeouts are hidden (score.js sets
+   [data-team-stat] + hidden; .btn display rules would otherwise win over [hidden]). Restyle freely. */
+.score-hidden [data-team-stat] { display: none !important; }

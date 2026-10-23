@@ -180,3 +180,6 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
   html { overflow: visible; }
   body { position: relative; left: 0; top: 0; transform: none; }
 }
+
+/* SAGE: stopgap (round 2) — halftime roll-up: the promoted top game shows "Tip-Off: 12:00 PM" in the score cell until it starts. */
+.score.tipoff { font-size: 3.2rem; white-space: nowrap; }

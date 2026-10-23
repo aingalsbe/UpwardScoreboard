@@ -30,6 +30,19 @@ export function normalizeGrade(v: unknown): string | null {
   if (t.length > 30) throw Object.assign(new Error(`grade "${t.slice(0, 20)}…" is longer than 30 characters`), { status: 400 });
   return t;
 }
+/**
+ * Score-hidden grades (K through 2nd), from any free-text grade: "K", "Kindergarten", "Pre-K", "PreK", "PK",
+ * "1", "1st", "First", "2", "2nd", "Second", with or without "Grade"/"Gr"/"Grd", any case, spacing or punctuation
+ * ("2nd Grade", " 1ST ", "Gr 2", "grade-1", "Grade: Second"). 3rd and above, unknown text and empty never match.
+ * The one helper behind every score-hiding decision (server payloads + scorekeeper enforcement).
+ */
+export function isScoreHiddenGrade(v: unknown): boolean {
+  const t = String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!t) return false;
+  const rest = t.split(' ').filter((w) => !['grade', 'gr', 'grd', 'grades'].includes(w)).join(' ');
+  return /^(pre ?k|pk|pre ?kindergarten|k|kg|kinder|kindergarten|0?1|1st|first|0?2|2nd|second)$/.test(rest);
+}
+
 /** Sort key: Kindergarten 0, "Nth Grade" N, other labels 99, none 100. */
 export function gradeOrder(g: string | null | undefined): number {
   if (!g) return 100;

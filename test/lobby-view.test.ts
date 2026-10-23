@@ -115,12 +115,12 @@ test('demo mode: ?at / ?day&at parsing, game-day pick, time-based live/next (rea
     { id: 4, court: 'west', time: '12:00', dur: 60, status: 'scheduled', home: {}, away: {} },
     { id: 5, court: 'east', time: '12:00', dur: 60, status: 'active', home: {}, away: {} },
   ];
-  const d = demoGames(gs, '11:20');
+  const d = demoGames(gs, '11:10');
   assert.deepEqual(d.map((g: any) => g.status), ['complete', 'active', 'active', 'scheduled', 'scheduled']);
   assert.deepEqual([d[1].home.score, d[1].away.score], [0, 0], 'no stored score -> 0-0');
-  assert.deepEqual(demoGames([{ ...gs[1], hideScore: true }], '11:20').map((g: any) => [g.home.score, g.away.score]), [[null, null]], '2nd Grade and below: no demo score');
+  assert.deepEqual(demoGames([{ ...gs[1], hideScore: true }], '11:10').map((g: any) => [g.home.score, g.away.score]), [[null, null]], '2nd Grade and below: no demo score');
   assert.deepEqual([d[2].home.score, d[2].away.score], [12, 10], 'stored score kept');
-  assert.equal(d[1].period, 3, '20 of 60 min with 6 periods = P3'); assert.equal(d[1].periods, 6); assert.equal(d[1].clock.running, false); assert.ok(d[1].clock.remainingMs > 0 && d[1].clock.remainingMs <= 6 * 60000);
+  assert.equal(d[1].period, 2, '10 min after tip-off with 6:00 periods = P2'); assert.equal(d[1].periods, 6); assert.equal(d[1].clock.running, false); assert.equal(d[1].clock.remainingMs, 2 * 60000);
   assert.equal(gs[1].status, 'scheduled', 'input not mutated');
   const p = planLobby(d);
   assert.deepEqual([p.now.courts.west.id, p.now.courts.east.id, p.next.courts.west.id, p.next.courts.east.id], [2, 3, 4, 5]);

@@ -146,7 +146,8 @@ $('#resume-ok').addEventListener('click', () => { if (snap?.game) { localStorage
 $('#complete-game').addEventListener('click', async () => {
   const g = snap?.game; if (!g) return;
   const s = g.state;
-  if (await confirmBox(`Complete this game? The final score ${g.home.name} ${s.home.score} – ${s.away.score} ${g.away.name} will be locked.`, 'Complete game')) send('cmd', { cmd: { type: 'END_GAME' } });
+  const what = g.hideScore ? `${g.home.name} vs ${g.away.name} (no score is kept for K–2nd Grade)` : `The final score ${g.home.name} ${s.home.score} – ${s.away.score} ${g.away.name} will be locked.`;
+  if (await confirmBox(`Complete this game? ${what}`, 'Complete game')) send('cmd', { cmd: { type: 'END_GAME' } });
 });
 $('#set-clock').addEventListener('click', () => {
   const cur = snap?.game ? fmtClock(clockMs(snap.game.state.clock, conn.serverNow())) : '';
@@ -183,6 +184,7 @@ function render() {
   const online = conn.isOpen();
   const g = snap?.game, s = g?.state;
   root.classList.toggle('no-game', !g);
+  root.classList.toggle('score-hidden', !!g?.hideScore);
   root.classList.toggle('is-final', s?.status === 'complete');
   renderMode();
   const p = $('#pending'); p.hidden = pending.size === 0; p.textContent = `${pending.size} tap${pending.size === 1 ? '' : 's'} sending…`;
@@ -209,7 +211,7 @@ function render() {
       home: side('home'), away: side('away'),
       period: periodLabel(s.period, s.rules.periods), periods: s.rules.periods,
       // 2nd Grade and below: TV/overlay/lobby hide the score; it is still kept here for the record.
-      scoreNote: g.hideScore ? ' · score hidden on TV (2nd Grade & below)' : '',
+      scoreNote: g.hideScore ? ' · K–2nd Grade: no score, fouls or timeouts (clock, period, possession only)' : '',
       possText: s.possession ? (s.possession === 'home' ? `◀ ${g.home.name}` : `${g.away.name} ▶`) : 'not set',
       undoText: g.canUndo && s.lastLabel ? `last: ${s.lastLabel}` : '',
     });
@@ -220,7 +222,17 @@ function render() {
     t.dataset.cmd = JSON.stringify({ type: s.clock.running ? 'CLOCK_STOP' : 'CLOCK_START' });
     t.textContent = s.clock.running ? '■ STOP CLOCK' : '▶ START CLOCK';
     t.classList.toggle('stop', s.clock.running);
-    $('#undo').disabled = !g.canUndo; $('#redo').disabled = !g.canRedo;
+    // K-2nd Grade (hideScore): no points, fouls or timeouts. Those buttons and the score are hidden + disabled
+    // (data-team-stat, hidden by score.css under .score-hidden); the server refuses them too. Undo/Redo stay for
+    // clock/period/possession; Undo is disabled when the last change is a score/foul/timeout (server refuses it).
+    const hid = !!g.hideScore;
+    root.classList.toggle('score-hidden', hid);
+    document.querySelectorAll('[data-cmd]').forEach((b) => {
+      if (!/"type":"(SCORE|FOUL|TIMEOUT)"/.test(b.dataset.cmd || '')) return;
+      b.dataset.teamStat = ''; b.disabled = hid; b.hidden = hid;
+    });
+    document.querySelectorAll('.panel.team .sc').forEach((el) => { el.dataset.teamStat = ''; el.hidden = hid; });
+    $('#undo').disabled = !g.canUndo || (hid && /^(Home|Away) /.test(s.lastLabel || '')); $('#redo').disabled = !g.canRedo;
     $('#banner').textContent = s.banner === 'HALFTIME' ? 'Hide "Halftime"' : 'Show "Halftime"';
   }
   bindText(document, view);

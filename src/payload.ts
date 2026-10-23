@@ -37,7 +37,7 @@ export function hasCoachKey(v: unknown): boolean {
 /** Highest grade (gradeOrder) whose games hide the score publicly: 2 = 2nd Grade and below (K = 0). */
 export const HIDE_SCORE_MAX_GRADE = 2;
 
-/** True for Kindergarten / 1st / 2nd Grade (by gradeOrder). Unknown or missing grades show the score. */
+/** By gradeOrder (legacy helper; the server uses isScoreHiddenGrade in schedule.ts on the raw grade text). */
 export function hidesScore(gradeOrderValue: number | null | undefined): boolean {
   return gradeOrderValue != null && gradeOrderValue >= 0 && gradeOrderValue <= HIDE_SCORE_MAX_GRADE;
 }

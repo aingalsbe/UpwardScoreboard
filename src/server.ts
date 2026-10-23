@@ -7,13 +7,14 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { pool, migrate, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
-import { scorekeeperView, publicView, hidesScore } from './payload.js';
+import { scorekeeperView, publicView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
+  hiddenGameRefusal,
 } from './game.js';
 import QRCode from 'qrcode';
 import { makeQrToken, verifyQrToken, weekEnd } from './qr.js';
@@ -157,6 +158,12 @@ async function mutate(gameId: number, actor: string, cmdId: string | null, op: O
   return run;
 }
 
+/** K-2nd Grade game (score-hidden): the grade text of either team, via isScoreHiddenGrade. */
+async function gameHidesScore(gameId: number): Promise<boolean> {
+  const { rows } = await pool.query('SELECT COALESCE(h.grade, a.grade) AS grade FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.id=$1', [gameId]);
+  return isScoreHiddenGrade(rows[0]?.grade);
+}
+
 // ------------------------------------------------------------ view models
 // Season colors: every team wears the season's dark or light color. Default home = light, away = dark;
 // games.swap_colors flips it. Advanced per-matchup theme colors (Admin > game > Advanced) still win.
@@ -242,7 +249,7 @@ async function courtSnapshot(slug: string) {
      WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
      ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
   // Young grades (2nd and below): flag rows so publicView() strips their scores for non-scorekeeper clients.
-  const flag = (x: any) => (x ? Object.assign(x, { hideScore: hidesScore(gradeOrder(x.grade)) }) : x);
+  const flag = (x: any) => (x ? Object.assign(x, { hideScore: isScoreHiddenGrade(x.grade) }) : x);
   [nextUp, lastFinal, ...today, ...upNext].forEach(flag);
   return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext, nextUp, lastFinal, today };
 }
@@ -259,7 +266,7 @@ async function gameViewNorm(gameId: number) {
     court: r.court_slug ? { slug: r.court_slug, name: r.court_name } : null,
     homeSide: sideOf(r.swap_colors, 'home'), swapped: !!r.swap_colors, grade: r.home_grade || r.away_grade || null,
     gender: r.home_gender || r.away_gender || null, label: divisionLabel(r.home_grade || r.away_grade, r.home_gender || r.away_gender),
-    hideScore: hidesScore(gradeOrder(r.home_grade || r.away_grade)), // 2nd Grade and below: public screens show no score
+    hideScore: isScoreHiddenGrade(r.home_grade || r.away_grade), // 2nd Grade and below: public screens show no score
     cheer: cheerView(r),
     home: { ...teamView(r, 'home_team', theme, 'home'), bonus: isBonus(s, 'home') },
     away: { ...teamView(r, 'away_team', theme, 'away'), bonus: isBonus(s, 'away') },
@@ -409,8 +416,14 @@ function attachWs(server: http.Server) {
           }
           const cmdId = typeof msg.id === 'string' ? msg.id.slice(0, 64) : null;
           let r;
+          // K-2nd Grade: no scores, fouls or timeouts, also for a stale client still showing those buttons.
+          const parsed: Command | null = msg.type === 'cmd' ? parseCommand(msg.cmd) : null;
+          if (await gameHidesScore(c.current_game_id)) {
+            const no = hiddenGameRefusal(msg.type, parsed, (await getRuntime(c.current_game_id)).history);
+            if (no) return send(client, { type: 'error', id: msg.id, error: no, code: 'score-hidden' });
+          }
           if (msg.type === 'cmd') {
-            const cmd: Command = parseCommand(msg.cmd);
+            const cmd: Command = parsed!;
             r = await mutate(c.current_game_id, `pin:${court}`, cmdId, (h) => dispatch(h, cmd, Date.now()), cmd);
           } else {
             const fn = msg.type === 'undo' ? undo : redo;
@@ -639,7 +652,7 @@ async function scheduleSnapshot(date: string) {
     const s = live?.state;
     games.push({
       id: r.id, court: r.court_slug, time: t.rows[0].hm, dur: r.duration_min ?? GAME_MINUTES, status: r.status,
-      hideScore: hidesScore(gradeOrder(r.home_grade || r.away_grade)),
+      hideScore: isScoreHiddenGrade(r.home_grade || r.away_grade),
       home: { ...teamView(r, 'home_team', theme, 'home'), score: s ? s.home.score : r.final_home },
       away: { ...teamView(r, 'away_team', theme, 'away'), score: s ? s.away.score : r.final_away },
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),

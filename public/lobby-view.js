@@ -16,6 +16,17 @@ export const headerText = (date, hm) => `${DAYS[new Date(`${date}T12:00:00Z`).ge
 export const quarter = (p, periods = 6) => (!p ? '' : p > periods ? `OT${p - periods > 1 ? p - periods : ''}` : `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`);
 
 /**
+ * Lobby roll-off: true once an active game reaches halftime: period past the first half (P4+, or OT), or the
+ * last first-half period (P3) with its clock run out (stopped at 0:00). The lobby then shows that court's next game.
+ */
+export function pastHalftime(g) {
+  if (!g || g.status !== 'active' || !g.period) return false;
+  const half = Math.ceil((g.periods || 6) / 2);
+  if (g.period > half) return true;
+  return g.period === half && !!g.clock && !g.clock.running && g.clock.remainingMs <= 0;
+}
+
+/**
  * games: the schedule snapshot's games for one day ({ id, court, time 'HH:MM', status, ... }).
  * cheerSlots: [{ start 'HH:00', name, coach, locker, logo }].
  * Returns { now, next, header, nextTime, cheer: { now, next }, empty }:
@@ -23,26 +34,39 @@ export const quarter = (p, periods = 6) => (!p ? '' : p > periods ? `OT${p - per
  */
 export function planLobby(games, cheerSlots = []) {
   const on = (c, st) => games.filter((g) => g.court === c && g.status === st && (st === 'active' || g.time)).sort(byTime);
-  const live = { full: on('full', 'active')[0] || null, west: on('west', 'active')[0] || null, east: on('east', 'active')[0] || null };
-  const liveIds = new Set(Object.values(live).filter(Boolean).map((g) => g.id));
-  const nxt = (c) => on(c, 'scheduled').filter((g) => !liveIds.has(g.id))[0] || null;
-  const N = { full: nxt('full'), west: nxt('west'), east: nxt('east') };
+  // Halftime roll-off (round 2): an active game at/after halftime leaves the lobby (see pastHalftime).
+  const act = (c) => on(c, 'active');
+  const live = { full: act('full').find((g) => !pastHalftime(g)) || null, west: act('west').find((g) => !pastHalftime(g)) || null, east: act('east').find((g) => !pastHalftime(g)) || null };
+  const rolled = { full: act('full').some(pastHalftime), west: act('west').some(pastHalftime), east: act('east').some(pastHalftime) };
+  const used = new Set(Object.values(live).filter(Boolean).map((g) => g.id));
+  const nxt = (c) => on(c, 'scheduled').filter((g) => !used.has(g.id))[0] || null;
+
+  /** The soonest next band (L1: a 7:00 Full with 8:00 split games -> the 8:00 split games), after the games in `used`. */
+  const nextBand = (preferSplit) => {
+    const N = { full: nxt('full'), west: nxt('west'), east: nxt('east') };
+    const splitNext = N.west || N.east ? { layout: 'split', courts: { west: N.west, east: N.east } } : null;
+    const fullNext = N.full ? { layout: 'full', courts: { full: N.full } } : null;
+    const firstSplit = [N.west, N.east].filter(Boolean).map((g) => g.time).sort()[0];
+    if (preferSplit) return splitNext || fullNext;
+    return fullNext && (!firstSplit || N.full.time < firstSplit) ? fullNext : splitNext || fullNext;
+  };
+  const take = (band) => { if (band) for (const g of Object.values(band.courts)) if (g) used.add(g.id); return band; };
 
   let now = null;
   if (live.full) now = { layout: 'full', courts: { full: live.full } };
-  else if (live.west || live.east) now = { layout: 'split', courts: { west: live.west, east: live.east } };
-
-  const splitNext = N.west || N.east ? { layout: 'split', courts: { west: N.west, east: N.east } } : null;
-  const fullNext = N.full ? { layout: 'full', courts: { full: N.full } } : null;
-  const firstSplit = [N.west, N.east].filter(Boolean).map((g) => g.time).sort()[0];
-  let next;
-  // Split live: the floor is split, so its next split game(s) come first. Full live or nothing live: the soonest
-  // next game(s) across all courts (L1: a 7:00 Full live with 8:00 split games shows the 8:00 split games next).
-  if (now?.layout === 'split') next = splitNext || fullNext;
-  else next = fullNext && (!firstSplit || N.full.time < firstSplit) ? fullNext : splitNext || fullNext;
+  else if (live.west || live.east) {
+    // Split floor still live on one court: a court whose game hit halftime shows its next game on top (upcoming).
+    const promo = (c) => live[c] || (rolled[c] ? nxt(c) : null);
+    now = take({ layout: 'split', courts: { west: promo('west'), east: promo('east') } });
+  } else if (rolled.full || rolled.west || rolled.east) {
+    // Nothing live anymore (all at halftime): the next band moves up to the top slot, shown as upcoming.
+    now = take(nextBand(!rolled.full));
+  }
+  // Split on top: the floor is split, so its next split game(s) come first. Full on top or nothing: the soonest.
+  const next = nextBand(now?.layout === 'split');
 
   const times = (band) => (band ? Object.values(band.courts).filter(Boolean).map((g) => g.time).filter(Boolean).sort() : []);
-  const nowTime = times(now).pop() || null; // the latest live start = the current slot
+  const nowTime = times(now).pop() || null; // the latest start on top = the current slot (cheer row follows it)
   const nextTime = times(next)[0] || null;
   const slotAt = (hm) => (hm ? cheerSlots.find((s) => s.start === hourOf(hm)) || null : null);
   const cheerNow = slotAt(nowTime);
@@ -90,20 +114,26 @@ export function parseDemo(params) {
 }
 
 /**
- * Games as if it were `at` (HH:MM) on their day: a game whose window [time, time + dur) covers `at` is live (stored
- * score, or 0-0; a frozen, plausible period + clock), earlier ones are complete, later ones scheduled. Pure; the
- * server is never told.
+ * Games as if it were `at` (HH:MM) on their day: a game whose window [time, time + dur) covers `at` is active (stored
+ * score, or 0-0), earlier ones are complete, later ones scheduled. Pure; the server is never told.
+ * Demo clock = real game time: 6:00 periods from tip-off, P1-P3 in the first 18 min, halftime from start + 18 min
+ * (P3 at 0:00), the 2nd half from start + DEMO_HALFTIME_MIN (20 = 3 x 6 min + a 2-min buffer) on. So `?at` at or
+ * after start + 18 min shows the halftime roll-off (that court's next game moves to the top of the lobby).
  */
-export function demoGames(games, at, quarterMs = 6 * 60000) {
-  const t = toMin(at);
+export const DEMO_HALFTIME_MIN = 20;
+export function demoGames(games, at, periodMs = 6 * 60000) {
+  const t = toMin(at), pMin = periodMs / 60000;
   return (games || []).map((g) => {
     if (!g.time) return g;
-    const start = toMin(g.time), dur = g.dur || 60, periods = g.periods || 6;
+    const start = toMin(g.time), dur = g.dur || 60, periods = g.periods || 6, half = Math.ceil(periods / 2);
     if (t < start) return { ...g, status: 'scheduled' };
     if (t >= start + dur) return { ...g, status: 'complete' };
-    const frac = (t - start) / dur, period = Math.min(periods, Math.floor(frac * periods) + 1);
-    const inPeriod = frac * periods - (period - 1);
-    return { ...g, status: 'active', period, periods, clock: { running: false, startedAt: null, remainingMs: Math.max(1000, Math.round(quarterMs * (1 - inPeriod) / 1000) * 1000) },
+    const e = t - start;
+    let period, leftMin;
+    if (e < half * pMin) { period = Math.floor(e / pMin) + 1; leftMin = pMin - (e - (period - 1) * pMin); }
+    else if (e < DEMO_HALFTIME_MIN) { period = half; leftMin = 0; } // halftime
+    else { const k = Math.floor((e - DEMO_HALFTIME_MIN) / pMin); period = Math.min(periods, half + 1 + k); leftMin = Math.max(0, pMin - (e - DEMO_HALFTIME_MIN - k * pMin)); }
+    return { ...g, status: 'active', period, periods, clock: { running: false, startedAt: null, remainingMs: Math.round(leftMin * 60000) },
       home: { ...g.home, score: g.hideScore ? null : g.home?.score ?? 0 }, away: { ...g.away, score: g.hideScore ? null : g.away?.score ?? 0 } };
   });
 }
@@ -116,4 +146,10 @@ export function idleText(days, date) {
   if (!n) return 'No games scheduled';
   const [, mo, dd] = n.date.split('-').map(Number);
   return `Next games: ${LONG[dowOfDate(n.date)]}, ${MON[mo - 1]} ${dd} · First tip-off ${ampm(n.first)}`;
+}
+
+/** Round 2 roll-up: a game promoted to the top slot (earlier game at halftime) shows "Tip-Off: 12:00 PM" where the
+ *  score goes until it has started. Started = status 'active' (scorekeeper/Admin starts the game); null otherwise. */
+export function tipOffText(g, slot) {
+  return slot === 'now' && g && g.status !== 'active' && g.time ? `Tip-Off: ${ampm(g.time)}` : null;
 }
