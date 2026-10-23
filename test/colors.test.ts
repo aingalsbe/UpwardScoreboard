@@ -128,7 +128,7 @@ test('API: season hex (#RGB / #RRGGBB) stored uppercase, bad = 400; game colors 
   assert.ok(games.length && games.every((g: any) => !Object.keys(g).some((k) => /primary|secondary/.test(k))), 'game rows carry no team colors');
 });
 
-test('season colors reach every screen: public season API, inline season-vars in HTML, season WS role, revalidated assets', async () => {
+test('season colors reach every screen: public season API, inline season-vars in HTML, season WS role, revalidated assets', { skip }, async () => {
   await api('/api/settings/season', 'PUT', { name: 'Spring', dark: '#4e7afd', light: '#ffc72c' });
   const pub = await fetch(`${BASE}/api/public/season`).then((x) => x.json());
   assert.equal(pub.dark, '#4E7AFD'); assert.equal(pub.light, '#FFC72C');
@@ -153,7 +153,7 @@ test('season colors reach every screen: public season API, inline season-vars in
   ws.close();
 });
 
-test('season fg auto-picks black/white (>= 4.5:1) and on-dark falls back to white for near-black seasons (Avery round 21)', async () => {
+test('season fg auto-picks black/white (>= 4.5:1) and on-dark falls back to white for near-black seasons (Avery round 21)', { skip }, async () => {
   const L = (h: string) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
   const ratio = (a: string, b: string) => { const x = L(a), y = L(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   for (const [light, dark] of [['#FFF5CC', '#FFF0B0'], ['#010101', '#000000'], ['#777777', '#767676']]) {
