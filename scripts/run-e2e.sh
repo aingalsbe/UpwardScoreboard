@@ -10,6 +10,7 @@ D=$(cd "$(dirname "$0")/.." && pwd); PORT=${E2E_PORT:-18610}; DB=scoreboard_test
 rc=0
 for s in "$@"; do
   if [ "${E2E_REAL_CLOCK:-}" = 1 ]; then unset SCOREBOARD_TEST_NOW SCOREBOARD_TEST_CLOCK
+  elif [ -n "${E2E_TEST_NOW:-}" ]; then export SCOREBOARD_TEST_CLOCK=1 SCOREBOARD_TEST_NOW="$E2E_TEST_NOW"   # pin any instant, e.g. E2E_TEST_NOW=2026-10-31T01:45:00Z
   else export SCOREBOARD_TEST_CLOCK=1 SCOREBOARD_TEST_NOW=$(cd "$D" && env -u SCOREBOARD_TEST_NOW -u SCOREBOARD_TEST_CLOCK node --input-type=module -e "import('./scripts/_gameday.mjs').then((m) => console.log(m.nextGameDay().toISOString()))"); fi
   psql "$PG/postgres" -qc "DROP DATABASE IF EXISTS $DB" -c "CREATE DATABASE $DB" >/dev/null
   (cd "$D" && DATABASE_URL=$PG/$DB TZ=America/Chicago node dist/src/seed-demo.js >/dev/null 2>&1)

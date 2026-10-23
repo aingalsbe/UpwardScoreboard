@@ -31,20 +31,36 @@ const now = Math.floor(Date.now() / 60000) * 60000;
 // floor and anything outside 08:00-21:00 Fri/Sat, so try today's 30-min steps from now (then earlier) until it accepts.
 const offsets = []; for (let m = 0; m <= 13 * 60; m += 30) offsets.push(m); for (let m = -30; m >= -13 * 60; m -= 30) offsets.push(m);
 const today = new Date(now).toDateString(); let lastErr = '';
+const hhmm = (t) => (Number.isFinite(t) ? new Date(t).toTimeString().slice(0, 5) : '--:--');
+const create = async (home, away, at) => {
+  const r = await fetch(BASE + '/api/games', { method: 'POST', headers: H, body: JSON.stringify({ court_id: east.id, home_team_id: home, away_team_id: away, scheduled_at: new Date(at).toISOString() }) });
+  const j = await r.json().catch(() => ({})); if (r.ok && j.id) return j.id; lastErr = `${r.status} ${j.error || ''}`.trim(); return null;
+};
 const mkGame = async (home, away, avoid) => {
   for (const m of offsets) {
     const at = now + m * 60_000; if (new Date(at).toDateString() !== today || avoid.some((x) => Math.abs(x - at) < 3_600_000)) continue;
-    const r = await fetch(BASE + '/api/games', { method: 'POST', headers: H, body: JSON.stringify({ court_id: east.id, home_team_id: home, away_team_id: away, scheduled_at: new Date(at).toISOString() }) });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok && j.id) return { id: j.id, at };
-    lastErr = `${r.status} ${j.error || ''}`;
+    const id = await create(home, away, at); if (id) return { id, at };
   }
-  return { id: undefined, at: NaN };
+  return null;
 };
-const c1 = await mkGame(A, B, []), c2 = await mkGame(B, A, [c1.at]);
-const [first, second] = c1.at <= c2.at ? [c1, c2] : [c2, c1]; // g1 = the earlier one (loaded first, completed first)
-const g1 = first.id, g2 = second.id;
-ok(!!g1 && !!g2, `created two East games today (${g1} @ ${new Date(first.at).toTimeString().slice(0, 5)}, ${g2} @ ${new Date(second.at).toTimeString().slice(0, 5)})${g1 && g2 ? '' : ' last error: ' + lastErr}`);
+// 1) find two free slots; 2) make the EARLIER one Eagles vs Lions (g1, loaded first) and the later Lions vs Eagles (g2).
+let c1 = await mkGame(A, B, []), c2 = c1 && await mkGame(B, A, [c1.at]);
+if (c1 && c2 && c2.at < c1.at) {
+  const [early, late] = [c2.at, c1.at];
+  for (const c of [c1, c2]) await fetch(`${BASE}/api/games/${c.id}`, { method: 'DELETE', headers: H });
+  const e = await create(A, B, early), l = e && await create(B, A, late);
+  c1 = e ? { id: e, at: early } : null; c2 = l ? { id: l, at: late } : null;
+}
+const g1 = c1?.id, g2 = c2?.id;
+ok(!!g1 && !!g2, g1 && g2 ? `created Eagles vs Lions #${g1} @ ${hhmm(c1.at)} then Lions vs Eagles #${g2} @ ${hhmm(c2.at)} on East today`
+  : `could not find two free East slots today (${new Date(now).toDateString()} ${hhmm(now)}; games only Fri/Sat 08:00-21:00): ${lastErr || 'no candidate slot'}`);
+// The idle TV's "Next up" is the earliest unfinished East game today: drop seeded games that would come before g1
+// (e.g. a stale 08:00 game on a faked Saturday evening) so Next up is ours. Test DB only (run-e2e seeds it fresh).
+if (c1) for (const x of await api('/api/games')) if (x.court === 'East' && x.status === 'scheduled' && ![g1, g2].includes(x.id)
+  && new Date(x.scheduled_at).toDateString() === today && Date.parse(x.scheduled_at) < c1.at) await fetch(`${BASE}/api/games/${x.id}`, { method: 'DELETE', headers: H });
+// every expected string below comes from the created games' real home/away
+const gm = Object.fromEntries((await api('/api/games')).filter((x) => [g1, g2].includes(x.id)).map((x) => [x.id, x]));
+ok(!g1 || (gm[g1]?.home_team_id === A && gm[g1]?.away_team_id === B), 'g1 (earlier) is Eagles home vs Lions away');
 if (!g1 || !g2) { console.log(`Flow e2e result: ${pass} passed, ${fail} failed`); process.exit(1); }
 const qr = (await api('/api/qr')).find((q) => q.slug === 'east');
 
