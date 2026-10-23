@@ -12,7 +12,7 @@ async function api(path, opts = {}) {
   const body = r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text();
   if (r.status === 401 && path !== '/api/login') { showLogin(); throw new Error('login required'); }
   if (r.status === 413 && typeof body !== 'object') throw new Error('Upload too large. Logos must be 1 MB or smaller.');
-  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status, body });
   return body;
 }
 function msg(t, bad = false) { const m = $('#msg'); m.textContent = t; m.className = 'msg ' + (bad ? 'bad' : 'ok'); clearTimeout(msg.t); msg.t = setTimeout(() => (m.textContent = ''), bad ? 20000 : 5000); }
@@ -50,10 +50,11 @@ const tvPath = (slug) => `/upwardbasketballscores/${encodeURIComponent(slug)}cou
 function gameRow(g, x = {}) {
   const lbl = g.label || g.grade, warn = (g.warnings || []).length ? ` <span class="tag warn-tag" title="${esc(g.warnings.join('\n'))}">⚠ ${g.warnings.length}</span>` : '';
   return `<tr class="${g.on_court ? 'live' : ''}${warn ? ' has-warning' : ''}${x.cls ? ` ${x.cls}` : ''}" data-grade="${esc(g.grade || '')}" data-gender="${esc(g.gender || '')}"${x.data ? ` ${x.data}` : ''}><td class="when">${when(g.scheduled_at)}</td><td class="court">${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(lbl || '—')}</td>` : ''}
-    <td class="matchup">${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${x.cls ? `<span class="home">${esc(g.home)}</span> vs <span class="away">${esc(g.away)}</span>` : `${esc(g.home)} vs ${esc(g.away)}`}${warn}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
+    <td class="matchup">${!g.__full && lbl ? `${esc(lbl)} · ` : ''}${x.cls ? `<span class="home">${esc(g.home)}</span> vs <span class="away">${esc(g.away)}</span>` : `${esc(g.home)} vs ${esc(g.away)}`}${warn}${g.moved_from && g.status !== 'complete' ? ` <span class="tag moved-tag" title="Rescheduled">moved from ${esc(when(g.moved_from))}</span>` : ''}${Object.keys(g.theme || {}).length ? ' <span class="tag">custom</span>' : ''}</td>
     <td class="score-cell">${x.res ?? `${g.home_score}–${g.away_score}`}</td><td><span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status] || esc(g.status)}</span></td>
     <td class="right">${g.status === 'scheduled' ? `<button class="primary sm" data-start="${g.id}">Start on court</button>`
       : g.status === 'active' ? `<button class="sm" data-complete="${g.id}">Complete</button>` : `<button class="link sm" data-reopen="${g.id}">Reopen</button>`}
+    ${g.status === 'scheduled' ? `<button class="link sm" data-resched="${g.id}">Reschedule…</button>` : ''}<button class="link sm" data-history="${g.id}">History</button>
     <button class="link sm" data-edit-game="${g.id}">Edit</button><button class="link sm" data-del-game="${g.id}">Delete</button></td></tr>`;
 }
 
@@ -195,6 +196,8 @@ document.addEventListener('click', guard(async (e) => {
     el.homeName.value = g.theme?.homeName ?? ''; el.awayName.value = g.theme?.awayName ?? '';
     $('#game-save').textContent = 'Save game'; f.scrollIntoView({ behavior: 'smooth' });
   }
+  if (b.dataset.resched) openReschedule(games.find((x) => x.id === Number(b.dataset.resched)));
+  if (b.dataset.history) await openHistory(Number(b.dataset.history));
   if (b.dataset.delGame && confirm('Delete this game?')) { await api(`/api/games/${b.dataset.delGame}`, { method: 'DELETE' }); await load(); }
   if (b.dataset.delTeam && confirm('Delete this team?')) { await api(`/api/teams/${b.dataset.delTeam}`, { method: 'DELETE' }); await load(); }
   if (b.dataset.delCourt && confirm('Delete this court?')) { await api(`/api/courts/${b.dataset.delCourt}`, { method: 'DELETE' }); await load(); }
@@ -348,3 +351,46 @@ function renderQr() {
   </article>`).join('');
   $('#qr-panel').hidden = false;
 }
+
+// ---- Reschedule (docs/plans/reschedule-games.md): new date + tip-off only; court and lockers stay. Dry-run preview. ----
+const rsDlg = () => $('#resched-dlg');
+let rsGame = null, rsSeq = 0;
+function openReschedule(g) {
+  if (!g) return;
+  rsGame = g; const f = $('#resched-form');
+  f.date.value = leagueDate(g.scheduled_at || Date.now());
+  f.time.value = g.scheduled_at ? leagueHM(g.scheduled_at) : ''; // pre-filled with the current tip-off
+  f.reason.value = '';
+  $('#resched-title').textContent = `Reschedule: ${g.home} vs ${g.away}`;
+  $('#resched-now').textContent = `Now: ${when(g.scheduled_at)} · ${g.court || 'no court'} (court and locker rooms stay the same)`;
+  rsDlg().showModal(); reschedPreview();
+}
+const rsBody = () => { const f = $('#resched-form'); return { date: f.date.value, time: f.time.value, reason: f.reason.value }; };
+async function reschedPreview() {
+  const seq = ++rsSeq, out = $('#resched-preview'), save = $('#resched-save');
+  save.disabled = true;
+  let r;
+  try { r = await api(`/api/games/${rsGame.id}/reschedule`, { method: 'POST', body: JSON.stringify({ ...rsBody(), dryRun: true }) }); }
+  catch (e) { r = e.body && typeof e.body === 'object' ? { ...e.body, errors: e.body.errors || [e.message] } : { errors: [e.message] }; }
+  if (seq !== rsSeq) return;
+  const p = r.preview, cheer = (x) => (x ? esc(x) : 'no cheer');
+  out.innerHTML = (p ? `<p>Cheer at the old hour (${esc(p.from?.label || '—')}): <b>${cheer(p.from?.cheer)}</b><br>Cheer at the new hour (${esc(p.to.label)}): <b>${cheer(p.to.cheer)}</b>
+    <br><small>Cheer is per hour and shared by both courts, so it does not move with the game.</small></p>` : '')
+    + ((r.errors || []).length ? `<ul class="errors" data-bind="conflicts">${r.errors.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="ok" data-bind="conflicts">No conflicts.</p>');
+  save.disabled = !!(r.errors || []).length;
+}
+$('#resched-form')?.addEventListener('input', () => reschedPreview());
+$('#resched-cancel')?.addEventListener('click', () => rsDlg().close());
+$('#resched-form')?.addEventListener('submit', guard(async (e) => {
+  e.preventDefault();
+  try { await api(`/api/games/${rsGame.id}/reschedule`, { method: 'POST', body: JSON.stringify(rsBody()) }); }
+  catch (err) { await reschedPreview(); throw err; }
+  rsDlg().close(); msg('Game rescheduled. The lobby shows "Moved from …" until it is final.'); await load();
+}));
+async function openHistory(id) {
+  const rows = await api(`/api/games/${id}/changes`);
+  const f = (x) => (x?.date ? `${x.date} ${x.time}` : '—');
+  $('#history-list').innerHTML = rows.length ? rows.map((r) => `<li>${esc(when(r.at))} · ${esc(r.actor || '')}: ${esc(r.kind)} ${esc(f(r.before))} → <b>${esc(f(r.after))}</b>${r.reason ? ` · “${esc(r.reason)}”` : ''}</li>`).join('') : '<li>No changes recorded.</li>';
+  $('#history-dlg').showModal();
+}
+$('#history-close')?.addEventListener('click', () => $('#history-dlg').close());

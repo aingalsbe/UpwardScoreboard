@@ -1,6 +1,16 @@
-# Plan: reschedule a game (new date, time and/or court)
+# Plan: reschedule a game (new date and/or time)
 
-Status: proposal only, no code. Branch feature/practice-schedule, 2026-10-23.
+Status: **APPROVED** by Aaron 2026-10-23, with the changes under "Approved decisions" (they override the proposal below). Built on branch feature/reschedule.
+
+## Approved decisions (Aaron, 2026-10-23)
+1. **Moved note is public.** "Moved from <Day> <time>" shows on the lobby and Up Next (and any schedule list) until the game is final. Never on court TVs, the overlay or the scorekeeper.
+2. **Fri/Sat only**, judged on the league-local date (LEAGUE_TZ). Any other day is a hard 409.
+3. **Date and tip-off time only; no court picker.** Court and lockers are never changed or cleared. Checks still run: shared floor, same court, team double-booked, natural-key duplicate. Cheer comes from the new hour. Only `scheduled` games can move.
+4. **No swap.** Logged as a backlog item in UpwardScoreboard-Bugs.md.
+- `time` is optional in the API and defaults to the current tip-off; the dialog pre-fills it.
+- Kept from the proposal: `POST /api/games/:id/reschedule {date,time?,reason?,dryRun?}` in one transaction with a row lock; dry-run preview (conflicts + cheer at old and new hour); `games.moved_from` set on the first move only; `game_changes` audit table, History view and `GET /api/games/:id/changes`; CSV `moved_from_date`/`moved_from_time` (read-only; import keeps the move and warns); same-court and team checks also on the plain PUT; additive schema only.
+
+The proposal text below is kept for history; where it mentions a court choice, locker clearing or practice-night warnings, the decisions above win.
 
 ## Today (what the code already does)
 - `games`: `court_id`, `scheduled_at` (timestamptz), `duration_min`, `status` (scheduled | active | complete), `home_locker` / `away_locker` (free text, 8 characters max, per game, change weekly). The natural key `(court_id, scheduled_at, home, away)` makes schedule.csv imports idempotent.
@@ -33,7 +43,7 @@ Soft warnings: a time off the hour grid, and moving into the past.
 
 **Audit trail.** A new table `game_changes(id, game_id FK cascade, at timestamptz default now(), actor text, kind 'reschedule', before jsonb {date,time,court,home_locker,away_locker}, after jsonb, reason text)`. One row is written per move in the same transaction. Admin > Schedule gets a "History" link per game, plus a `/api/games/:id/changes` GET. It is additive and safe on the droplet (CREATE IF NOT EXISTS), and pg_dump runs first as always.
 
-## Open questions for Aaron
+## Open questions for Aaron (answered above)
 1. Should parents see "Moved from …" at all, or only admins? And how long: that day only, or until the game is played?
 2. Should a move into a practice night be a warning (proposed) or a hard block?
 3. Lockers: auto-clear on a clash (proposed), or keep them and just warn?

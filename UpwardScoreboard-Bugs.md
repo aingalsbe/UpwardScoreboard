@@ -31,6 +31,11 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 | A2 | 2026-10-17 | 868a155 | **Admin game edit form loses its Away selection every 10 s** (Avery). Symptom: Schedule > Edit > change Away > wait 10 s: it jumps back (15 -> 7). Root cause: the 10 s full refresh (render() in public/admin.js) rebuilt the Court/Home/Away selects' options, which drops the selection, and then forced Away to the second team. Fix: render() keeps the current Court/Home/Away values when it rebuilds the options and only applies the default Away to an empty (new) form; Clear restores the default. Tests: admin-today-e2e (change Away, WebSocket push + 10 s refresh, still selected). |
 | A1 | 2026-10-17 | bb2be61 | **Admin Today: a completed game doesn't show its result** (reported by Aaron via Morgan). Symptom: after Complete, the game vanished from Admin's Today games list instead of showing the final. Root cause: client-side filter in public/admin.js:63, `games.filter((g) => g.status !== 'complete')`; the server (`GET /api/games`) already returned the game with status and final score. Fix: Today shows every non-complete game plus today's completed games, ordered by time slot then court, with the result inline (complete: final score home first + ✓ FINAL, + TIE when equal; active: live score + ● LIVE; scheduled unchanged); updates live over the schedule WebSocket push (score, load, complete, reopen, edit); card layout at ≤ 600px, no horizontal scroll at 390px. Tests: unit (admin-today), smoke payload checks, scripts/admin-today-e2e.mjs. |
 
+- Reschedule games (feature/reschedule): Fri/Sat-only move of date/time with dry-run preview, same-court/team checks (also on plain PUT), public "Moved from" note, audit history, CSV moved_from columns.
+
+## Backlog
+- Swap two games in one action (gym mix-up). Deferred by Aaron 2026-10-23; today move them one at a time.
+
 ## Rule changes (planned)
 
 - **Logos (Aaron, 2026-10-23):** lobby, practice screens, court TV and overlay keep logos; the scorekeeper never shows them. scorekeeperView now strips all logo fields (test: scorekeeper-no-logos).

@@ -124,6 +124,19 @@ CREATE TABLE IF NOT EXISTS cheer_slots (
   locker TEXT CHECK (locker IS NULL OR length(locker) <= 8),
   UNIQUE (date, slot_start)
 );
+-- Reschedule (2026-10, docs/plans/reschedule-games.md): the original tip-off (set on the first move only) + audit trail.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS moved_from TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS game_changes (
+  id BIGSERIAL PRIMARY KEY,
+  game_id INT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actor TEXT,
+  kind TEXT NOT NULL,
+  before JSONB,
+  after JSONB,
+  reason TEXT CHECK (reason IS NULL OR length(reason) <= 200)
+);
+CREATE INDEX IF NOT EXISTS game_changes_game ON game_changes(game_id, id);
 -- games.cheer, cheer_logo_url/_data/_mime are READ-ONLY from here on: the backfill below reads them once and
 -- nothing writes them. Drop them once /api/warnings shows no cheer-slot-conflict and an export/import round-trip
 -- of cheer_slots.csv matches (planned for the release after the next import cycle).

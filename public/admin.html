@@ -163,5 +163,18 @@
   </div>
   <script src="/contrast.js"></script>
   <script type="module" src="/admin.js"></script>
+<dialog id="resched-dlg" class="resched">
+  <form id="resched-form" method="dialog">
+    <h3 id="resched-title">Reschedule</h3>
+    <p id="resched-now" class="hint"></p>
+    <label>New date <input type="date" name="date" required></label>
+    <label>Tip-off <input type="time" name="time" step="300"></label>
+    <label>Reason (optional) <input name="reason" maxlength="200" placeholder="e.g. gym double-booked"></label>
+    <p class="hint">Games are Friday or Saturday only. Live and final games can't be moved.</p>
+    <div id="resched-preview" aria-live="polite"></div>
+    <div class="row"><button type="submit" class="primary" id="resched-save" disabled>Reschedule</button><button type="button" id="resched-cancel">Cancel</button></div>
+  </form>
+</dialog>
+<dialog id="history-dlg"><h3>Change history</h3><ul id="history-list"></ul><button type="button" id="history-close">Close</button></dialog>
 </body>
 </html>

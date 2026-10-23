@@ -112,8 +112,8 @@ test('server: warnings, CRUD, CSV round-trip + legacy files, scorekeeper never g
   r = (await api('/api/import/cheer_slots.csv', { csv: 'date,time,squad,locker\n2026-10-24,09:00,Pep Power,3\n2026-10-24,11:05,New Squad,\n2026-10-24,12:00,Nobody,\n' })).body;
   assert.deepEqual([r.created, r.updated], [1, 1]); assert.match(r.errors.join(), /unknown cheer squad "Nobody"/); assert.match(r.warnings.join(), /11:05 is in the 11:00 slot/);
   let sched = (await api('/api/export/schedule.csv')).body as string;
-  assert.match(sched.split('\n')[0], /home_locker,away_locker$/); assert.doesNotMatch(sched.split('\n')[0], /cheer/);
-  const lines = sched.trim().split('\n'); lines[1] = lines[1].replace(/,,$/, ',CH,5');
+  assert.match(sched.split('\n')[0], /home_locker,away_locker,moved_from_date,moved_from_time$/); assert.doesNotMatch(sched.split('\n')[0], /cheer/);
+  const lines = sched.trim().split('\n'); lines[1] = lines[1].replace(/,,,,$/, ',CH,5,,');
   r = (await api('/api/import/schedule.csv', { csv: lines.join('\n') + '\n' })).body; assert.deepEqual([r.updated, r.errors], [1, []]);
 
   // round-trip: export every file, re-import, nothing changes

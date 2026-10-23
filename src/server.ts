@@ -552,6 +552,30 @@ async function floorConflict(courtId: number | null, ts: Date | null, durMin: nu
   const c = rows[0];
   return c ? `overlaps game #${c.id} on ${c.court} (${c.home} vs ${c.away}, ${c.start}-${c.end_at}); ${c.me} and ${c.court} share the floor and can't be used at the same time` : null;
 }
+type Qy = { query: (text: string, params?: any[]) => Promise<any> };
+/**
+ * Reschedule + PUT checks beyond the shared floor: same-court overlap and a team already playing at that time.
+ * Returns error messages ([] = ok). Overlap = [start, start + length) intersects (default length GAME_MINUTES).
+ */
+async function slotConflicts(q: Qy, courtId: number | null, ts: Date | null, durMin: number | null, excludeId: number | null, teamIds: number[]): Promise<string[]> {
+  if (!ts) return [];
+  const { rows } = await q.query(`
+    SELECT g.id, g.court_id, c.name AS court, h.name AS home, a.name AS away, g.home_team_id, g.away_team_id,
+      to_char(g.scheduled_at AT TIME ZONE $6, 'Dy HH24:MI') AS start
+    FROM games g LEFT JOIN courts c ON c.id = g.court_id JOIN teams h ON h.id = g.home_team_id JOIN teams a ON a.id = g.away_team_id
+    WHERE g.id IS DISTINCT FROM $3 AND g.scheduled_at IS NOT NULL
+      AND g.scheduled_at < $1::timestamptz + make_interval(mins => $2)
+      AND $1::timestamptz < g.scheduled_at + make_interval(mins => COALESCE(g.duration_min, $5))
+      AND ((g.court_id = $4) OR g.home_team_id = ANY($7) OR g.away_team_id = ANY($7))
+    ORDER BY g.scheduled_at, g.id`, [ts, durMin ?? GAME_MINUTES, excludeId, courtId, GAME_MINUTES, LEAGUE_TZ, teamIds]);
+  const out: string[] = [];
+  for (const r of rows) {
+    if (courtId && r.court_id === courtId) out.push(`${r.court} is already in use: game #${r.id} (${r.home} vs ${r.away}, ${r.start})`);
+    for (const t of teamIds) if (r.home_team_id === t || r.away_team_id === t)
+      out.push(`${r.home_team_id === t ? r.home : r.away} already plays then: game #${r.id} (${r.home} vs ${r.away}, ${r.start}${r.court ? ' on ' + r.court : ''})`);
+  }
+  return [...new Set(out)];
+}
 const parseMinutes = (v: unknown): number | null => {
   const t = String(v ?? '').trim(); if (!t) return null;
   if (!/^\d+$/.test(t) || Number(t) < 1 || Number(t) > 600) throw new HttpError(400, `minutes "${t}" must be a whole number 1-600 (or empty for the default ${GAME_MINUTES})`);
@@ -645,6 +669,55 @@ async function loadWarnings() {
 }
 const warningsFor = async (id: number) => (await loadWarnings()).filter((w) => w.gameId != null && w.gameId === id).map((w) => w.message);
 
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ampm12 = (hm: string) => { const [h, m] = hm.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+const dayLabel = (date: string, hm: string) => `${DOW[new Date(`${date}T12:00:00Z`).getUTCDay()]} ${date.slice(5).replace('-', '/')} ${ampm12(hm)}`;
+/**
+ * Admin reschedule (docs/plans/reschedule-games.md, approved): new league-local date and/or tip-off time only. Court and
+ * lockers never change. Fri/Sat only; scheduled games only; shared floor + same court + team + natural-key checks;
+ * cheer comes from the new hour's slot. One transaction with the game row locked; dryRun rolls back (writes nothing).
+ * Errors -> 409 { errors[], preview }. time is optional (defaults to the current tip-off).
+ */
+async function rescheduleGame(id: number, b: any) {
+  const date = String(b?.date ?? '').trim(), reason = String(b?.reason ?? '').trim().slice(0, 200) || null, dry = !!b?.dryRun;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const g = (await client.query(`SELECT g.*, to_char(g.scheduled_at AT TIME ZONE $2, 'YYYY-MM-DD') AS d, to_char(g.scheduled_at AT TIME ZONE $2, 'HH24:MI') AS t,
+      c.name AS court_name FROM games g LEFT JOIN courts c ON c.id = g.court_id WHERE g.id=$1 FOR UPDATE OF g`, [id, LEAGUE_TZ])).rows[0];
+    if (!g) throw new HttpError(404, 'game not found');
+    if (g.status !== 'scheduled') throw new HttpError(409, g.status === 'active' ? 'This game is live: only scheduled games can be rescheduled (end or reset it first).' : 'This game is final: only scheduled games can be rescheduled.');
+    const time = String(b?.time ?? '').trim() || g.t;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date + 'T12:00:00Z'))) throw new HttpError(400, 'date must be YYYY-MM-DD');
+    if (!time || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(time)) throw new HttpError(400, 'time must be HH:MM (24h, league time)');
+    const hm = time.padStart(5, '0');
+    const ts = (await client.query(`SELECT ($1::date + $2::time) AT TIME ZONE $3 AS t`, [date, hm, LEAGUE_TZ])).rows[0].t as Date;
+    const cheerAt = async (d: string | null, t: string | null) => (d && t ? (await client.query(`SELECT q.name FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date=$1::date AND s.slot_start=$2::time`, [d, hourSlot(t)])).rows[0]?.name ?? null : null);
+    const preview = { from: g.d ? { date: g.d, time: g.t, label: dayLabel(g.d, g.t), cheer: await cheerAt(g.d, g.t) } : null,
+      to: { date, time: hm, label: dayLabel(date, hm), cheer: await cheerAt(date, hm) }, court: g.court_name, home_locker: g.home_locker, away_locker: g.away_locker };
+    const errors: string[] = [];
+    const dow = new Date(`${date}T12:00:00Z`).getUTCDay();
+    if (dow !== 5 && dow !== 6) errors.push(`Games can only be on Friday or Saturday (${DOW[dow]} ${date} is not).`);
+    if (g.scheduled_at && new Date(g.scheduled_at).getTime() === ts.getTime()) errors.push('The game is already at that date and time.');
+    const floor = await floorConflict(g.court_id, ts, g.duration_min, id);
+    if (floor) errors.push(floor);
+    errors.push(...await slotConflicts(client, g.court_id, ts, g.duration_min, id, [g.home_team_id, g.away_team_id]));
+    const dup = (await client.query(`SELECT id FROM games WHERE id<>$1 AND court_id IS NOT DISTINCT FROM $2 AND scheduled_at=$3 AND home_team_id=$4 AND away_team_id=$5`, [id, g.court_id, ts, g.home_team_id, g.away_team_id])).rows[0];
+    if (dup) errors.push(`That game (same court, time and teams) is already scheduled as game #${dup.id}.`);
+    if (errors.length) { await client.query('ROLLBACK'); throw Object.assign(new HttpError(409, errors[0]), { extra: { errors, preview } }); }
+    if (dry) { await client.query('ROLLBACK'); return { ok: true, dryRun: true, errors: [], preview }; }
+    await client.query(`UPDATE games SET scheduled_at=$2, moved_from=COALESCE(moved_from, scheduled_at), updated_at=now() WHERE id=$1`, [id, ts]);
+    const snap = (d: any, t: any) => ({ date: d, time: t, court: g.court_name, home_locker: g.home_locker, away_locker: g.away_locker });
+    await client.query(`INSERT INTO game_changes(game_id, actor, kind, before, after, reason) VALUES ($1, 'admin', 'reschedule', $2, $3, $4)`,
+      [id, JSON.stringify(snap(g.d, g.t)), JSON.stringify(snap(date, hm)), reason]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; }
+  finally { client.release(); }
+  await refreshAllCourts(); scheduleChanged();
+  const row = (await pool.query(`SELECT id, scheduled_at, moved_from, court_id, home_locker, away_locker FROM games WHERE id=$1`, [id])).rows[0];
+  return { ok: true, game: row };
+}
+
 /**
  * Lobby TV feed for one league-local day (role=schedule WebSocket + /api/public/schedule): every game with court,
  * time, state, teams (home first; locker + coach), live score/period/clock for active games, and the day's cheer slots.
@@ -656,11 +729,15 @@ async function scheduleSnapshot(date: string) {
   for (const raw of rows) {
     const r = normalizeRow(raw), theme = r.theme || {};
     const live = r.status === 'active' ? await gameViewNorm(r.id) : null;
-    const t = await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS hm`, [r.scheduled_at, LEAGUE_TZ]);
+    const t = await pool.query(`SELECT to_char($1::timestamptz AT TIME ZONE $2, 'HH24:MI') AS hm, to_char($3::timestamptz AT TIME ZONE $2, 'YYYY-MM-DD') AS md,
+      to_char($3::timestamptz AT TIME ZONE $2, 'HH24:MI') AS mt`, [r.scheduled_at, LEAGUE_TZ, r.moved_from ?? null]);
+    // Rescheduled: "Moved from Sat 11:00 AM" on the lobby until the game is final (never on court TVs/overlay/scorekeeper).
+    const mv = t.rows[0].md && r.status !== 'complete' && +new Date(r.moved_from) !== +new Date(r.scheduled_at)
+      ? { movedFrom: { date: t.rows[0].md, day: DOW[new Date(`${t.rows[0].md}T12:00:00Z`).getUTCDay()], time: t.rows[0].mt } } : {};
     const s = live?.state;
     games.push({
       id: r.id, court: r.court_slug, time: t.rows[0].hm, dur: r.duration_min ?? GAME_MINUTES, status: r.status,
-      hideScore: isScoreHiddenGrade(r.home_grade || r.away_grade),
+      hideScore: isScoreHiddenGrade(r.home_grade || r.away_grade), ...mv,
       home: { ...teamView(r, 'home_team', theme, 'home'), score: s ? s.home.score : r.final_home },
       away: { ...teamView(r, 'away_team', theme, 'away'), score: s ? s.away.score : r.final_away },
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
@@ -881,7 +958,7 @@ async function importSchedule(text: string): Promise<ImportResult> {
         else if (!prev) legacyCheerSlots.set(k, { name: legacyCheer, logo: legacyLogo, line });
       } else if (legacyCheer) out.warnings!.push(`row ${line}: cheer "${legacyCheer}" ignored: the game has no date/time (cheer squads are per time slot)`);
       const id = (r.id || '').trim();
-      const ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date | null;
+      let ts = (await pool.query('SELECT $1::timestamp::timestamptz AS t', [when])).rows[0].t as Date | null;
       const key = `${court.id}|${ts?.getTime() ?? ''}|${home}|${away}`;
       if (seen.has(key) || (id && seen.has('id:' + id))) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key) ?? seen.get('id:' + id)} (skipped)`); continue; }
       seen.set(key, line); if (id) seen.set('id:' + id, line);
@@ -892,6 +969,14 @@ async function importSchedule(text: string): Promise<ImportResult> {
         if (!ex) throw new HttpError(400, `unknown game id ${id} (leave id blank to add a new game)`);
       } else {
         ex = (await pool.query('SELECT * FROM games WHERE court_id IS NOT DISTINCT FROM $1 AND scheduled_at IS NOT DISTINCT FROM $2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
+      }
+      // Rescheduled games (moved_from_date/_time are read-only export columns, ignored here): an old row at the ORIGINAL
+      // time must not undo the move (row with id) or add a duplicate game (row without id). Keep the move and warn.
+      const movedMsg = (g: any) => `row ${line}: game #${g.id} was rescheduled (originally ${date} ${time}); kept the new time (edit the game in Admin to change it)`;
+      if (ex && ex.moved_from && ts && +new Date(ex.moved_from) === +ts && +new Date(ex.scheduled_at) !== +ts) { out.warnings!.push(movedMsg(ex)); ts = ex.scheduled_at; }
+      if (!ex && !id && ts) {
+        const mv = (await pool.query('SELECT id FROM games WHERE court_id IS NOT DISTINCT FROM $1 AND moved_from=$2 AND home_team_id=$3 AND away_team_id=$4', [court.id, ts, home, away])).rows[0];
+        if (mv) { out.warnings!.push(movedMsg(mv)); out.skipped++; continue; }
       }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
       if (!ex) {
@@ -1170,7 +1255,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         g.home_team_id, h.name AS home, g.away_team_id, a.name AS away, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, LEAST(h.grade_order, a.grade_order) AS grade_order,
         COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int, 0) AS home_score,
         COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int, 0) AS away_score,
-        (c.current_game_id = g.id) AS on_court, g.duration_min, g.swap_colors, g.home_locker, g.away_locker, h.coach AS home_coach, a.coach AS away_coach,
+        (c.current_game_id = g.id) AS on_court, g.moved_from, g.duration_min, g.swap_colors, g.home_locker, g.away_locker, h.coach AS home_coach, a.coach AS away_coach,
         cs.id AS cheer_slot_id, cs.locker AS cheer_locker, cq.id AS cheer_squad_id, cq.name AS cheer, cq.coach AS cheer_coach, cq.logo_url AS cheer_logo_url, (cq.logo_data IS NOT NULL) AS cheer_has_logo
         FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
         ${CHEER_JOIN}
@@ -1204,13 +1289,17 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     if (m === 'PUT' && id && seg.length === 3) {
       const b = await readJson(req);
       if ('court_id' in b || 'scheduled_at' in b || 'duration_min' in b) { // edit time / court / length
-        const g = (await pool.query('SELECT court_id, scheduled_at, duration_min FROM games WHERE id=$1', [id])).rows[0];
+        const g = (await pool.query('SELECT court_id, scheduled_at, duration_min, home_team_id, away_team_id FROM games WHERE id=$1', [id])).rows[0];
         if (!g) throw new HttpError(404, 'game not found');
         const court = 'court_id' in b ? (b.court_id || null) : g.court_id;
         const ts = 'scheduled_at' in b ? (b.scheduled_at ? (await pool.query('SELECT $1::timestamptz AS t', [b.scheduled_at])).rows[0].t : null) : g.scheduled_at;
         const dur = 'duration_min' in b ? parseMinutes(b.duration_min) : g.duration_min;
         const clash = await floorConflict(court, ts, dur, id);
         if (clash) throw new HttpError(409, `Can't move: ${clash}.`);
+        // Same court + team double-booking (reschedule plan): also enforced on the plain edit.
+        const teamsNow = [Number(b.home_team_id || g.home_team_id), Number(b.away_team_id || g.away_team_id)];
+        const more = await slotConflicts(pool, court, ts, dur, id, teamsNow);
+        if (more.length) throw new HttpError(409, `Can't move: ${more[0]}.`);
         try { await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, duration_min=$4 WHERE id=$1', [id, court, ts, dur]); }
         catch (e: any) { if (/duplicate key/.test(e.message)) throw new HttpError(409, 'That game (same court, time and teams) is already scheduled.'); throw e; }
         await refreshAllCourts();
@@ -1243,6 +1332,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       if (st !== 'complete') throw new HttpError(409, 'Only a complete game can be reopened.');
       await activateGame(id, null, 'admin', !!sb?.force, true);
       return json(res, 200, { ok: true });
+    }
+    if (m === 'POST' && id && seg[3] === 'reschedule') return json(res, 200, await rescheduleGame(id, await readJson(req)));
+    if (m === 'GET' && id && seg[3] === 'changes') {
+      return json(res, 200, (await pool.query('SELECT id, at, actor, kind, before, after, reason FROM game_changes WHERE game_id=$1 ORDER BY id', [id])).rows);
     }
     if (m === 'GET' && id && seg[3] === 'events') {
       return json(res, 200, (await pool.query('SELECT seq, actor, command, created_at FROM game_events WHERE game_id=$1 ORDER BY id', [id])).rows);
@@ -1330,11 +1423,12 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       h.name AS home, a.name AS away,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int) END AS home_score,
       CASE WHEN g.status='scheduled' THEN NULL ELSE COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int) END AS away_score, g.status, g.duration_min AS minutes, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender,
-      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.home_locker, g.away_locker
+      CASE WHEN g.swap_colors THEN 'true' ELSE '' END AS swap_colors, g.home_locker, g.away_locker,
+      to_char(g.moved_from AT TIME ZONE current_setting('TimeZone'),'YYYY-MM-DD') AS moved_from_date, to_char(g.moved_from AT TIME ZONE current_setting('TimeZone'),'HH24:MI') AS moved_from_time
       FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id
       ORDER BY g.scheduled_at NULLS LAST, g.id`);
     // Cheer is no longer a schedule column: it is per time slot (cheer_slots.csv).
-    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'gender', 'swap_colors', 'home_locker', 'away_locker'], rows));
+    return csvOut(res, 'schedule.csv', toCsv(['id', 'date', 'time', 'court', 'division', 'home', 'away', 'home_score', 'away_score', 'status', 'minutes', 'grade', 'gender', 'swap_colors', 'home_locker', 'away_locker', 'moved_from_date', 'moved_from_time'], rows));
   }
   if (p === '/api/import/teams.csv' && m === 'POST') { const r = await importTeams(await readBody(req)); await refreshAllCourts(); return json(res, 200, r); }
   if (p === '/api/export/courts.csv') {
@@ -1419,7 +1513,7 @@ const server = http.createServer(async (req, res) => {
     const msg = String(e?.message || e);
     const code = e instanceof HttpError ? e.status : /duplicate key/.test(msg) ? 409 : /foreign key/.test(msg) ? 400 : /required|must|pick|larger|assign|JSON|too large|unknown/.test(msg) ? 400 : 500;
     if (code === 500) console.error(e);
-    if (!res.headersSent) json(res, code, { error: code === 500 ? 'server error' : msg }, code === 413 ? { connection: 'close' } : {});
+    if (!res.headersSent) json(res, code, { error: code === 500 ? 'server error' : msg, ...(code !== 500 && e?.extra ? e.extra : {}) }, code === 413 ? { connection: 'close' } : {});
     else res.end();
   }
 });

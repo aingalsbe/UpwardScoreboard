@@ -190,3 +190,9 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 .mascot { flex: none; width: 6.4rem; height: 6.4rem; object-fit: contain; }
 .mascot.badge { display: inline-grid; place-items: center; border-radius: 50%; background: #000; color: #ffc72c; border: .3rem solid #fff;
   font: 900 3.4rem/1 "Montserrat", "Archivo", Arial, sans-serif; }                 /* gold on black 13.5:1 */
+
+/* SAGE: stopgap "Moved from Sat 11:00 AM" pill for rescheduled games (until final). Sits on the section's top edge so the
+   1080p grid height is unchanged; Sage to restyle. */
+.game[data-moved] { position: relative; }
+.moved-note { position: absolute; top: -1.4rem; right: 1.6rem; z-index: 2; padding: .2rem 1.2rem; border-radius: 99rem;
+  background: #fff3c4; color: #5a3b00; border: .2rem solid #c98a00; font: 800 1.6rem "Montserrat", sans-serif; letter-spacing: .05rem; white-space: nowrap; }

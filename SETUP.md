@@ -117,6 +117,10 @@ Teams match on name + division ("5th Grade Boys"), squads on name, ignoring case
 
 Tables `practice_days` (day 1–4, basketball hours) and `practice_slots` (basketball: day, 1-hour start, court west1/west2/east1/east2, team; cheer: day, room, squad) are created by the normal start-up migration (additive, no data change). The demo seed fills a demo week; an existing database: `docker compose exec upward-app node dist/src/seed-practice.js` (only when no practice schedule exists). Real teams: Admin > Practice (`/admin/practice`). Displays: `/upwardbasketballscores/practice/basketball` and `/upwardbasketballscores/practice/cheer`.
 
+### Reschedule migration (feature/reschedule)
+Additive only, applied automatically on server start: `games.moved_from` (timestamptz, nullable) and a new `game_changes` audit table + index. Nothing is dropped or rewritten. **Take a `pg_dump` before deploying** (see above), then restart the app.
+Endpoints (admin cookie): `POST /api/games/:id/reschedule {date, time?, reason?, dryRun?}` (Fri/Sat only; `time` defaults to the current tip-off; 409 `{errors[]}` on conflicts) and `GET /api/games/:id/changes` (history). schedule.csv export gains read-only `moved_from_date,moved_from_time` columns.
+
 ## 8. URLs, ports and dev logins
 
 App on **http://localhost:3000** (health: `/api/health`). Postgres is not published to the host.

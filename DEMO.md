@@ -101,6 +101,9 @@ Game rules (2026-10): **6 periods of 6:00 (36-minute game), 3 per half**, halfti
 
 Point out: Maroon/Gold season colors (home Gold, away Maroon), the grade and gender in the header ("5th Grade Boys"), the church name, and that the TV and schedule need no login. Saturday games with a cheer squad: 09:00 West, 11:00 East, 12:00 West, 14:00 East.
 
+## Reschedule a game
+Admin > Schedule > **Reschedule…** on a scheduled game. Pick a Friday or Saturday date; the time is pre-filled with the current tip-off. The preview lists conflicts (shared floor, same court, team double-booked, duplicate) and the cheer squad at the old and new hour. Court and lockers never change. After saving, the lobby and Up Next show "Moved from <Day> <time>" until the game is final (never on court TVs, the overlay or the scorekeeper). **History** shows every change.
+
 ## Troubleshooting
 
 | Problem | Fix |

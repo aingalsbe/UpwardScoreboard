@@ -3,7 +3,7 @@
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
 import { mascotHtml, installLogoFallback } from './logo-badge.js';
 installLogoFallback(); // broken logo URL -> initial badge
-import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText } from './lobby-view.js';
+import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText, movedText } from './lobby-view.js';
 import { nextEvent, nextEventText } from './next-event.js';
 
 // Alias (data-needs.md): /lobby?practice=cheer|basketball opens that practice TV (other query params kept).
@@ -64,8 +64,9 @@ function gameSection(g, slot, note = 'No game right now') {
   const top = slot === 'now', live = top && g.status === 'active';
   const status = live ? `<div class="status"><span class="tag live">● LIVE</span><span class="when">${esc(quarter(g.period, g.periods))}</span><span class="clock" data-bind="clock" data-game-id="${g.id}">${esc(clockText(g))}</span></div>`
     : '';
-  const tip = tipOffText(g, slot);
-  return `<section class="game ${top ? 'live' : 'next'}" data-slot="${slot}" data-state="${live ? 'live' : 'upcoming'}" data-game-id="${g.id}">${status}${teamRow(g, 'home', live, tip)}${teamRow(g, 'away', live, tip)}</section>`;
+  const tip = tipOffText(g, slot), moved = movedText(g);
+  const note = moved ? `<div class="moved-note" data-bind="moved">${esc(moved)}</div>` : '';
+  return `<section class="game ${top ? 'live' : 'next'}" data-slot="${slot}" data-state="${live ? 'live' : 'upcoming'}" data-game-id="${g.id}"${moved ? ' data-moved' : ''}>${note}${status}${teamRow(g, 'home', live, tip)}${teamRow(g, 'away', live, tip)}</section>`;
 }
 const tab = (c) => `<div class="tab"><span>${COURT_NAME[c] || esc(c.toUpperCase() + ' COURT')}</span></div>`;
 const nextBar = (hm) => `<section class="next-bar" data-slot="next" data-state="upcoming"><span class="nb-label">🕒 UP NEXT</span><span class="nb-dot">·</span><span class="nb-time">Tip-off <span data-bind="time">${esc(ampm(hm))}</span></span></section>`;

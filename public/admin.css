@@ -216,3 +216,9 @@ tr.has-warning > td { background: rgba(255,199,44,.06); }
   #today tr[data-status="active"] > td:first-child { box-shadow: none; }
   [data-live="offline"] #today tr[data-status="active"] { box-shadow: inset 5px 0 0 #6b7080; border-style: dashed; }
 }
+
+/* SAGE: stopgap reschedule dialog + "moved" tag; Sage to restyle. */
+dialog.resched, #history-dlg { max-width: 34rem; border-radius: .6rem; border: 1px solid #ccc; }
+dialog.resched label { display: block; margin: .5rem 0; }
+#resched-preview .errors { color: #a40000; } #resched-preview .ok { color: #1d6b2a; }
+.moved-tag { background: #fff3c4; color: #5a3b00; }

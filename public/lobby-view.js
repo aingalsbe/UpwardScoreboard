@@ -170,3 +170,6 @@ export function idleText(days, date) {
 export function tipOffText(g, slot) {
   return slot === 'now' && g && g.status !== 'active' && g.time ? `Tip-Off: ${ampm(g.time)}` : null;
 }
+
+/** Rescheduled game note: "Moved from Sat 11:00 AM" until the game is final (lobby only; the server sends movedFrom). */
+export const movedText = (g) => (g?.movedFrom && g.status !== 'complete' ? `Moved from ${g.movedFrom.day} ${ampm(g.movedFrom.time)}` : null);
