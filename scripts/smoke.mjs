@@ -1,5 +1,6 @@
 // End-to-end smoke test against a running server (default http://localhost:3000).
 // Usage: ADMIN_PASSWORD=... PIN1=1111 PIN2=2222 node scripts/smoke.mjs
+import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared game-day helper + test clock
 import WebSocket from 'ws';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
@@ -212,7 +213,7 @@ const ccsv2 = await fetch(BASE + '/api/export/courts.csv', { headers: auth }).th
 const cAgain = await api('/api/import/courts.csv', { method: 'POST', body: ccsv2 });
 ok(cAgain.body.created === 0 && cAgain.body.updated === 0, 'courts re-import idempotent');
 const dupGame = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: g1.court_id, home_team_id: g1.home_team_id, away_team_id: g1.away_team_id, scheduled_at: games.find((g) => g.id === g1.id).scheduled_at }) });
-ok(dupGame.status === 409 && /already scheduled/.test(dupGame.body.error), `admin double-add -> 409 "${dupGame.body.error}"`);
+ok(dupGame.status === 409 && new RegExp(`already in use: game #${g1.id}|already scheduled`).test(dupGame.body.error), `admin double-add -> 409 "${dupGame.body.error}"`);
 
 console.log('10. Explicit CSV errors (QA #8)');
 const badColor = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,primary_color,secondary_color,logo_url\nPurples-${RUN},PUR,purple,#ffffff,\n` });
@@ -320,7 +321,7 @@ const longW = await post(C1, T.D, T.A, D - 120 * 60_000, { duration_min: 190 });
 ok(longW.status === 409 && new RegExp(`game #${f2.body.id} on Full`).test(longW.body.error), `West game whose length (190 min) runs into a Full game is refused -> "${longW.body.error}"`);
 const [fd, ft] = local(D + 15 * 60_000), [wd, wt] = local(D + 60 * 60_000), [pd, pt] = local(D - 150 * 60_000);
 const ci = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n${fd},${ft},full,Floor ${RUN},${T.D.name},${T.A.name}\n${wd},${wt},west,Floor ${RUN},${T.D.name},${T.B.name}\n` });
-ok(ci.body.created === 0 && ci.body.errors.length === 2 && /row 2: overlaps game #\d+ on (West|East)/.test(ci.body.errors[0]) && new RegExp(`row 3: overlaps game #${f2.body.id} on Full`).test(ci.body.errors[1]),
+ok(ci.body.created === 0 && ci.body.errors.length === 2 && /row 2: \S+ \S+: overlaps game #\d+ on (West|East)/.test(ci.body.errors[0]) && new RegExp(`row 3: \\S+ \\S+: overlaps game #${f2.body.id} on Full`).test(ci.body.errors[1]),
   `CSV import: overlap is a row error naming the other game (both directions): ${JSON.stringify(ci.body.errors)}`);
 const m1 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away,minutes\n${pd},${pt},full,Floor ${RUN},${T.A.name},${T.C.name},120\n` });
 ok(m1.body.created === 1 && m1.body.errors.length === 0, 'CSV minutes column: a 120-min Full game ending 30 min before West/East is accepted');
@@ -467,7 +468,8 @@ pw2.ws.close();
 // games today on the flow court
 const nowMin = Math.floor(Date.now() / 60_000) * 60_000;
 const mkToday = async (h, a, plus) => (await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: h, away_team_id: a, scheduled_at: new Date(nowMin + plus * 60_000).toISOString() }) })).body.id;
-const GA = await mkToday(G5a, G5b, 0), GB = await mkToday(G5b, G5a, 1);
+// an hour apart: same court + same teams can't overlap (create checks, Aaron 2026-10-23)
+const GA = await mkToday(G5a, G5b, 0), GB = await mkToday(G5b, G5a, 60);
 const tvF = client(fc.slug, 'tv'); await tvF.open;
 const st0 = await fk.wait((m) => m.type === 'state' && m.today?.length >= 2);
 ok(!st0.game && st0.today.map((t) => t.id).join() === `${GA},${GB}` && st0.today[0].grade === '5th Grade', "picker: today's games on this court that aren't complete");
@@ -510,7 +512,7 @@ await api(`/api/games/${GA}/complete`, { method: 'POST' });
 const expF = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
 const aLine = expF.split(/\r?\n/).find((l) => l.startsWith(GA + ','));
 ok(/,2,0,complete,/.test(aLine), `status + final score exported (${aLine})`);
-const GC = await mkToday(G5a, G5b, 2);
+const GC = await mkToday(G5a, G5b, 120);
 const cLine = `id,date,time,court,home,away,home_score,away_score,status\n${GC},,,${fc.slug},G5a-${RUN},G5b-${RUN},40,38,complete\n${GA},,,${fc.slug},G5a-${RUN},G5b-${RUN},,,scheduled\n`;
 const [dC, tC] = local(nowMin + 2 * 60_000), [dA, tA] = local(nowMin);
 const si = await api('/api/import/schedule.csv', { method: 'POST', body: cLine.replace(`${GC},,,`, `${GC},${dC},${tC},`).replace(`${GA},,,`, `${GA},${dA},${tA},`) });

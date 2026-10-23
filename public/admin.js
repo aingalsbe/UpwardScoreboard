@@ -16,7 +16,9 @@ async function api(path, opts = {}) {
   return body;
 }
 function msg(t, bad = false) { const m = $('#msg'); m.textContent = t; m.className = 'msg ' + (bad ? 'bad' : 'ok'); clearTimeout(msg.t); msg.t = setTimeout(() => (m.textContent = ''), bad ? 20000 : 5000); }
-const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { if (e.message !== 'login required') msg(e.message, true); } };
+/** Every rule reason, not just the first: 409s carry errors[] (Fri/Sat, game hours, conflicts). */
+const errText = (e) => { const all = Array.isArray(e.body?.errors) ? e.body.errors : []; return all.length > 1 ? [e.message, ...all.slice(1)].join(' · ') : e.message; };
+const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { if (e.message !== 'login required') msg(errText(e), true); } };
 
 function showLogin() { $('#app').hidden = true; $('#login').hidden = false; }
 $('#login').addEventListener('submit', guard(async (e) => {

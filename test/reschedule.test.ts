@@ -185,6 +185,41 @@ test('DB: reschedule rules, audit, lobby note, CSV round-trip, plain PUT checks'
   assert.ok(ir.errors.every((e: string) => /row not imported/.test(e)));
   assert.equal((await pool.query(`SELECT count(*)::int n FROM games WHERE home_team_id=$1 AND away_team_id=$2`, [T.H, T.L])).rows[0].n, 1);
 
+  // Aaron 2026-10-23: create + import block same-court overlap and team double-booking (same checks as reschedule);
+  // finals are exempt from the game-hours rule (warning) and don't block each other on restore.
+  for (const n of 'MNOPQRSTUV') T[n] = (await pool.query(`INSERT INTO teams(name, grade, grade_order, gender) VALUES ($1,'5th Grade',5,'Boys') RETURNING id`, ['T' + n])).rows[0].id;
+  const W = await court('west'), E = await court('east'), F = await court('full');
+  const mkc = (body: any) => fetch(`${BASE}/api/games`, { method: 'POST', headers: h, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  const base = await mkc({ court_id: W, home_team_id: T.M, away_team_id: T.N, scheduled_at: '2026-11-21T10:00:00-06:00' }); assert.equal(base.status, 201);
+  let cc = await mkc({ court_id: W, home_team_id: T.O, away_team_id: T.P, scheduled_at: '2026-11-21T10:30:00-06:00' });
+  assert.equal(cc.status, 409); assert.match(cc.body.errors.join(' '), /West is already in use: game #\d+ \(TM vs TN/);
+  cc = await mkc({ court_id: E, home_team_id: T.M, away_team_id: T.O, scheduled_at: '2026-11-21T10:30:00-06:00' });
+  assert.equal(cc.status, 409); assert.match(cc.body.errors.join(' '), /TM already plays then/);
+  cc = await mkc({ court_id: F, home_team_id: T.N, away_team_id: T.P, scheduled_at: '2026-11-22T07:00:00-06:00' });
+  assert.equal(cc.status, 409); assert.ok(cc.body.errors.length >= 2, 'Sunday + early: all reasons returned');
+  cc = await mkc({ court_id: F, home_team_id: T.Q, away_team_id: T.R, scheduled_at: '2026-11-21T10:15:00-06:00' });
+  assert.equal(cc.status, 409); assert.match(cc.body.errors.join(' '), /share the floor/);
+  assert.equal((await mkc({ court_id: W, home_team_id: T.O, away_team_id: T.P, scheduled_at: '2026-11-21T11:00:00-06:00' })).status, 201, 'back-to-back is fine');
+  const imc = async (body: string) => (await fetch(`${BASE}/api/import/schedule.csv`, { method: 'POST', headers: { cookie: h.cookie, 'content-type': 'text/csv' }, body })).json();
+  let ic = await imc('date,time,court,home,away\n2026-11-21,10:30,west,TQ,TR\n2026-11-21,10:30,east,TM,TS\n2026-11-21,10:30,east,TQ,TR\n2026-11-21,12:00,east,TQ,TR\n2026-11-21,12:30,east,TS,TT\n');
+  assert.equal(ic.created, 2, JSON.stringify(ic)); assert.equal(ic.errors.length, 3, JSON.stringify(ic.errors));
+  assert.match(ic.errors[0], /^row 2: 2026-11-21 10:30: West is already in use: game #\d+.*\(row not imported\)$/);
+  assert.match(ic.errors[1], /^row 3: .*TM already plays then/);
+  assert.match(ic.errors[2], /^row 6: .*East is already in use: game #\d+ \(TQ vs TR/); // rows 4-5 (east, no clash) imported
+  // finals: outside game hours -> warning, imported as final; finals don't block each other; a final still can't
+  // overlap a scheduled game
+  ic = await imc('date,time,court,home,away,home_score,away_score,status\n2026-11-24,19:00,west,TU,TV,30,28,complete\n2026-11-24,19:00,west,TS,TT,20,18,final\n2026-11-21,10:00,west,TU,TV,1,0,complete\n2026-11-25,19:00,west,TU,TV,,,complete\n');
+  assert.equal(ic.created, 2, JSON.stringify(ic));
+  assert.ok(ic.warnings.some((w: string) => /^row 2: 2026-11-24 19:00: Games can only be on Friday or Saturday.*\(final game, imported anyway\)/.test(w)), JSON.stringify(ic.warnings));
+  assert.equal(ic.errors.length, 2, JSON.stringify(ic.errors));
+  assert.match(ic.errors[0], /^row 4: .*West is already in use: game #\d+ \(TM vs TN/);
+  assert.match(ic.errors[1], /^row 5: status complete needs home_score and away_score/);
+  const finR = (await pool.query(`SELECT status, final_home, final_away FROM games WHERE home_team_id IN ($1,$2) AND scheduled_at::date='2026-11-24' ORDER BY final_home DESC`, [T.U, T.S])).rows;
+  assert.deepEqual(finR.map((x: any) => [x.status, x.final_home, x.final_away]), [['complete', 30, 28], ['complete', 20, 18]]);
+  // an unchanged exported row still round-trips (no conflict re-check)
+  const exp = await (await fetch(`${BASE}/api/export/schedule.csv`, { headers: { cookie: h.cookie } })).text();
+  const rt = await imc(exp); assert.equal(rt.errors.length, 0, JSON.stringify(rt.errors));
+
   // final -> the note disappears
   await pool.query(`UPDATE games SET status='complete', final_home=1, final_away=0 WHERE id=$1`, [g1]);
   sched = await (await fetch(`${BASE}/api/public/schedule?date=2026-11-07`)).json();

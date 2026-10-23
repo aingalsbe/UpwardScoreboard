@@ -1,5 +1,6 @@
 // UpwardScoreboard: one Node process serves the web UI, REST API and
 // WebSocket realtime channel. Postgres is the only other moving part.
+import './test-clock.js'; // first: test-only clock override (SCOREBOARD_TEST_NOW)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -233,23 +234,24 @@ async function courtSnapshot(slug: string) {
   // Displays always show the court's ACTIVE game; with none, an idle "Next up" screen.
   const active = (await pool.query(`SELECT id FROM games WHERE court_id=$1 AND status='active'`, [c.id])).rows[0];
   const game = active ? await gameViewNorm(active.id) : null;
+  const NOW = new Date(); // app clock, not SQL now(): the test clock (SCOREBOARD_TEST_NOW) must shift "today" too
   const lite = `SELECT g.id, g.status, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
-      to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today,
+      to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = $2::timestamptz::date) AS is_today,
       COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label, h.name AS home, a.name AS away, g.home_locker, g.away_locker, g.final_home, g.final_away
     FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.court_id=$1`;
-  const nextUp = (await pool.query(`${lite} AND g.status='scheduled' AND g.scheduled_at >= date_trunc('day', now()) ORDER BY g.scheduled_at, g.id LIMIT 1`, [c.id])).rows[0] || null;
-  const lastFinal = (await pool.query(`${lite} AND g.status='complete' AND g.scheduled_at::date = now()::date ORDER BY g.updated_at DESC LIMIT 1`, [c.id])).rows[0] || null;
+  const nextUp = (await pool.query(`${lite} AND g.status='scheduled' AND g.scheduled_at >= date_trunc('day', $2::timestamptz) ORDER BY g.scheduled_at, g.id LIMIT 1`, [c.id, NOW])).rows[0] || null;
+  const lastFinal = (await pool.query(`${lite} AND g.status='complete' AND g.scheduled_at::date = $2::timestamptz::date ORDER BY g.updated_at DESC LIMIT 1`, [c.id, NOW])).rows[0] || null;
   // Scorekeeper game picker: today's games on this court that aren't complete. With none today, the court's next
   // game day within a week (e.g. the demo weekend on a weekday); those rows carry is_today=false + day.
-  let today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = now()::date ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
+  let today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = $2::timestamptz::date ORDER BY g.scheduled_at, g.id`, [c.id, NOW])).rows;
   if (!today.length) today = (await pool.query(`${lite} AND g.status <> 'complete' AND g.scheduled_at::date = (SELECT min(x.scheduled_at::date) FROM games x
-      WHERE x.court_id=$1 AND x.status <> 'complete' AND x.scheduled_at::date > now()::date AND x.scheduled_at < now() + interval '7 days') ORDER BY g.scheduled_at, g.id`, [c.id])).rows;
+      WHERE x.court_id=$1 AND x.status <> 'complete' AND x.scheduled_at::date > $2::timestamptz::date AND x.scheduled_at < $2::timestamptz + interval '7 days') ORDER BY g.scheduled_at, g.id`, [c.id, NOW])).rows;
   const upNext = (await pool.query(
     `SELECT g.id, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
-       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = now()::date) AS is_today, h.name AS home, a.name AS away, g.home_locker, g.away_locker, COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label
+       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = $3::timestamptz::date) AS is_today, h.name AS home, a.name AS away, g.home_locker, g.away_locker, COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), COALESCE(h.gender, a.gender)) AS label
      FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
-     WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
-     ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
+     WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', $3::timestamptz)
+     ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null, NOW])).rows;
   // Young grades (2nd and below): flag rows so publicView() strips their scores for non-scorekeeper clients.
   const flag = (x: any) => (x ? Object.assign(x, { hideScore: isScoreHiddenGrade(x.grade) }) : x);
   [nextUp, lastFinal, ...today, ...upNext].forEach(flag);
@@ -536,7 +538,8 @@ async function refreshAllCourts() { const { rows } = await pool.query('SELECT sl
  * courts.conflicts_with, symmetric) whose [start, start+length) overlaps the given slot, else null.
  * Same-court and West/East overlaps are not checked here.
  */
-async function floorConflict(courtId: number | null, ts: Date | null, durMin: number | null, excludeId: number | null): Promise<string | null> {
+/** skipFinals: ignore completed games (restoring finals from CSV: finals never block each other). */
+async function floorConflict(courtId: number | null, ts: Date | null, durMin: number | null, excludeId: number | null, skipFinals = false): Promise<string | null> {
   if (!courtId || !ts) return null;
   const { rows } = await pool.query(`
     SELECT g.id, c.name AS court, me.name AS me, h.name AS home, a.name AS away,
@@ -548,7 +551,8 @@ async function floorConflict(courtId: number | null, ts: Date | null, durMin: nu
       AND (c.slug = ANY(me.conflicts_with) OR me.slug = ANY(c.conflicts_with))
       AND g.scheduled_at < $2::timestamptz + make_interval(mins => $3)
       AND $2::timestamptz < g.scheduled_at + make_interval(mins => COALESCE(g.duration_min, $5))
-    ORDER BY g.scheduled_at, g.id LIMIT 1`, [courtId, ts, durMin ?? GAME_MINUTES, excludeId, GAME_MINUTES]);
+      AND (NOT $6::boolean OR g.status <> 'complete')
+    ORDER BY g.scheduled_at, g.id LIMIT 1`, [courtId, ts, durMin ?? GAME_MINUTES, excludeId, GAME_MINUTES, skipFinals]);
   const c = rows[0];
   return c ? `overlaps game #${c.id} on ${c.court} (${c.home} vs ${c.away}, ${c.start}-${c.end_at}); ${c.me} and ${c.court} share the floor and can't be used at the same time` : null;
 }
@@ -557,7 +561,7 @@ type Qy = { query: (text: string, params?: any[]) => Promise<any> };
  * Reschedule + PUT checks beyond the shared floor: same-court overlap and a team already playing at that time.
  * Returns error messages ([] = ok). Overlap = [start, start + length) intersects (default length GAME_MINUTES).
  */
-async function slotConflicts(q: Qy, courtId: number | null, ts: Date | null, durMin: number | null, excludeId: number | null, teamIds: number[]): Promise<string[]> {
+async function slotConflicts(q: Qy, courtId: number | null, ts: Date | null, durMin: number | null, excludeId: number | null, teamIds: number[], skipFinals = false): Promise<string[]> {
   if (!ts) return [];
   const { rows } = await q.query(`
     SELECT g.id, g.court_id, c.name AS court, h.name AS home, a.name AS away, g.home_team_id, g.away_team_id,
@@ -567,7 +571,8 @@ async function slotConflicts(q: Qy, courtId: number | null, ts: Date | null, dur
       AND g.scheduled_at < $1::timestamptz + make_interval(mins => $2)
       AND $1::timestamptz < g.scheduled_at + make_interval(mins => COALESCE(g.duration_min, $5))
       AND ((g.court_id = $4) OR g.home_team_id = ANY($7) OR g.away_team_id = ANY($7))
-    ORDER BY g.scheduled_at, g.id`, [ts, durMin ?? GAME_MINUTES, excludeId, courtId, GAME_MINUTES, LEAGUE_TZ, teamIds]);
+      AND (NOT $8::boolean OR g.status <> 'complete')
+    ORDER BY g.scheduled_at, g.id`, [ts, durMin ?? GAME_MINUTES, excludeId, courtId, GAME_MINUTES, LEAGUE_TZ, teamIds, skipFinals]);
   const out: string[] = [];
   for (const r of rows) {
     if (courtId && r.court_id === courtId) out.push(`${r.court} is already in use: game #${r.id} (${r.home} vs ${r.away}, ${r.start})`);
@@ -1005,12 +1010,26 @@ async function importSchedule(text: string): Promise<ImportResult> {
       }
       const dur = hasMin ? minutes : (ex?.duration_min ?? null);
       const timeChanged = !!ts && (!ex || +new Date(ex.scheduled_at ?? 0) !== +ts);
-      if (timeChanged && timeErrs.length) throw new HttpError(400, `${date} ${time}: ${timeErrs.join(' ')} (row not imported)`);
+      // Final games (row status complete/final, or the game is already final) are exempt from the game-hours rule:
+      // restoring a season's results must not be rejected (Aaron 2026-10-23). Warning only.
+      const rowSt = (r.status || '').trim().toLowerCase(); const isFinal = ['complete', 'final'].includes(rowSt) || ex?.status === 'complete';
+      if (timeChanged && timeErrs.length) {
+        if (isFinal) out.warnings!.push(`row ${line}: ${date} ${time}: ${timeErrs.join(' ')} (final game, imported anyway)`);
+        else throw new HttpError(400, `${date} ${time}: ${timeErrs.join(' ')} (row not imported)`);
+      }
+      /** Same checks as create / reschedule / edit (shared floor, same court, team double-booked); finals don't block finals. */
+      const conflicts = async (excl: number | null) => {
+        const errs: string[] = []; const fc = await floorConflict(court.id, ts, dur, excl, isFinal); if (fc) errs.push(fc);
+        errs.push(...await slotConflicts(pool, court.id, ts, dur, excl, [home, away], isFinal));
+        if (errs.length) throw new HttpError(409, `${date} ${time}: ${errs.join('; ')} (row not imported)`);
+      };
       if (!ex) {
-        const clash = await floorConflict(court.id, ts, dur, null);
-        if (clash) throw new HttpError(409, clash);
+        await conflicts(null);
+        // Restoring a final (new row with status complete/final): needs both scores, then stored as complete.
+        if (isFinal && !(/^\d+$/.test((r.home_score || '').trim()) && /^\d+$/.test((r.away_score || '').trim()))) throw new HttpError(400, 'status complete needs home_score and away_score');
         const nid = (await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, duration_min) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [court.id, home, away, ts, division, dur])).rows[0].id;
         await setGameExtras(nid, extra); touched.add(nid);
+        if (isFinal) await applyStatus({ id: nid, status: 'scheduled', history: null }, r);
         out.created++; continue;
       }
       touched.add(ex.id);
@@ -1019,8 +1038,7 @@ async function importSchedule(text: string): Promise<ImportResult> {
       const extrasSame = Object.entries(extra).every(([k, v]) => (ex[k] ?? null) === v);
       const same = ex.court_id === court.id && (ex.scheduled_at ? new Date(ex.scheduled_at).getTime() : null) === (ts ? ts.getTime() : null) && ex.home_team_id === home && ex.away_team_id === away && (ex.division ?? null) === division && (ex.duration_min ?? null) === dur && extrasSame;
       if (same) { out.skipped++; continue; }
-      const clash = await floorConflict(court.id, ts, dur, ex.id);
-      if (clash) throw new HttpError(409, clash);
+      await conflicts(ex.id);
       await pool.query('UPDATE games SET court_id=$2, scheduled_at=$3, home_team_id=$4, away_team_id=$5, division=$6, duration_min=$7 WHERE id=$1', [ex.id, court.id, ts, home, away, division, dur]);
       await setGameExtras(ex.id, extra);
       out.updated++;
@@ -1186,7 +1204,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   }
   // Mon–Thu practice displays: the fixed weekly schedule + league-local "now" (day of week 0–6, HH:MM).
   if (p === '/api/public/practice') {
-    const now = (await pool.query(`SELECT extract(isodow FROM now() AT TIME ZONE $1)::int % 7 AS dow, to_char(now() AT TIME ZONE $1, 'HH24:MI') AS hm, to_char(now() AT TIME ZONE $1, 'YYYY-MM-DD') AS date`, [LEAGUE_TZ])).rows[0];
+    const now = (await pool.query(`SELECT extract(isodow FROM $2::timestamptz AT TIME ZONE $1)::int % 7 AS dow, to_char($2::timestamptz AT TIME ZONE $1, 'HH24:MI') AS hm, to_char($2::timestamptz AT TIME ZONE $1, 'YYYY-MM-DD') AS date`, [LEAGUE_TZ, new Date()])).rows[0];
     const sched = await loadPractice(pool);
     return json(res, 200, { serverNow: Date.now(), now: { dow: now.dow, hm: now.hm, date: now.date }, days: sched.days,
       basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, slotId, ...x }) => x) });
@@ -1299,12 +1317,12 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       let r;
       const dur = parseMinutes(b.duration_min);
       const ts = b.scheduled_at ? await tsOf(b.scheduled_at) : null;
-      if (ts) { // same rules as reschedule / edit: Fri/Sat + tip-off window
+      if (ts) { // same rules as reschedule / edit: Fri/Sat + tip-off window, shared floor, same court, team double-booked
         const lt = await leagueLocal(ts); const errs = gameTimeErrors(lt.d, lt.t);
+        const clash = await floorConflict(b.court_id || null, ts, dur, null); if (clash) errs.push(clash);
+        errs.push(...await slotConflicts(pool, b.court_id || null, ts, dur, null, [Number(b.home_team_id), Number(b.away_team_id)]));
         if (errs.length) throw Object.assign(new HttpError(409, `Can't schedule: ${errs[0]}`), { extra: { errors: errs } });
       }
-      const clash = await floorConflict(b.court_id || null, ts, dur, null);
-      if (clash) throw new HttpError(409, `Can't schedule: ${clash}.`);
       try {
         r = await pool.query('INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, theme, rules, duration_min) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
           [b.court_id || null, b.home_team_id, b.away_team_id, ts, b.division || null, sanitizeTheme(b.theme), b.rules || {}, dur]);

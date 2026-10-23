@@ -3,6 +3,7 @@
 // countdown -> west loses its connection, taps +2 while offline, comes back -> the queued tap is
 // sent with no PIN prompt and the server score goes up by exactly 2. Repeatable on a used database.
 // Usage: CHROME_PATH=/usr/bin/google-chrome node scripts/lockout-e2e.mjs
+import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared game-day helper + test clock
 import { chromium } from 'playwright-core';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
@@ -30,15 +31,17 @@ const started = [];
 const team = async (k) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `E2E${k}-${RUN}`, short_name: `E${k}`, primary_color: '#0d2c6b', secondary_color: '#f2b705' }) })).id;
 for (const [slug, a, b] of [['west', 'A', 'B'], ['east', 'C', 'D']]) {
   const c = courts.find((x) => x.slug === slug);
-  const day = new Date(); day.setUTCHours(15, 0, 0, 0);
-  const g = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: c.id, home_team_id: await team(a), away_team_id: await team(b), scheduled_at: new Date(day.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000).toISOString(), division: `E2E ${RUN}` }) });
+  // the next Fri/Sat game slot: a Saturday afternoon (random week, so repeat runs on a used DB don't collide)
+  const at = nextSaturday(slug === 'west' ? '15:00' : '16:00', Math.floor(Math.random() * 120));
+  const g = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: c.id, home_team_id: await team(a), away_team_id: await team(b), scheduled_at: at.toISOString(), division: `E2E ${RUN}` }) });
+  if (!g.id) throw new Error(`create failed: ${JSON.stringify(g)}`);
   await api(`/api/games/${g.id}/start`, { method: 'POST' }); started.push(g.id);
 }
 const score = async () => (await (await fetch(BASE + '/api/public/court/west')).json()).game.state.home.score;
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const ctxA = await browser.newContext({ viewport: { width: 420, height: 860 } }); // west phone
-const ctxB = await browser.newContext({ viewport: { width: 420, height: 860 } }); // east phone
+const ctxA = await browser.newContext({ viewport: { width: 420, height: 860 } }); await pinBrowserClock(ctxA); // west phone
+const ctxB = await browser.newContext({ viewport: { width: 420, height: 860 } }); await pinBrowserClock(ctxB); // east phone
 const p1 = await ctxA.newPage(); const p2 = await ctxB.newPage();
 
 console.log('1. west signs in');

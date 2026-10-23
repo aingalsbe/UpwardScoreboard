@@ -34,6 +34,8 @@ Open bugs and known issues. When an item is fixed, move it to the Fixed table an
 - Reschedule games (feature/reschedule): Fri/Sat-only move of date/time with dry-run preview, same-court/team checks (also on plain PUT), public "Moved from" note, audit history, CSV moved_from columns.
 - Reschedule r17 fixes (Avery NO-GO): lobby.js SyntaxError (duplicate `note`) fixed + a test that `node --check`s every public/*.js; game hours 08:00–21:00 (confirmed by Aaron 2026-10-23); plain PUT follows Fri/Sat + hours, sets moved_from and is audited; impossible dates -> 400; note shows the date when the day changed; Admin Today 390px wrap (SAGE).
 - Reschedule follow-up (Aaron via Morgan, box-only): Fri/Sat + 08:00–21:00 also enforced on create (`POST /api/games`, 409) and schedule.csv import (per-row `row N: ... (row not imported)` error, never silently dropped); dry-run preview already returns the same errors. smoke.mjs fixtures moved to Fri/Sat game hours.
+- Round 19 (Avery, box-only): e2e scripts no longer depend on the weekday: shared helper scripts/_gameday.mjs (next Fri 10:00 league time), test-only SCOREBOARD_TEST_NOW clock (refused in production), browsers pinned, scripts/run-e2e.sh; lockout-e2e uses the next Sat slot. Verified under simulated Sun, Tue, Thu and Sat 21:30. Admin game form shows every rule reason; import help states the Fri/Sat 8 AM–9 PM rule.
+- Aaron 2026-10-23 (both approved): finals in schedule.csv are exempt from the game-hours rule (warning only) and restore as final; create + import block same-court overlap and team double-booking (per-row CSV errors), finals don't block finals.
 
 ## Backlog
 - Swap two games in one action (gym mix-up). Deferred by Aaron 2026-10-23; today move them one at a time.

@@ -1,5 +1,6 @@
 // Demo seed CLI. In the running stack: docker compose exec app node dist/src/seed-demo.js [--reset]
 // Prints SEEDED or SKIPPED. Restart the app afterwards (docker compose restart app) so open screens reload.
+import './test-clock.js'; // first: test-only clock override (SCOREBOARD_TEST_NOW)
 import { pool, migrate, seedDemo } from './db.js';
 import { demoWeekend } from './schedule.js';
 import { loadLogos, formatReport } from './logo-files.js';

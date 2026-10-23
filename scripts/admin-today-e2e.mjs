@@ -4,6 +4,7 @@
 // Screenshots: OUT_DIR (default: <tmp>/upward-admin-today, so a run never overwrites the tracked docs/screenshots/admin;
 // set OUT_DIR=docs/screenshots/admin on purpose to refresh those)/admin-today-{390,1440}.png
 // Usage: [BASE_URL=http://localhost:3000] [CHROME_PATH=/usr/bin/google-chrome] node scripts/admin-today-e2e.mjs
+import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared game-day helper + test clock
 import { chromium } from 'playwright-core';
 import WebSocket from 'ws';
 import fs from 'node:fs';
@@ -45,7 +46,7 @@ await send({ type: 'auth', pin: PIN_EAST, device: 'admin-today-e2e' });
 await send({ type: 'cmd', cmd: { type: 'SCORE', team: 'home', pts: 2 } });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const bctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+const bctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 }); await pinBrowserClock(bctx);
 if (today !== realToday) { await bctx.clock.setSystemTime(new Date(`${today}T17:00:00Z`)); console.log(`  (browser clock set to ${today}, the next game day)`); }
 const page = await bctx.newPage();
 page.on('pageerror', (e) => ok(false, `page error: ${e.message}`));

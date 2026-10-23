@@ -1,11 +1,13 @@
 // Admin Cheer tab e2e (A2 regression): an unsaved edit in the cheer slot editor survives the 10 s refresh, Save
 // stores it, a Coach field round-trips on Teams, and the game editor has locker fields but no cheer fields.
 // Usage: [BASE_URL=http://localhost:3000] [ADMIN_PASSWORD=change-me-admin] [CHROME_PATH=/usr/bin/google-chrome] node scripts/cheer-admin-e2e.mjs
+import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared game-day helper + test clock
 import { chromium } from 'playwright-core';
 const B = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 let pass = 0, fail = 0; const ok = (c, m) => { if (c) { pass++; console.log('  PASS', m); } else { fail++; console.log('  FAIL', m); } };
 const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const p = await b.newPage({ viewport: { width: 1440, height: 1000 } });
+await pinBrowserClock(p.context());
 await p.goto(B + '/admin'); await p.fill('#password', process.env.ADMIN_PASSWORD || 'change-me-admin'); await p.click('#login button');
 await p.waitForSelector('#app:not([hidden])');
 await p.goto(B + '/admin#schedule');

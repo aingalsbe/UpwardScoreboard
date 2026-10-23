@@ -2,6 +2,7 @@
 // Expects: status Offline within ~5 s, TV clock frozen (no countdown past a stop made while
 // offline), recovery to Online with the exact server state after going back online.
 // Usage: CHROME_PATH=/usr/bin/google-chrome node scripts/offline-e2e.mjs   (run BEFORE smoke.mjs)
+import { pinBrowserClock, nextSaturday } from './_gameday.mjs'; // first: shared game-day helper + test clock
 import { chromium } from 'playwright-core';
 import WebSocket from 'ws';
 
@@ -40,7 +41,7 @@ await cmd({ type: 'CLOCK_SET', ms: 5 * 60_000 });
 await cmd({ type: 'CLOCK_START' });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } }); await pinBrowserClock(ctx);
 const tv = await ctx.newPage();
 await tv.goto(BASE + '/tv/west');
 await tv.waitForSelector('html[data-conn="online"]', { timeout: 10000 });
