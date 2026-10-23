@@ -9,8 +9,9 @@ import { initialState, newHistory, dispatch, hiddenGameRefusal, isTeamStatComman
 
 test('isScoreHiddenGrade: K, Pre-K, 1st, 2nd in any spelling; 3rd+ never', () => {
   const yes = ['K', 'k', 'Kindergarten', 'KINDERGARTEN', 'Pre-K', 'PreK', 'pre k', 'PK', 'Pre-Kindergarten', 'kg', '1', '01', '1st', ' 1ST ', 'First',
-    'first grade', '1st Grade', 'Grade 1', 'grade-1', 'Gr 1', 'Gr. 1', '2', '2nd', '2ND', 'Second', '2nd Grade', 'Gr 2', 'GR-2', 'grade_2', 'Grade: Second', '2nd  grade', '2nd-grade'];
-  const no = ['3', '3rd', '3rd Grade', 'Third', 'Grade 4', '5th Grade', '10', '12th', '11', '21', '22', '1st Grade Boys?x', '', null, undefined, 'Varsity', 'Grade', 'Kinder 3', 'Gr 12', '2nd/3rd'];
+    'first grade', '1st Grade', 'Grade 1', 'grade-1', 'Gr 1', 'Gr. 1', '2', '2nd', '2ND', 'Second', '2nd Grade', 'Gr 2', 'GR-2', 'grade_2', 'Grade: Second', '2nd  grade', '2nd-grade',
+    '1st/2nd', 'K-2', '2nd Grade Boys', 'first grade girls', '２ｎｄ Ｇｒａｄｅ', 'Ｋ', 'Kíndergarten', 'Fírst', 'Pré-K'];
+  const no = ['3', '3rd', '3rd Grade', 'Third', 'Grade 4', '5th Grade', '10', '12th', '11', '21', '22', '1st Grade Boys?x', '', null, undefined, 'Varsity', 'Grade', 'Kinder 3', 'Gr 12', '2nd/3rd', 'K-3', '3rd Grade Girls', '３rd'];
   for (const v of yes) assert.equal(isScoreHiddenGrade(v), true, `"${v}" should hide`);
   for (const v of no) assert.equal(isScoreHiddenGrade(v), false, `"${v}" should show`);
 });
@@ -61,15 +62,15 @@ test('Saturday split: at halftime 11:00 rolls off, top shows 12:00 (upcoming), U
 test('split, one court at halftime: that court promotes its next game; the other stays live', { skip }, async () => {
   const { planLobby } = await load();
   const p = planLobby([G(1, 'west', '11:00', 'active', at(5)), G(2, 'east', '11:00', 'active', at(2)), G(3, 'west', '12:00'), G(4, 'east', '12:00'), G(5, 'west', '13:00')]);
-  assert.deepEqual(ids(p.now), { west: 3, east: 2 }); assert.deepEqual(ids(p.next), { west: 5, east: 4 });
+  assert.deepEqual(ids(p.now), { west: 3, east: 2 }); assert.deepEqual(ids(p.next), { west: null, east: 4 }, 'QA L(b): Up Next = the soonest slot only');
 });
 
-test('Friday Full Court: halftime rolls the 5:30 off, top shows 6:30, Up Next 7:30; last game at halftime -> its next is none', { skip }, async () => {
+test('Friday Full Court: halftime rolls the 5:30 off, top shows 6:30, Up Next 7:30; last game at halftime stays until final', { skip }, async () => {
   const { planLobby } = await load();
   const p = planLobby([G(1, 'full', '17:30', 'active', at(4)), G(2, 'full', '18:30'), G(3, 'full', '19:30')]);
   assert.deepEqual(ids(p.now), { full: 2 }); assert.deepEqual(ids(p.next), { full: 3 }); assert.equal(p.now.layout, 'full');
   const last = planLobby([G(1, 'full', '19:30', 'active', at(6))]);
-  assert.equal(last.now, null); assert.equal(last.next, null); assert.equal(last.empty, true);
+  assert.deepEqual(ids(last.now), { full: 1 }, 'QA M: nothing to move up -> stays until final'); assert.equal(last.next, null); assert.equal(last.empty, false);
   // Full at halftime with split games next (L1 mix): the soonest band moves up
   const mix = planLobby([G(1, 'full', '07:00', 'active', at(4)), G(2, 'west', '08:00'), G(3, 'east', '08:00'), G(4, 'full', '17:30')]);
   assert.deepEqual(ids(mix.now), { west: 2, east: 3 }); assert.deepEqual(ids(mix.next), { full: 4 });
@@ -98,4 +99,9 @@ test('roll-up: promoted top game shows "Tip-Off: 12:00 PM" until it starts (stat
   const started = planLobby([games[0], { ...games[1], status: 'active', ...at(1, 360_000) }, games[2]]);
   assert.equal(started.now.courts.west.id, 3); assert.equal(tipOffText(started.now.courts.west, 'now'), null, 'started -> live display');
   assert.equal(tipOffText(G(9, 'full', '17:30'), 'now'), 'Tip-Off: 5:30 PM');
+});
+
+test('QA L(c): gradeOrder knows words and abbreviations', async () => {
+  const { gradeOrder } = await import('../src/schedule.js');
+  assert.deepEqual(['First', 'Second', 'Gr 2', '2nd Grade', 'Kindergarten', 'Pre-K', 'Third Grade', 'Varsity', null].map(gradeOrder), [1, 2, 2, 2, 0, -1, 3, 99, 100]);
 });

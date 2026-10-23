@@ -232,7 +232,7 @@ function render() {
       b.dataset.teamStat = ''; b.disabled = hid; b.hidden = hid;
     });
     document.querySelectorAll('.panel.team .sc').forEach((el) => { el.dataset.teamStat = ''; el.hidden = hid; });
-    $('#undo').disabled = !g.canUndo || (hid && /^(Home|Away) /.test(s.lastLabel || '')); $('#redo').disabled = !g.canRedo;
+    $('#undo').disabled = !g.canUndo || (hid && /^(Home|Away) /.test(s.lastLabel || '')); $('#redo').disabled = !g.canRedo || (hid && /^(Home|Away) /.test(g.redoLabel || ''));
     $('#banner').textContent = s.banner === 'HALFTIME' ? 'Hide "Halftime"' : 'Show "Halftime"';
   }
   bindText(document, view);

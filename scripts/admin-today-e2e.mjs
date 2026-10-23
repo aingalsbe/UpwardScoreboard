@@ -1,7 +1,8 @@
 // Browser e2e for bug A1 (Admin Today list): a completed game shows FINAL with its score, the active game shows LIVE
 // and updates live over the WebSocket (score, complete, reopen) without a reload; at 390px nothing scrolls sideways.
 // Creates two games today on East (05:00 final, 06:00 live) with its own teams, and removes them afterwards.
-// Screenshots: OUT_DIR (default docs/screenshots/admin)/admin-today-{390,1440}.png
+// Screenshots: OUT_DIR (default: <tmp>/upward-admin-today, so a run never overwrites the tracked docs/screenshots/admin;
+// set OUT_DIR=docs/screenshots/admin on purpose to refresh those)/admin-today-{390,1440}.png
 // Usage: [BASE_URL=http://localhost:3000] [CHROME_PATH=/usr/bin/google-chrome] node scripts/admin-today-e2e.mjs
 import { chromium } from 'playwright-core';
 import WebSocket from 'ws';
@@ -9,7 +10,7 @@ import fs from 'node:fs';
 
 const BASE = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 const ADMIN = process.env.ADMIN_PASSWORD || 'change-me-admin', PIN_EAST = process.env.PIN_EAST || '3333';
-const OUT = process.env.OUT_DIR || 'docs/screenshots/admin';
+const OUT = process.env.OUT_DIR || (await import('node:path')).join((await import('node:os')).tmpdir(), 'upward-admin-today');
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  PASS', m); } else { fail++; console.log('  FAIL', m); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

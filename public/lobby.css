@@ -183,3 +183,10 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 
 /* SAGE: stopgap (round 2) — halftime roll-up: the promoted top game shows "Tip-Off: 12:00 PM" in the score cell until it starts. */
 .score.tipoff { font-size: 3.2rem; white-space: nowrap; }
+
+/* SAGE: stopgap (practice branch) — mascot logo / initial badge beside team + cheer names on the lobby rows. */
+.who { display: flex; align-items: center; justify-content: center; gap: 1.4rem; }
+.who .txt { min-width: 0; }
+.mascot { flex: none; width: 6.4rem; height: 6.4rem; object-fit: contain; }
+.mascot.badge { display: inline-grid; place-items: center; border-radius: 50%; background: #000; color: #ffc72c; border: .3rem solid #fff;
+  font: 900 3.4rem/1 "Montserrat", "Archivo", Arial, sans-serif; }                 /* gold on black 13.5:1 */

@@ -1,6 +1,7 @@
 // Lobby TV v2 logic (no styling): picks live + next per court (lobby-view.js) and renders Sage's mockup markup
 // (deliverables/mockups/lobby-v2) with its hooks. Live clocks tick from server time like the TV.
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
+import { mascotHtml } from './logo-badge.js';
 import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText } from './lobby-view.js';
 
 const root = document.documentElement;
@@ -33,15 +34,16 @@ const clockText = (g) => (g?.clock ? fmtClock(clockMs(g.clock, displayNow(conn))
 /** Locker pill: empty -> data-empty (visibility:hidden in lobby.css, column kept). */
 const locker = (v) => `<div class="locker" data-bind="locker"${v ? '' : ' data-empty'}><small>Locker Room</small><b>${esc(v || '')}</b></div>`;
 /** Name + "Coach X" line under it (first name from the server; the prefix is added here). */
-const who = (name, coach) => `<div class="who"><div class="name" data-bind="name">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div></div>`;
+// Mascot logo (or initial badge) beside the name; the logo URL comes in the schedule payload.
+const who = (name, coach, logo) => `<div class="who">${mascotHtml(logo, name)}<div class="txt"><div class="name" data-bind="name">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div></div></div>`;
 function teamRow(g, side, live, tip = null) {
   const t = g[side];
   if (tip && side === 'home') return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}
-      ${who(t.name, t.coach)}<span class="score tipoff" data-bind="tipoff">${esc(tip)}</span><span class="side">${side.toUpperCase()}</span></div>`;
+      ${who(t.name, t.coach, t.logo)}<span class="score tipoff" data-bind="tipoff">${esc(tip)}</span><span class="side">${side.toUpperCase()}</span></div>`;
   // 2nd Grade and below (g.hideScore): no score, the server sends none (empty span keeps the grid).
   const score = live && !g.hideScore ? `<span class="score" data-bind="${side}-score">${esc(t.score ?? 0)}</span>` : '<span></span>';
   return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}
-      ${who(t.name, t.coach)}${score}<span class="side">${side.toUpperCase()}</span></div>`;
+      ${who(t.name, t.coach, t.logo)}${score}<span class="side">${side.toUpperCase()}</span></div>`;
 }
 /** One game section. Home is always listed first. */
 function gameSection(g, slot, note = 'No game right now') {
@@ -58,7 +60,7 @@ const nextBar = (hm) => `<section class="next-bar" data-slot="next" data-state="
 /** Unlabeled full-width cheer row for a slot; omitted when the slot has no squad. */
 const cheerBand = (c, slot) => (!c ? '' : `<section class="cheer-band ${slot}" data-court="both" data-slot="${slot}">
 <div class="row cheer span" data-row="cheer">${locker(c.locker)}
-      ${who(c.name, c.coach)}<span class="side">CHEER</span></div></section>`);
+      ${who(c.name, c.coach, c.logo)}<span class="side">CHEER</span></div></section>`);
 const courtsOf = (band) => (band.layout === 'full' ? ['full'] : ['west', 'east']);
 
 function renderIdle() {

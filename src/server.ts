@@ -15,7 +15,7 @@ import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
-  hiddenGameRefusal,
+  hiddenGameRefusal, isTeamStatCommand,
 } from './game.js';
 import QRCode from 'qrcode';
 import { makeQrToken, verifyQrToken, weekEnd } from './qr.js';
@@ -272,6 +272,7 @@ async function gameViewNorm(gameId: number) {
     home: { ...teamView(r, 'home_team', theme, 'home'), bonus: isBonus(s, 'home') },
     away: { ...teamView(r, 'away_team', theme, 'away'), bonus: isBonus(s, 'away') },
     state: s, canUndo: rt.history.past.length > 0, canRedo: rt.history.future.length > 0,
+    redoLabel: rt.history.future[0]?.lastLabel ?? null, // QA L(a): K-2nd scorekeeper disables Redo of a score/foul/timeout
   };
 }
 
@@ -418,8 +419,13 @@ function attachWs(server: http.Server) {
           const cmdId = typeof msg.id === 'string' ? msg.id.slice(0, 64) : null;
           let r;
           // K-2nd Grade: no scores, fouls or timeouts, also for a stale client still showing those buttons.
+          // QA L(d): decide by the raw type first, so a malformed SCORE/FOUL/TIMEOUT also gets code score-hidden.
+          const hides = await gameHidesScore(c.current_game_id);
+          const rawType = { type: String(msg.cmd?.type ?? '').trim().toUpperCase() };
+          if (hides && msg.type === 'cmd' && isTeamStatCommand(rawType as any))
+            return send(client, { type: 'error', id: msg.id, error: hiddenGameRefusal('cmd', rawType, newHistory(initialState()))!, code: 'score-hidden' });
           const parsed: Command | null = msg.type === 'cmd' ? parseCommand(msg.cmd) : null;
-          if (await gameHidesScore(c.current_game_id)) {
+          if (hides) {
             const no = hiddenGameRefusal(msg.type, parsed, (await getRuntime(c.current_game_id)).history);
             if (no) return send(client, { type: 'error', id: msg.id, error: no, code: 'score-hidden' });
           }

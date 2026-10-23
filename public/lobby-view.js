@@ -35,9 +35,14 @@ export function pastHalftime(g) {
 export function planLobby(games, cheerSlots = []) {
   const on = (c, st) => games.filter((g) => g.court === c && g.status === st && (st === 'active' || g.time)).sort(byTime);
   // Halftime roll-off (round 2): an active game at/after halftime leaves the lobby (see pastHalftime).
+  // QA M (Avery, 70f363b): it only rolls off when there is something to move up; a court's last game of the day (for
+  // Full: the day's last game on any court) stays on top through the 2nd half until it goes final.
   const act = (c) => on(c, 'active');
-  const live = { full: act('full').find((g) => !pastHalftime(g)) || null, west: act('west').find((g) => !pastHalftime(g)) || null, east: act('east').find((g) => !pastHalftime(g)) || null };
-  const rolled = { full: act('full').some(pastHalftime), west: act('west').some(pastHalftime), east: act('east').some(pastHalftime) };
+  const anySched = (c) => on(c, 'scheduled').length > 0;
+  const canRoll = { full: anySched('full') || anySched('west') || anySched('east'), west: anySched('west'), east: anySched('east') };
+  const keep = (c, g) => !pastHalftime(g) || !canRoll[c];
+  const live = { full: act('full').find((g) => keep('full', g)) || null, west: act('west').find((g) => keep('west', g)) || null, east: act('east').find((g) => keep('east', g)) || null };
+  const rolled = { full: !live.full && act('full').some(pastHalftime), west: !live.west && act('west').some(pastHalftime), east: !live.east && act('east').some(pastHalftime) };
   const used = new Set(Object.values(live).filter(Boolean).map((g) => g.id));
   const nxt = (c) => on(c, 'scheduled').filter((g) => !used.has(g.id))[0] || null;
 
@@ -63,10 +68,19 @@ export function planLobby(games, cheerSlots = []) {
     now = take(nextBand(!rolled.full));
   }
   // Split on top: the floor is split, so its next split game(s) come first. Full on top or nothing: the soonest.
-  const next = nextBand(now?.layout === 'split');
+  let next = nextBand(now?.layout === 'split');
 
   const times = (band) => (band ? Object.values(band.courts).filter(Boolean).map((g) => g.time).filter(Boolean).sort() : []);
-  const nowTime = times(now).pop() || null; // the latest start on top = the current slot (cheer row follows it)
+  // QA L(b): with one court promoted (top mixes a live 11:00 and a Tip-off 12:00), Up Next is ONE time slot: the soonest
+  // remaining start; a court with nothing at that time shows "No game right now". The top cheer row follows the
+  // earliest game on top (the slot still being played), Up Next's cheer row follows Up Next's time.
+  const promoted = !!now && Object.values(now.courts).some((g) => g && g.status !== 'active');
+  const mixedTop = promoted && Object.values(now.courts).some((g) => g && g.status === 'active');
+  if (mixedTop && next) {
+    const t0 = times(next)[0];
+    next = { ...next, courts: Object.fromEntries(Object.entries(next.courts).map(([c, g]) => [c, g && g.time === t0 ? g : null])) };
+  }
+  const nowTime = mixedTop ? times(now)[0] : times(now).pop() || null; // otherwise the latest start on top = the current slot
   const nextTime = times(next)[0] || null;
   const slotAt = (hm) => (hm ? cheerSlots.find((s) => s.start === hourOf(hm)) || null : null);
   const cheerNow = slotAt(nowTime);

@@ -200,6 +200,7 @@ test('server: 2nd Grade game hides score on tv/overlay/viewer/lobby + public HTT
   for (const c of [{ type: 'SCORE', team: 'home', pts: 2 }, { type: 'FOUL', team: 'away', delta: 1 }, { type: 'TIMEOUT', team: 'home', delta: -1 }]) {
     const r = await cmd('west', c); assert.equal(r.type, 'error', c.type); assert.equal(r.code, 'score-hidden');
   }
+  { const r = await cmd('west', { type: 'score', team: 'home', pts: 'two' }); assert.equal(r.code, 'score-hidden', 'QA L(d): malformed score on a hidden game'); }
   assert.equal((await cmd('west', { type: 'POSSESSION', team: 'toggle' })).type, 'ack');
   assert.equal((await cmd('west', { type: 'PERIOD', delta: 1 })).type, 'ack');
   const after = (await pool.query('SELECT history FROM games WHERE id=$1', [young])).rows[0].history.present;

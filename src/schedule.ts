@@ -37,17 +37,39 @@ export function normalizeGrade(v: unknown): string | null {
  * The one helper behind every score-hiding decision (server payloads + scorekeeper enforcement).
  */
 export function isScoreHiddenGrade(v: unknown): boolean {
-  const t = String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  if (!t) return false;
-  const rest = t.split(' ').filter((w) => !['grade', 'gr', 'grd', 'grades'].includes(w)).join(' ');
-  return /^(pre ?k|pk|pre ?kindergarten|k|kg|kinder|kindergarten|0?1|1st|first|0?2|2nd|second)$/.test(rest);
+  const g = gradeNumbers(v);
+  return !!g && g.length > 0 && Math.max(...g) <= 2;
 }
 
-/** Sort key: Kindergarten 0, "Nth Grade" N, other labels 99, none 100. */
+const WORD_GRADE: Record<string, number> = { prek: -1, pk: -1, prekindergarten: -1, prekinder: -1, k: 0, kg: 0, kinder: 0, kindergarten: 0,
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12 };
+const NOISE = new Set(['grade', 'grades', 'gr', 'grd', 'boys', 'boy', 'girls', 'girl', 'coed', 'co', 'ed', 'mixed', 'division', 'div']);
+/**
+ * Grade(s) named in a free-text label, as numbers (Pre-K -1, K 0, 1..12), or null if any part isn't a grade.
+ * NFKC + accents stripped, case/punctuation-insensitive; "Grade"/"Gr"/"Boys"/"Girls" ignored. Ranges and lists give
+ * their ends ("K-2" -> [0, 2], "1st/2nd" -> [1, 2], "2nd/3rd" -> [2, 3]).
+ */
+export function gradeNumbers(v: unknown): number[] | null {
+  const t = String(v ?? '').normalize('NFKC').normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').replace(/\bpre (?=k)/g, 'pre').trim();
+  const words = t.split(' ').filter((w) => w && !NOISE.has(w));
+  if (!words.length) return null;
+  const out: number[] = [];
+  for (const w of words) {
+    if (w in WORD_GRADE) { out.push(WORD_GRADE[w]); continue; }
+    const m = /^0?(\d{1,2})(st|nd|rd|th)?$/.exec(w);
+    if (!m || Number(m[1]) < 1 || Number(m[1]) > 12) return null;
+    out.push(Number(m[1]));
+  }
+  return out;
+}
+
+/** Sort key: Pre-K -1, Kindergarten 0, a single grade in any spelling ("2nd Grade", "Second", "Gr 2") N, other labels 99, none 100. */
 export function gradeOrder(g: string | null | undefined): number {
   if (!g) return 100;
   if (g === 'Kindergarten') return 0;
-  const m = /^(\d{1,2})(st|nd|rd|th) Grade$/.exec(g); return m ? Number(m[1]) : 99;
+  const n = gradeNumbers(g);
+  return n && n.length === 1 ? n[0] : 99;
 }
 /** null if OK, else a message. Teams without a grade are allowed (legacy data). */
 export function gradeMismatch(home: { name: string; grade: string | null }, away: { name: string; grade: string | null }, stated?: string | null): string | null {
