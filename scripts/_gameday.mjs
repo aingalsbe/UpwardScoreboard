@@ -24,6 +24,7 @@ export function nextSaturday(hm = '15:00', weeks = 0, fromMs = Date.now()) {
   return new Date(leagueTime(sat, hm));
 }
 const raw = process.env.SCOREBOARD_TEST_NOW;
+if (raw && process.env.SCOREBOARD_TEST_CLOCK !== '1') throw new Error('SCOREBOARD_TEST_NOW needs SCOREBOARD_TEST_CLOCK=1 (explicit test-clock opt-in)');
 export const TEST_NOW = raw ? Date.parse(raw) : null;
 if (TEST_NOW != null && !globalThis.__sbShifted) {
   const R = Date, off = TEST_NOW - R.now();

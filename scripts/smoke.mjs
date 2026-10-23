@@ -168,10 +168,15 @@ const tcsv = await fetch(BASE + '/api/export/teams.csv', { headers: { authorizat
 ok(tcsv.startsWith('name,short_name,grade,gender,coach,logo_url') && /SmokeA-/.test(tcsv), 'teams.csv exported (name, short_name, grade, gender, coach, logo_url; no team colors)');
 const imp = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,primary_color,secondary_color,logo_url\r\nCru-${RUN},CRU,#003366,#ffd700,\r\n"${T.C.name}",SC2,#14532d,#a3e635,\r\n` });
 ok(imp.body.created === 1 && imp.body.updated === 1 && imp.body.errors.length === 0, `teams.csv imported (created ${imp.body.created}, updated ${imp.body.updated})`);
-const simp = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-10-24,09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}\n2026-10-24,10:30,west,5th-6th Grade,Nobodies-${RUN},${T.A.name}\n` });
-ok(simp.body.created === 1 && simp.body.errors.length === 1, `schedule.csv imported 1 row, bad row reported: "${simp.body.errors[0]}"`);
+// B1 (Avery r20): a guaranteed-free Saturday for the import. A fixed date collided with the demo seed on a real
+// Fri/Sat; take the first Saturday from 3 weeks out (game-day helper) with no game at all, on any court.
+const gameDates = new Set((await api('/api/games')).body.map((g) => g.scheduled_at && new Date(g.scheduled_at).toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' })));
+let IMP_DATE = null;
+for (let w = 3; w < 60 && !IMP_DATE; w++) { const d = nextSaturday('09:30', w).toLocaleDateString('sv-SE', { timeZone: 'America/Chicago' }); if (!gameDates.has(d)) IMP_DATE = d; }
+const simp = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n${IMP_DATE},09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}\n${IMP_DATE},10:30,west,5th-6th Grade,Nobodies-${RUN},${T.A.name}\n` });
+ok(simp.body.created === 1 && simp.body.errors.length === 1, `schedule.csv imported 1 row on free Saturday ${IMP_DATE}, bad row reported: "${simp.body.errors[0]}"`);
 const scsv = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-ok(/^id,date,time,court,division,home,away,home_score,away_score,status/.test(scsv) && new RegExp(`\\d+,2026-10-24,09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}`).test(scsv), 'schedule.csv export (with id column) round-trips the import');
+ok(/^id,date,time,court,division,home,away,home_score,away_score,status/.test(scsv) && new RegExp(`\\d+,${IMP_DATE},09:30,east,3rd-4th Grade,Cru-${RUN},${T.B.name}`).test(scsv), 'schedule.csv export (with id column) round-trips the import');
 
 const cimp = await api('/api/import/courts.csv', { method: 'POST', body: `slug,name,location\nsmk-${RUN},Smoke court ${RUN},Annex\n` });
 ok(cimp.body.created === 1 && cimp.body.errors.length === 0, 'courts.csv imported (upsert by slug)');
