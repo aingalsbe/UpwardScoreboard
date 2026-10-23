@@ -228,3 +228,10 @@ dialog.resched label { display: block; margin: .5rem 0; }
   #today .tbl tr.today-row { grid-template-areas: "when court" "match match" "score score" "status status" "actions actions"; }
   #today .tbl tr.today-row td.right { flex-wrap: wrap; justify-content: flex-start; min-width: 0; }
 }
+
+/* SAGE: hex color text box + native swatch (Aaron: the picker showed RGB; hex is what's saved). Stopgap until Sage restyles. */
+.hex-pick { display: flex; gap: 8px; align-items: center; }
+.hex-pick input[type=color] { width: 52px; flex: 0 0 52px; }
+input.hex { font-family: ui-monospace, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: .5px; }
+input.hex.bad { border-color: #e5484d; outline: 2px solid rgba(229,72,77,.4); }
+.season-swatch input.hex { margin-top: 8px; }

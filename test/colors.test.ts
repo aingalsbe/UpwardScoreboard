@@ -1,0 +1,104 @@
+// Colors (Aaron, c5882fa: "the team color picker doesn't save correctly"): hex in, uppercase #RRGGBB stored, bad = 400,
+// old rgb()/lowercase values migrated at startup. Unit tests always run; DB/API part needs TEST_DATABASE_URL (own DB *_colors).
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import pg from 'pg';
+import { ChildProcess } from 'node:child_process';
+import { normHex, toHexLoose } from '../src/color.js';
+import { startServer } from './_server.js';
+
+test('normHex: #RGB / #RRGGBB any case -> uppercase #RRGGBB; everything else null', () => {
+  assert.equal(normHex('#1e90ff'), '#1E90FF');
+  assert.equal(normHex(' #1E90Ff '), '#1E90FF');
+  assert.equal(normHex('#f0a'), '#FF00AA');
+  assert.equal(normHex('#FFF'), '#FFFFFF');
+  for (const bad of ['1e90ff', '#1e90f', '#1e90ffa', '#ggg', 'rgb(30,144,255)', 'blue', '', null, undefined, 12]) assert.equal(normHex(bad), null, String(bad));
+});
+test('toHexLoose (migration only): also rgb()/rgba() and a missing #', () => {
+  assert.equal(toHexLoose('rgb(30, 144, 255)'), '#1E90FF');
+  assert.equal(toHexLoose('RGBA(255,0,0,0.5)'), '#FF0000');
+  assert.equal(toHexLoose('rgb(0 128 0 / 50%)'), '#008000');
+  assert.equal(toHexLoose('7a1020'), '#7A1020');
+  assert.equal(toHexLoose('rgb(300,0,0)'), null);
+  assert.equal(toHexLoose('blue'), null);
+});
+
+const BASE_URL = process.env.TEST_DATABASE_URL || '';
+const skip = !BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BASE_URL).pathname) ? 'TEST_DATABASE_URL database name must contain "test"' : false;
+let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null; let URL_ = '', BASE = '', token = '';
+const ADMIN = 'colors-admin-pw';
+const api = async (p: string, method = 'GET', body?: unknown) => {
+  const r = await fetch(BASE + p, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const t = await r.text(); let b: any; try { b = JSON.parse(t); } catch { b = t; } return { status: r.status, body: b };
+};
+before(async () => {
+  if (skip) return;
+  const u = new URL(BASE_URL); const name = u.pathname.slice(1) + '_colors'; u.pathname = '/' + name; URL_ = u.toString();
+  const a = new pg.Client({ connectionString: BASE_URL }); await a.connect();
+  if (!(await a.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount) await a.query(`CREATE DATABASE "${name}"`);
+  await a.end();
+  process.env.DATABASE_URL = URL_; process.env.TZ = 'America/Chicago';
+  db = await import('../src/db.js');
+  await db.pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+});
+after(async () => { srv?.kill(); await db?.pool.end(); });
+
+test('DB: startup migration converts rgb()/lowercase colors, idempotent, leaves scheduled/live games alone otherwise', { skip }, async () => {
+  const { pool } = db;
+  await db.migrate();
+  await pool.query(`INSERT INTO courts(slug, name) VALUES ('full','Full') ON CONFLICT DO NOTHING`);
+  const team = async (n: string, p: string, s: string) => (await pool.query(`INSERT INTO teams(name, grade, grade_order, gender, primary_color, secondary_color) VALUES ($1,'5th Grade',5,'Boys',$2,$3) RETURNING id`, [n, p, s])).rows[0].id;
+  const A = await team('Hawks', 'rgb(30, 144, 255)', '#fff'), B = await team('Owls', '#7a1020', 'not-a-color');
+  await pool.query(`INSERT INTO settings(key,value) VALUES ('season_dark','rgb(128,0,0)'),('season_light','#ffc72c') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+  const g = (await pool.query(`INSERT INTO games(court_id, scheduled_at, home_team_id, away_team_id, status, theme) VALUES ((SELECT id FROM courts WHERE slug='full'), now(), $1, $2, 'active', $3) RETURNING id`,
+    [A, B, { homeName: 'H', homeColor: 'rgb(0,128,0)', awayColor: '#abc', awayAccent: 'RGBA(255,255,255,1)' }])).rows[0].id;
+  await pool.query(`UPDATE courts SET current_game_id=$1 WHERE slug='full'`, [g]);
+  const g2 = (await pool.query(`INSERT INTO games(court_id, scheduled_at, home_team_id, away_team_id, theme) VALUES ((SELECT id FROM courts WHERE slug='full'), now() + interval '1 day', $1, $2, '{}') RETURNING id`, [A, B])).rows[0].id;
+  const n1 = await db.migrateColors();
+  assert.ok(n1 >= 5, `converted ${n1}`);
+  const t = (await pool.query('SELECT name, primary_color p, secondary_color s FROM teams ORDER BY id')).rows;
+  assert.deepEqual(t.map((r: any) => [r.p, r.s]), [['#1E90FF', '#FFFFFF'], ['#7A1020', 'not-a-color']], 'unconvertible value is left as is');
+  const st = Object.fromEntries((await pool.query(`SELECT key, value FROM settings WHERE key LIKE 'season_%'`)).rows.map((r: any) => [r.key, r.value]));
+  assert.equal(st.season_dark, '#800000'); assert.equal(st.season_light, '#FFC72C');
+  const gr = (await pool.query('SELECT status, theme FROM games WHERE id=$1', [g])).rows[0];
+  assert.deepEqual(gr.theme, { homeName: 'H', homeColor: '#008000', awayColor: '#AABBCC', awayAccent: '#FFFFFF' });
+  assert.equal(gr.status, 'active', 'live game untouched apart from colors');
+  assert.deepEqual((await pool.query('SELECT theme FROM games WHERE id=$1', [g2])).rows[0].theme, {});
+  assert.equal(await db.migrateColors(), 0, 'second run changes nothing');
+  await db.migrate(); assert.equal(await db.migrateColors(), 0);
+});
+
+test('API: hex accepted (#RGB / #RRGGBB, any case) and stored uppercase; bad color = 400 with a clear message', { skip }, async () => {
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; BASE = `http://127.0.0.1:${started.port}`;
+  token = (await api('/api/login', 'POST', { password: ADMIN })).body.token; assert.ok(token);
+  // Season colors
+  let r = await api('/api/settings/season', 'PUT', { name: 'S', dark: '#036', light: '#ffc72c' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual([(await api('/api/settings/season')).body.dark, (await api('/api/settings/season')).body.light], ['#003366', '#FFC72C']);
+  r = await api('/api/settings/season', 'PUT', { name: 'S', dark: 'rgb(0,0,0)', light: '#ffc72c' });
+  assert.equal(r.status, 400); assert.match(r.body.error, /dark "rgb\(0,0,0\)" is not a color; use hex like #1E90FF \(#RGB or #RRGGBB\)/);
+  // Game theme override (the "Home color" / "Away color" boxes)
+  const gid = (await db.pool.query(`SELECT id FROM games WHERE status='active'`)).rows[0].id;
+  const cur = (await api('/api/games')).body.find((x: any) => x.id === gid);
+  const put = (theme: any) => api(`/api/games/${gid}`, 'PUT', { court_id: cur.court_id, home_team_id: cur.home_team_id, away_team_id: cur.away_team_id, scheduled_at: null, division: cur.division ?? '', theme, swap_colors: false });
+  r = await put({ homeColor: '#1e90ff', awayColor: '#F0a' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const saved = (await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme;
+  assert.equal(saved.homeColor, '#1E90FF'); assert.equal(saved.awayColor, '#FF00AA');
+  const tv = await (await fetch(`${BASE}/api/public/court/full`)).json();
+  assert.equal(tv.game.home.color, '#1E90FF', 'TV snapshot carries the new color');
+  for (const bad of ['rgb(30,144,255)', '#12345', 'blue']) {
+    r = await put({ homeColor: bad });
+    assert.equal(r.status, 400, bad); assert.match(r.body.error, /homeColor ".*" is not a color; use hex like #1E90FF/);
+  }
+  assert.equal((await db.pool.query('SELECT theme FROM games WHERE id=$1', [gid])).rows[0].theme.homeColor, '#1E90FF', 'a rejected save changes nothing');
+  // Team API colors (retired field, still validated)
+  const tm = (await api('/api/teams')).body[0];
+  r = await api(`/api/teams/${tm.id}`, 'PUT', { ...tm, primary_color: 'rgb(1,2,3)' });
+  assert.equal(r.status, 400); assert.match(r.body.error, /primary_color "rgb\(1,2,3\)" is not a color/);
+  r = await api(`/api/teams/${tm.id}`, 'PUT', { ...tm, primary_color: '#abc', secondary_color: '#ddeeff' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const t2 = (await db.pool.query('SELECT primary_color p, secondary_color s FROM teams WHERE id=$1', [tm.id])).rows[0];
+  assert.deepEqual([t2.p, t2.s], ['#AABBCC', '#DDEEFF']);
+});

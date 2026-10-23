@@ -196,6 +196,9 @@ document.addEventListener('click', guard(async (e) => {
     el.home_team_id.value = g.home_team_id; el.away_team_id.value = g.away_team_id; el.swap_colors.checked = !!g.swap_colors;
     for (const k of ['home_locker', 'away_locker']) el[k].value = g[k] ?? '';
     el.homeName.value = g.theme?.homeName ?? ''; el.awayName.value = g.theme?.awayName ?? '';
+    // Pre-fill the color overrides (an edit used to re-save without them and wipe them).
+    setTimeout(() => { setHex(f, 'homeColor', g.theme?.homeColor); setHex(f, 'awayColor', g.theme?.awayColor);
+      const acc = {}; for (const k of ['homeAccent', 'awayAccent']) if (g.theme?.[k]) acc[k] = g.theme[k]; f.dataset.accents = JSON.stringify(acc); });
     $('#game-save').textContent = 'Save game'; f.scrollIntoView({ behavior: 'smooth' });
   }
   if (b.dataset.resched) openReschedule(games.find((x) => x.id === Number(b.dataset.resched)));
@@ -248,11 +251,30 @@ $('#court-form').addEventListener('submit', guard(async (e) => {
   f.reset(); msg(`Court added (slug ${r.slug}). Add a PIN for it in COURT_PINS.`); await load();
 }));
 
+// Hex color boxes: the text box (#RGB / #RRGGBB, any case) is what's saved; the native swatch next to it stays in sync.
+const normHex = (v) => { const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v || '').trim()); if (!m) return null; const h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1]; return '#' + h.toUpperCase(); };
+function setHex(f, name, v) { const t = f.elements[name]; t.value = v ? (normHex(v) || v) : ''; t.dispatchEvent(new Event('input', { bubbles: true })); }
+document.querySelectorAll('input[type=color][data-hex-for]').forEach((sw) => {
+  const t = sw.form.elements[sw.dataset.hexFor];
+  sw.addEventListener('input', () => { t.value = sw.value.toUpperCase(); t.dispatchEvent(new Event('input', { bubbles: true })); });
+  t.addEventListener('input', () => {
+    const h = normHex(t.value), empty = !t.value.trim();
+    t.setCustomValidity(h || empty ? '' : 'Use a hex color like #1E90FF (#RGB or #RRGGBB)');
+    t.classList.toggle('bad', !h && !empty);
+    if (h && sw.value.toUpperCase() !== h) sw.value = h.toLowerCase();
+    const use = sw.form.elements['use' + sw.dataset.hexFor[0].toUpperCase() + sw.dataset.hexFor.slice(1)];
+    if (use) use.checked = !!h; // typing/picking a color uses it; clearing it goes back to the season color
+  });
+  t.addEventListener('change', () => { const h = normHex(t.value); if (h) t.value = h; });
+});
+$('#game-form').addEventListener('reset', () => setTimeout(() => { delete $('#game-form').dataset.accents; for (const n of ['homeColor', 'awayColor']) setHex($('#game-form'), n, ''); }));
+
 $('#game-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target; const el = f.elements;
-  const theme = { homeName: el.homeName.value || undefined, awayName: el.awayName.value || undefined };
-  if (el.useHomeColor.checked) theme.homeColor = el.homeColor.value;
-  if (el.useAwayColor.checked) theme.awayColor = el.awayColor.value;
+  // Keep any accent overrides the game already had (the form has no field for them).
+  const theme = { ...(el.id.value && f.dataset.accents ? JSON.parse(f.dataset.accents) : {}), homeName: el.homeName.value || undefined, awayName: el.awayName.value || undefined };
+  if (el.useHomeColor.checked) theme.homeColor = normHex(el.homeColor.value) || el.homeColor.value; // bad value -> server 400 with the reason
+  if (el.useAwayColor.checked) theme.awayColor = normHex(el.awayColor.value) || el.awayColor.value;
   const body = {
     court_id: Number(el.court_id.value), home_team_id: Number(el.home_team_id.value), away_team_id: Number(el.away_team_id.value),
     scheduled_at: el.scheduled_at.value || null /* naive local time, interpreted in league TZ by Postgres */, division: el.division.value, theme,
@@ -288,7 +310,8 @@ $('#slot-rows').addEventListener('change', () => { slotsDirty = true; });
 // Season colors: one dark + one light for every team. Checked here with Sage's window.Contrast helpers.
 function seasonCheck() {
   const f = $('#season-form'), box = $('#season-contrast'), C = window.Contrast; if (!C) return;
-  const d = f.elements.dark.value, l = f.elements.light.value, rows = [];
+  const d = normHex(f.elements.dark.value), l = normHex(f.elements.light.value), rows = [];
+  if (!d || !l) { box.innerHTML = '<div class="cw-row">⚠ Enter both colors as hex, like #800000 or #FC2.</div>'; box.hidden = false; box.classList.add('bad'); return; }
   const wd = C.ratio('#ffffff', d), dl = C.ratio(C.DARK, l), dvl = C.ratio(d, l);
   rows.push(`White text on dark: ${C.fmt(wd)} ${wd >= 4.5 ? '✔' : '⚠ below 4.5:1'}`);
   rows.push(`Dark text on light: ${C.fmt(dl)} ${dl >= 4.5 ? '✔' : '⚠ below 4.5:1'}`);
@@ -305,7 +328,7 @@ $('#season-form').addEventListener('submit', guard(async (e) => {
 }));
 async function loadSeason() {
   const s = await api('/api/settings/season'); const f = $('#season-form');
-  f.elements.name.value = s.name; f.elements.dark.value = s.dark; f.elements.light.value = s.light; seasonCheck();
+  f.elements.name.value = s.name; setHex(f, 'dark', s.dark); setHex(f, 'light', s.light); seasonCheck();
 }
 
 for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-courts', '/api/import/courts.csv'], ['#import-schedule', '/api/import/schedule.csv'],

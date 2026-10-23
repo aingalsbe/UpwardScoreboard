@@ -341,7 +341,7 @@ console.log('15. Church branding, season colors, cheer squads, grades');
 const pubW = (await api('/api/public/court/west')).body;
 ok(pubW.church?.name === 'Lenexa Baptist Church' && /Lenexa Baptist Church/.test(pubW.league), `TV header branding: "${pubW.church?.name}" / "${pubW.league}"`);
 const seasonNow = (await api('/api/settings/season')).body;
-ok(/^#[0-9a-f]{6}$/.test(seasonNow.dark) && /^#[0-9a-f]{6}$/.test(seasonNow.light), `season colors: ${seasonNow.name} dark ${seasonNow.dark} light ${seasonNow.light}`);
+ok(/^#[0-9A-F]{6}$/.test(seasonNow.dark) && /^#[0-9A-F]{6}$/.test(seasonNow.light), `season colors: ${seasonNow.name} dark ${seasonNow.dark} light ${seasonNow.light}`);
 const gW = pubW.game;
 ok(gW.homeSide === 'light' && gW.home.color === seasonNow.light && gW.away.color === seasonNow.dark && gW.home.accent === seasonNow.dark, 'default: home wears light, away wears dark (season colors, not team colors)');
 const badSeason = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify({ dark: seasonNow.light, light: seasonNow.dark }) });

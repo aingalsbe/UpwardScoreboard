@@ -36,8 +36,8 @@
       <h2>Season colors</h2>
       <form id="season-form" class="card form">
         <label>Season <input name="name" id="season-name" maxlength="40"></label>
-        <label class="season-swatch dark">Dark color (away) <span class="swatch-wrap"><input type="color" name="dark" id="season-dark"><span class="swatch-sample" aria-hidden="true">White text · 88</span></span></label>
-        <label class="season-swatch light">Light color (home) <span class="swatch-wrap"><input type="color" name="light" id="season-light"><span class="swatch-sample" aria-hidden="true">Dark text · 88</span></span></label>
+        <label class="season-swatch dark">Dark color (away) <span class="swatch-wrap"><input type="color" id="season-dark" data-hex-for="dark" aria-label="Dark color swatch"><span class="swatch-sample" aria-hidden="true">White text · 88</span></span><input class="hex" name="dark" placeholder="#800000" maxlength="7" spellcheck="false" autocomplete="off" pattern="#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})" title="Hex color like #1E90FF (#RGB or #RRGGBB)" aria-label="Dark color (hex)"></label>
+        <label class="season-swatch light">Light color (home) <span class="swatch-wrap"><input type="color" id="season-light" data-hex-for="light" aria-label="Light color swatch"><span class="swatch-sample" aria-hidden="true">Dark text · 88</span></span><input class="hex" name="light" placeholder="#FFC72C" maxlength="7" spellcheck="false" autocomplete="off" pattern="#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})" title="Hex color like #1E90FF (#RGB or #RRGGBB)" aria-label="Light color (hex)"></label>
         <p class="muted full">Every team wears one of these two. Home = light and away = dark unless a game has "Swap colors" ticked.</p>
         <div class="contrast-warn season-contrast full" id="season-contrast" role="status" aria-live="polite" hidden></div>
         <div class="actions"><button class="primary" id="season-save">Save season colors</button></div>
@@ -90,11 +90,11 @@
         <details class="full advanced"><summary>Advanced: matchup overrides (display names, alternate colors instead of the season colors)</summary>
           <div class="form">
             <label>Home display name <input name="homeName"></label>
-            <label>Home color <input type="color" name="homeColor" data-optional></label>
+            <label>Home color <span class="hex-pick"><input type="color" data-hex-for="homeColor" aria-label="Home color swatch"><input class="hex" name="homeColor" placeholder="#1E90FF" maxlength="7" spellcheck="false" autocomplete="off" pattern="#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})" title="Hex color like #1E90FF (#RGB or #RRGGBB)" aria-label="Home color (hex)"></span></label>
             <label>Away display name <input name="awayName"></label>
-            <label>Away color <input type="color" name="awayColor" data-optional></label>
+            <label>Away color <span class="hex-pick"><input type="color" data-hex-for="awayColor" aria-label="Away color swatch"><input class="hex" name="awayColor" placeholder="#1E90FF" maxlength="7" spellcheck="false" autocomplete="off" pattern="#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})" title="Hex color like #1E90FF (#RGB or #RRGGBB)" aria-label="Away color (hex)"></span></label>
             <div class="contrast-warn full" data-contrast-for="game-form" role="status" aria-live="polite" hidden></div>
-            <p class="muted full">Colors only apply if you change them (tick ✔ means used): <label class="inline"><input type="checkbox" name="useHomeColor"> home</label> <label class="inline"><input type="checkbox" name="useAwayColor"> away</label></p>
+            <p class="muted full">Type a hex color like #1E90FF (or #F00), or pick one from the swatch. A color you enter is used automatically (✔); clear it to go back to the season color: <label class="inline"><input type="checkbox" name="useHomeColor"> home</label> <label class="inline"><input type="checkbox" name="useAwayColor"> away</label></p>
           </div>
         </details>
         <div class="actions"><button class="primary" id="game-save">Add game</button><button type="reset" class="link">Clear</button></div>

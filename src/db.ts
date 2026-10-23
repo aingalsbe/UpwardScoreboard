@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { toHexLoose } from './color.js';
 import { PRACTICE_SCHEMA, seedPracticeDemo } from './practice.js';
 import { demoWeekend, demoSeedPlan, gradeOrder, LEAGUE_TZ, hourSlot, DEMO_COACHES, slotRooms, slotSeed } from './schedule.js';
 
@@ -150,6 +151,34 @@ export async function migrate(): Promise<void> {
   await migrateCheerSlots();
   await migrateSixPeriods();
   await migrateSixMinPeriods();
+  await migrateColors();
+}
+
+/**
+ * Colors -> uppercase #RRGGBB (team colors, season colors, per-game theme overrides). Converts old rgb()/rgba() and
+ * lowercase / 3-digit hex. Runs on every start (and after seeding); idempotent: only rows that aren't already
+ * canonical are written, and it never touches scores, clocks or schedule fields, so it is safe with games
+ * scheduled or live. A value that can't be read as a color is left as is and logged. Returns rows changed.
+ */
+export async function migrateColors(): Promise<number> {
+  const CANON = '^#[0-9A-F]{6}$';
+  let n = 0;
+  const fix = (v: any, where: string) => { const h = toHexLoose(v); if (!h) console.warn(`Color migration: ${where} has "${v}", not a color; left as is.`); return h; };
+  for (const r of (await pool.query(`SELECT id, primary_color, secondary_color FROM teams WHERE primary_color !~ $1 OR secondary_color !~ $1`, [CANON])).rows) {
+    const p = fix(r.primary_color, `team #${r.id} primary_color`) ?? r.primary_color, s = fix(r.secondary_color, `team #${r.id} secondary_color`) ?? r.secondary_color;
+    if (p !== r.primary_color || s !== r.secondary_color) { await pool.query('UPDATE teams SET primary_color=$2, secondary_color=$3 WHERE id=$1', [r.id, p, s]); n++; }
+  }
+  for (const r of (await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_dark','season_light') AND value !~ $1`, [CANON])).rows) {
+    const h = fix(r.value, `setting ${r.key}`); if (h && h !== r.value) { await pool.query('UPDATE settings SET value=$2 WHERE key=$1', [r.key, h]); n++; }
+  }
+  const KEYS = ['homeColor', 'awayColor', 'homeAccent', 'awayAccent'];
+  for (const r of (await pool.query(`SELECT id, theme FROM games WHERE theme ?| $1::text[]`, [KEYS])).rows) {
+    const t = { ...r.theme }; let ch = false;
+    for (const k of KEYS) if (k in t && !new RegExp(CANON).test(String(t[k]))) { const h = fix(t[k], `game #${r.id} theme.${k}`); if (h) { t[k] = h; ch = true; } }
+    if (ch) { await pool.query('UPDATE games SET theme=$2 WHERE id=$1', [r.id, t]); n++; }
+  }
+  if (n) console.log(`Color migration: ${n} row(s) converted to #RRGGBB.`);
+  return n;
 }
 
 export const SIX_MIN_MS = 6 * 60_000;

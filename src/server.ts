@@ -7,7 +7,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { pool, migrate, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
+import { normHex, COLOR_HELP } from './color.js';
+import { pool, migrate, migrateColors, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
 import { scorekeeperView, publicView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
@@ -170,7 +171,7 @@ async function gameHidesScore(gameId: number): Promise<boolean> {
 // ------------------------------------------------------------ view models
 // Season colors: every team wears the season's dark or light color. Default home = light, away = dark;
 // games.swap_colors flips it. Advanced per-matchup theme colors (Admin > game > Advanced) still win.
-let season = { name: '2026–27 Upward', dark: '#800000', light: '#ffc72c' };
+let season = { name: '2026–27 Upward', dark: '#800000', light: '#FFC72C' };
 async function loadSeason() {
   const { rows } = await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_name','season_dark','season_light')`);
   for (const r of rows) (season as any)[r.key.slice(7)] = r.value;
@@ -476,25 +477,26 @@ const readJson = async (req: http.IncomingMessage) => {
   const t = await readBody(req);
   try { return t ? JSON.parse(t) : {}; } catch { throw new HttpError(400, 'Request body is not valid JSON'); }
 };
-const HEX = /^#[0-9a-fA-F]{6}$/;
-/** Strict color: empty -> default, valid #RRGGBB -> itself, anything else -> 400. */
-function color(v: any, d: string, field: string): string {
-  const s = typeof v === 'string' ? v.trim() : '';
+/** Strict color: empty -> d, #RGB / #RRGGBB (any case) -> uppercase #RRGGBB, anything else -> 400. */
+function color(v: any, d: string | null, field: string): string | null {
+  const s = typeof v === 'string' ? v.trim() : v == null ? '' : String(v);
   if (!s) return d;
-  if (!HEX.test(s)) throw new HttpError(400, `${field} "${s.slice(0, 20)}" is not a color; use #RRGGBB, e.g. #7a1020`);
-  return s.toLowerCase();
+  const h = normHex(s);
+  if (!h) throw new HttpError(400, `${field} "${s.slice(0, 20)}" is not a color; ${COLOR_HELP}`);
+  return h;
 }
 
 const genderOf = (v: unknown) => { try { return normalizeGender(v); } catch (e: any) { throw new HttpError(400, e.message); } };
 const gradeOf = (v: unknown) => { try { return normalizeGrade(v); } catch (e: any) { throw new HttpError(400, e.message); } };
-function teamValues(b: any) {
+function teamValues(b: any, strictColors = true) {
   const name = String(b.name || '').trim();
   if (!name) throw new HttpError(400, 'name required');
   if (name.length > 30) throw new HttpError(400, 'name longer than 30 characters');
   // Team colors are no longer used (season colors apply); kept only when a valid one is sent.
-  const opt = (v: any) => (HEX.test(String(v ?? '').trim()) ? String(v).trim().toLowerCase() : null);
-  return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), opt(b.primary_color),
-    opt(b.secondary_color), safeLogoUrl(b.logo_url), gradeOf(b.grade), genderOf(b.gender)] as const;
+  // API: a bad color is a 400; teams.csv (old files with color columns): bad colors are ignored as before.
+  const opt = (v: any, f: string) => (strictColors ? color(v, null, f) : normHex(v));
+  return [name, String(b.short_name || name.slice(0, 3)).trim().toUpperCase().slice(0, 4), opt(b.primary_color, 'primary_color'),
+    opt(b.secondary_color, 'secondary_color'), safeLogoUrl(b.logo_url), gradeOf(b.grade), genderOf(b.gender)] as const;
 }
 /** Resolve a team by name (+ optional grade). Without a grade the name must be unambiguous. */
 async function findTeam(name: string, grade: string | null, gender: string | null = null): Promise<{ id: number; grade: string | null; gender: string | null } | { error: string } | null> {
@@ -511,11 +513,11 @@ async function findTeam(name: string, grade: string | null, gender: string | nul
 }
 const dupTeam = (e: any, b: any) => /teams_grade_gender_name_uk|teams_grade_name_uk|teams_name_key/.test(e.message)
   ? new HttpError(409, `A team named "${String(b.name || '').trim()}" already exists${divisionLabel(gradeOf(b.grade), genderOf(b.gender)) ? ' in ' + divisionLabel(gradeOf(b.grade), genderOf(b.gender)) : ''}. Team names must be unique within a grade and gender.`) : e;
-async function upsertTeam(b: any, id?: number) {
-  try { return await upsertTeamRaw(b, id); } catch (e: any) { throw dupTeam(e, b); }
+async function upsertTeam(b: any, id?: number, strictColors = true) {
+  try { return await upsertTeamRaw(b, id, strictColors); } catch (e: any) { throw dupTeam(e, b); }
 }
-async function upsertTeamRaw(b: any, id?: number) {
-  const vals = teamValues(b);
+async function upsertTeamRaw(b: any, id?: number, strictColors = true) {
+  const vals = teamValues(b, strictColors);
   coachOf(b.coach); // validate before any write
   const logo = decodeLogo(b.logo_data_url);
   if (id) {
@@ -839,7 +841,7 @@ async function importTeams(text: string): Promise<ImportResult> {
   for (const [i, r] of rows.entries()) {
     const line = i + 2;
     try {
-      const v = teamValues(r); const hasGrade = headers.includes('grade'), hasGender = headers.includes('gender');
+      const v = teamValues(r, false); const hasGrade = headers.includes('grade'), hasGender = headers.includes('gender');
       const key = `${hasGrade ? v[5] ?? '' : '*'}|${hasGender ? v[6] ?? '' : '*'}|${v[0].toLowerCase()}`;
       if (seen.has(key)) { out.skipped++; out.errors.push(`row ${line}: duplicate of row ${seen.get(key)} (skipped)`); continue; }
       seen.set(key, line);
@@ -855,11 +857,11 @@ async function importTeams(text: string): Promise<ImportResult> {
         if (sameName.length > 1) throw new HttpError(400, `"${v[0]}" exists in ${sameName.map((t) => t.grade || 'no grade').join(' and ')}; add a grade column`);
         ex = sameName[0]; delete (r as any).grade; // keep the team's grade
       }
-      if (!ex) { await upsertTeam(r); out.created++; continue; }
+      if (!ex) { await upsertTeam(r, undefined, false); out.created++; continue; }
       const same = ex.name === v[0] && ex.short_name === v[1] && (ex.logo_url ?? null) === v[4] && (!headers.includes('grade') || (ex.grade ?? null) === v[5]) && (!hasGender || (ex.gender ?? null) === v[6])
         && (!headers.includes('coach') || (ex.coach ?? null) === coachOf(r.coach)); // color columns are ignored (season colors); absent coach column = keep
       if (same) { out.skipped++; continue; }
-      await upsertTeam(r, ex.id); out.updated++;
+      await upsertTeam(r, ex.id, false); out.updated++;
     } catch (e: any) { out.errors.push(`row ${line}: ${e.message}`); }
   }
   return out;
@@ -1284,8 +1286,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     if (m === 'GET') return json(res, 200, season);
     if (m === 'PUT') {
       const b = await readJson(req);
-      const dark = String(b.dark || '').trim().toLowerCase(), light = String(b.light || '').trim().toLowerCase();
-      if (!HEX.test(dark) || !HEX.test(light)) throw new HttpError(400, 'dark and light must be #RRGGBB colors');
+      const dark = color(b.dark, null, 'dark'), light = color(b.light, null, 'light');
+      if (!dark || !light) throw new HttpError(400, `dark and light are required; ${COLOR_HELP}`);
       if (lum(dark) >= lum(light)) throw new HttpError(400, 'the dark color must be darker than the light color');
       const name = String(b.name ?? season.name).trim().slice(0, 40) || season.name;
       for (const [k, v] of [['season_name', name], ['season_dark', dark], ['season_light', light]]) await pool.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
@@ -1370,7 +1372,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         await pool.query('UPDATE games SET home_team_id=$2, away_team_id=$3 WHERE id=$1', [id, b.home_team_id, b.away_team_id]);
       }
       await gameExtrasFromBody(id, b);
-      await broadcastGame(id); scheduleChanged(); return json(res, 200, { id, warnings: await warningsFor(id) });
+      // Every court, not just the one playing this game: TVs/overlays also show it in Up next / Today, so a color
+      // or name change must reach them live (and the schedule screens via scheduleChanged).
+      await refreshAllCourts(); scheduleChanged(); return json(res, 200, { id, warnings: await warningsFor(id) });
     }
     if (m === 'DELETE' && id) { runtimes.delete(id); await pool.query('DELETE FROM games WHERE id=$1', [id]); await refreshAllCourts(); return json(res, 200, { ok: true }); }
     if (m === 'POST' && id && seg[3] === 'start') { // admin "Start on court" (force = start anyway despite the shared floor)
@@ -1502,8 +1506,8 @@ function sanitizeTheme(t: any) {
   if (!t || typeof t !== 'object') return o;
   for (const side of ['home', 'away']) {
     if (t[`${side}Name`]) o[`${side}Name`] = String(t[`${side}Name`]).slice(0, 30);
-    if (HEX.test(t[`${side}Color`] || '')) o[`${side}Color`] = t[`${side}Color`];
-    if (HEX.test(t[`${side}Accent`] || '')) o[`${side}Accent`] = t[`${side}Accent`];
+    // A bad color is a 400 (it used to be dropped silently, which wiped the override on save).
+    for (const k of [`${side}Color`, `${side}Accent`]) { const c = color(t[k], null, k); if (c) o[k] = c; }
     if (t[`${side}Logo`]) o[`${side}Logo`] = safeLogoUrl(t[`${side}Logo`])!;
   }
   return o;
@@ -1584,6 +1588,7 @@ async function main() {
   }
   if (process.env.SEED === 'true' && (await seedIfEmpty())) console.log('Seeded demo teams, courts and games.');
   if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.\n' + formatReport(await loadLogos(pool)));
+  await migrateColors(); // seeds write lowercase hex; normalize to #RRGGBB (idempotent)
   await loadSeason();
   attachWs(server);
   server.listen(PORT, () => console.log(`Scoreboard listening on :${(server.address() as any)?.port ?? PORT}`)); // PORT=0 -> OS-picked port (tests)

@@ -119,7 +119,8 @@
     const rows = [];
     [['homeColor', 'useHomeColor', 'Home'], ['awayColor', 'useAwayColor', 'Away']].forEach(([k, use, lbl]) => {
       if (!f.elements[k] || (f.elements[use] && !f.elements[use].checked)) return;
-      const P = f.elements[k].value, w = C.ratio('#ffffff', P);
+      const P = f.elements[k].value; if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(P.trim())) return;
+      const w = C.ratio('#ffffff', P);
       if (w < 4.5) rows.push(`${chip('#fff', P)} ${lbl}: white text on ${esc(nm(P))} is <b>${C.fmt(w)}</b>. Displays will use dark text ${chip(C.DARK, P)} (${C.fmt(C.ratio(C.DARK, P))}).`);
     });
     return rows;

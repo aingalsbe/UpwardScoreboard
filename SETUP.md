@@ -153,6 +153,10 @@ None. UpwardScoreboard has no cron jobs and no `DIGEST_CRON_ENABLED` or `WEATHER
 - [ ] Optional, with Node 20: `npm ci` then `npm test`; `npm run smoke` against the running app
 - [ ] `git status` shows no `.env`
 
+### Colors
+
+All colors (season dark/light, per-game Home/Away overrides, legacy team colors) are hex: Admin shows a hex text box next to the swatch; the API accepts `#RGB` or `#RRGGBB` in any case and stores uppercase `#RRGGBB` (`src/color.ts`). Anything else is a 400 (`dark "rgb(0,0,0)" is not a color; use hex like #1E90FF (#RGB or #RRGGBB)`); old teams.csv color columns are still ignored when invalid. At every start `migrateColors()` (src/db.ts) converts stored `rgb()`/`rgba()`/lowercase/3-digit values to `#RRGGBB` (only color fields, idempotent, safe with games scheduled or live; unreadable values are left and logged). A saved change reaches open TVs, overlays and scorekeepers over the WebSocket with no reload (`scripts/colors-e2e.mjs`).
+
 ### Test clock (e2e only)
 
 The e2e scripts create games "now", which is only legal on Fri/Sat 08:00–21:00. `scripts/run-e2e.sh <script...>` runs each script on a fresh `scoreboard_test_e2e` database with **`SCOREBOARD_TEST_NOW`** set to the next game day (Fri 10:00 league time, from `scripts/_gameday.mjs`). The seed, the server (`src/test-clock.ts`, first import) and the script all shift their clock to that instant and keep ticking; scripts pin Playwright browsers to it (`pinBrowserClock`). Court "today"/"Up next" queries use the app clock instead of SQL `now()` so they follow it. **Never set `SCOREBOARD_TEST_NOW` in production**: with `NODE_ENV=production` (the Docker image) the server refuses to start if it is set. `E2E_REAL_CLOCK=1` runs on the real clock. Other weekdays can be simulated with a clock-shift preload, e.g. `FAKE_OFFSET_MS=<ms> NODE_OPTIONS="--require /tmp/avery-fakedate.cjs" scripts/run-e2e.sh ...`.
