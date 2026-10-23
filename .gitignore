@@ -25,3 +25,5 @@ uploads/
 test-results/
 playwright-report/
 coverage/
+# Droplet-local compose file (Aaron's server keeps its own compose.yaml with secrets); ours is docker-compose.yml
+compose.yaml
