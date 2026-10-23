@@ -37,7 +37,26 @@ function route() {
 window.addEventListener('hashchange', route);
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString([], { timeZone: leagueTz, weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
-const swatch = (t) => `<span class="swatch" style="background:${esc(t.primary_color)};border-color:${esc(t.secondary_color)}"></span>`;
+// Team-list color: the team's own saved colors (teams.primary/secondary_color) when they're set (not the untouched
+// column defaults #333333/#FFFFFF), else the season colors (light = home, dark = away), marked as the season default.
+// Game displays (TV/overlay/scorekeeper) always use the season colors or a per-game override, never these columns.
+let seasonColors = null;
+const TEAM_DEFAULT = ['#333333', '#FFFFFF'];
+function teamColors(t) {
+  const p = String(t.primary_color || '').toUpperCase(), a = String(t.secondary_color || '').toUpperCase();
+  if (p && a && (p !== TEAM_DEFAULT[0] || a !== TEAM_DEFAULT[1])) return { src: 'team', main: p, edge: a, title: `Team colors ${p} / ${a} (saved on the team; game displays use the season colors)` };
+  if (!seasonColors) return null;
+  const L = seasonColors.light.toUpperCase(), D = seasonColors.dark.toUpperCase();
+  return { src: 'season', main: L, edge: D, title: `Season default: light ${L} (home) / dark ${D} (away)` };
+}
+const swatch = (t) => { const c = teamColors(t); if (!c) return '';
+  return `<span class="team-color" data-color-src="${c.src}" title="${esc(c.title)}"><span class="swatch" style="background:${esc(c.main)};border-color:${esc(c.edge)}"></span> <code class="hex-val">${esc(c.main)} / ${esc(c.edge)}</code>${c.src === 'season' ? ' <span class="tag season-tag">season default</span>' : ''}</span>`; };
+
+function renderTeams(tf = $('#team-grade-filter').value) {
+  $('#team-rows').innerHTML = teams.filter((t) => !tf || t.grade === tf).map((t) => `<tr data-team-row="${t.id}"><td>${t.has_logo || t.logo_url ? `<img class="mini" src="${t.has_logo ? `/logos/${t.id}?v=${Date.now()}` : esc(t.logo_url)}" alt=""> ` : ''}${swatch(t)}</td>
+    <td>${esc(t.grade || '—')}</td><td>${esc(t.gender || '—')}</td><td>${esc(t.name)}</td><td>${esc(t.short_name)}</td><td>${t.coach ? `Coach ${esc(t.coach)}` : '<span class="muted">—</span>'}</td>
+    <td class="right"><button class="link sm" data-edit-team="${t.id}">Edit</button><button class="link sm" data-del-team="${t.id}">Delete</button></td></tr>`).join('');
+}
 
 async function load() {
   [teams, courts, games, squads, warnings] = await Promise.all([api('/api/teams'), api('/api/courts'), api('/api/games'), api('/api/cheer-squads'), api('/api/warnings')]);
@@ -139,9 +158,7 @@ function render() {
   const grades = [...new Set(teams.map((t) => t.grade).filter(Boolean))];
   for (const sel of document.querySelectorAll('[data-grade-filter]')) { const v = sel.value; sel.innerHTML = '<option value="">All grades</option>' + grades.map((g) => `<option>${esc(g)}</option>`).join(''); sel.value = grades.includes(v) ? v : ''; }
   $('#grade-list').innerHTML = grades.map((g) => `<option value="${esc(g)}">`).join('');
-  $('#team-rows').innerHTML = teams.filter((t) => !tf || t.grade === tf).map((t) => `<tr><td>${t.has_logo || t.logo_url ? `<img class="mini" src="${t.has_logo ? `/logos/${t.id}?v=${Date.now()}` : esc(t.logo_url)}" alt="">` : swatch(t)}</td>
-    <td>${esc(t.grade || '—')}</td><td>${esc(t.gender || '—')}</td><td>${esc(t.name)}</td><td>${esc(t.short_name)}</td><td>${t.coach ? `Coach ${esc(t.coach)}` : '<span class="muted">—</span>'}</td>
-    <td class="right"><button class="link sm" data-edit-team="${t.id}">Edit</button><button class="link sm" data-del-team="${t.id}">Delete</button></td></tr>`).join('');
+  renderTeams(tf);
   $('#court-rows').innerHTML = courts.map((c) => `<tr><td>${esc(c.name)}</td><td><code>${esc(c.slug)}</code></td><td>${c.has_pin ? '✔' : '<span class="bad">no PIN — scorekeeping disabled</span>'}</td>
     <td><a href="/tv/${esc(c.slug)}" target="_blank">TV</a> · <a href="/score/${esc(c.slug)}" target="_blank">Score</a> · <a href="/overlay/${esc(c.slug)}" target="_blank">Overlay</a></td>
     <td class="right"><button class="link sm" data-del-court="${c.id}">Delete</button></td></tr>`).join('');
@@ -324,10 +341,12 @@ $('#season-form').addEventListener('input', seasonCheck);
 $('#season-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;
   const r = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify({ name: f.elements.name.value, dark: f.elements.dark.value, light: f.elements.light.value }) });
+  seasonColors = r.dark ? r : await api('/api/settings/season'); renderTeams();
   msg(`Season colors saved (${r.name}). TVs update automatically.`);
 }));
 async function loadSeason() {
   const s = await api('/api/settings/season'); const f = $('#season-form');
+  seasonColors = s; renderTeams();
   f.elements.name.value = s.name; setHex(f, 'dark', s.dark); setHex(f, 'light', s.light); seasonCheck();
 }
 
@@ -356,7 +375,11 @@ function live() {
     onStatus: (st) => { document.documentElement.dataset.live = st; },
   });
 }
-async function refreshLive() { try { games = await api('/api/games'); renderLive(); } catch {} }
+async function refreshLive() {
+  try { games = await api('/api/games'); renderLive(); } catch {}
+  // Team / season color saves also push (refreshAllCourts): keep the team-list colors current in other tabs too.
+  try { [teams, seasonColors] = await Promise.all([api('/api/teams'), api('/api/settings/season')]); renderTeams(); } catch {}
+}
 api('/api/me').then((me) => { leagueTz = me.tz; boot(); }).catch(() => {});
 
 for (const sel of document.querySelectorAll('[data-grade-filter]')) sel.addEventListener('change', () => render());

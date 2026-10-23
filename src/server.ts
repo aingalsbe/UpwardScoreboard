@@ -529,7 +529,7 @@ async function upsertTeamRaw(b: any, id?: number, strictColors = true) {
     if (b.remove_logo) await pool.query('UPDATE teams SET logo_data=NULL, logo_mime=NULL WHERE id=$1', [id]);
     return id;
   }
-  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order, gender, coach) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#ffffff'),$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6], coachOf(b.coach)]);
+  const r = await pool.query(`INSERT INTO teams(name, short_name, primary_color, secondary_color, logo_url, logo_data, logo_mime, grade, grade_order, gender, coach) VALUES ($1,$2,COALESCE($3,'#333333'),COALESCE($4,'#FFFFFF'),$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [...vals.slice(0, 5), logo?.data ?? null, logo?.mime ?? null, vals[5], gradeOrder(vals[5]), vals[6], coachOf(b.coach)]);
   return r.rows[0].id as number;
 }
 
