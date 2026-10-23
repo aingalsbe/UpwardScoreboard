@@ -277,3 +277,22 @@ export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
   }
   return games;
 }
+
+/**
+ * Game-day tip-off window (league-local), used by reschedule and by a plain edit that changes the time.
+ * No per-day game hours are configured anywhere else (split-court 08:00–16:00 is only a warning), so this is the
+ * DEFAULT for Aaron to confirm: first tip 08:00, last tip 21:00 (inclusive), Friday and Saturday only.
+ */
+export const GAME_DAYS = [5, 6] as const; // Fri, Sat
+export const GAME_TIP_WINDOW = { first: '08:00', last: '21:00' } as const;
+const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/** Calendar-valid YYYY-MM-DD (2026-02-30 -> false). */
+export const isIsoDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T12:00:00Z')) && new Date(d + 'T12:00:00Z').toISOString().slice(0, 10) === d;
+/** Hard errors for a game at league-local date + HH:MM: Fri/Sat only, tip-off inside GAME_TIP_WINDOW. */
+export function gameTimeErrors(date: string, hm: string): string[] {
+  const out: string[] = [];
+  const dow = new Date(`${date}T12:00:00Z`).getUTCDay();
+  if (!(GAME_DAYS as readonly number[]).includes(dow)) out.push(`Games can only be on Friday or Saturday (${DOW_NAMES[dow]} ${date} is not).`);
+  if (hm < GAME_TIP_WINDOW.first || hm > GAME_TIP_WINDOW.last) out.push(`Tip-off ${hm} is outside game hours (${GAME_TIP_WINDOW.first}–${GAME_TIP_WINDOW.last} league time).`);
+  return out;
+}

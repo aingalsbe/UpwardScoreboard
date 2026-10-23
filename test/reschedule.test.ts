@@ -14,11 +14,12 @@ const skip = !BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BAS
 let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null; let URL_ = '';
 const PORT = 39000 + Math.floor(Math.random() * 900), BASE = `http://127.0.0.1:${PORT}`, ADMIN = 'resched-admin-pw';
 
-test('lobby note: "Moved from Sat 9:00 AM" until final', { skip: noPub }, async () => {
+test('lobby note: "Moved from Sat 11/7 9:00 AM" (date changed) / "Moved from 9:00 AM" (same day) until final', { skip: noPub }, async () => {
   const { movedText } = await import(path.join(PUB, 'lobby-view.js'));
   const g = { status: 'scheduled', movedFrom: { date: '2026-11-07', day: 'Sat', time: '09:00' } };
-  assert.equal(movedText(g), 'Moved from Sat 9:00 AM');
-  assert.equal(movedText({ ...g, status: 'active' }), 'Moved from Sat 9:00 AM');
+  assert.equal(movedText(g), 'Moved from Sat 11/7 9:00 AM');
+  assert.equal(movedText({ ...g, status: 'active' }), 'Moved from Sat 11/7 9:00 AM');
+  assert.equal(movedText({ status: 'scheduled', movedFrom: { ...g.movedFrom, sameDay: true } }), 'Moved from 9:00 AM');
   assert.equal(movedText({ ...g, status: 'complete' }), null);
   assert.equal(movedText({ status: 'scheduled' }), null);
   const lobby = fs.readFileSync(path.join(PUB, 'lobby.js'), 'utf8'); assert.match(lobby, /movedText\(g\)/);
@@ -113,7 +114,7 @@ test('DB: reschedule rules, audit, lobby note, CSV round-trip, plain PUT checks'
   const list = await (await fetch(`${BASE}/api/games`, { headers: h })).json();
   assert.equal(list.find((g: any) => g.id === g1).cheer, 'Spirit');
   let sched = await (await fetch(`${BASE}/api/public/schedule?date=2026-11-07`)).json();
-  assert.deepEqual(sched.games.find((g: any) => g.id === g1).movedFrom, { date: '2026-11-07', day: 'Sat', time: '09:00' });
+  assert.deepEqual(sched.games.find((g: any) => g.id === g1).movedFrom, { date: '2026-11-07', day: 'Sat', time: '09:00', sameDay: true });
   assert.equal(sched.games.find((g: any) => g.id === g4).movedFrom, undefined);
   for (const c of ['west', 'east', 'full']) assert.doesNotMatch(await (await fetch(`${BASE}/api/public/court/${c}`)).text(), /moved/i, c);
 
@@ -140,9 +141,40 @@ test('DB: reschedule rules, audit, lobby note, CSV round-trip, plain PUT checks'
   const p1 = await put(g2, '2026-11-07T14:30:00-06:00'); assert.equal(p1.status, 409); assert.match((await p1.json()).error, /West is already in use/);
   const p2 = await put(g4, '2026-11-07T14:00:00-06:00'); assert.equal(p2.status, 409); assert.match((await p2.json()).error, /TA already plays then/);
   assert.equal((await put(g4, '2026-11-07T16:00:00-06:00')).status, 200, 'a free slot still saves');
+  // QA r17: the plain PUT is audited and sets moved_from on the first move only
+  assert.equal((await row(g4)).mf, '2026-11-07 13:00');
+  assert.equal((await put(g4, '2026-11-07T17:00:00-06:00')).status, 200);
+  assert.equal((await row(g4)).mf, '2026-11-07 13:00', 'first move only');
+  const h4 = await (await fetch(`${BASE}/api/games/${g4}/changes`, { headers: h })).json();
+  assert.deepEqual(h4.map((c: any) => [c.kind, c.before.time, c.after.time]), [['reschedule', '13:00', '16:00'], ['reschedule', '16:00', '17:00']]);
+  // ... and follows the Fri/Sat + game-hours rules (409 + errors[]), nothing written
+  for (const [at, re] of [['2026-11-09T10:00:00-06:00', /Friday or Saturday/], ['2026-11-07T03:00:00-06:00', /outside game hours/], ['2026-11-07T23:30:00-06:00', /outside game hours/]] as const) {
+    const r = await put(g4, at); assert.equal(r.status, 409, at); const j = await r.json(); assert.match(j.errors.join(' '), re, at);
+  }
+  for (const bad of ['2026-02-30T10:00:00-06:00', '2026-02-31T10:00:00-06:00', 'whenever']) assert.equal((await put(g4, bad)).status, 400, bad);
+  assert.equal((await row(g4)).at, '2026-11-07 17:00'); assert.equal((await pool.query('SELECT count(*)::int n FROM game_changes WHERE game_id=$1', [g4])).rows[0].n, 2);
+  assert.equal((await fetch(`${BASE}/api/games/${g4}`, { method: 'PUT', headers: h, body: JSON.stringify({ scheduled_at: '2026-11-07T17:00:00-06:00' }) })).status, 200, 'unchanged time: no rule, no audit');
+  assert.equal((await pool.query('SELECT count(*)::int n FROM game_changes WHERE game_id=$1', [g4])).rows[0].n, 2);
+
+  // QA r17: game hours on reschedule (GAME_TIP_WINDOW 08:00–21:00 league time, last tip 21:00), real calendar dates
+  for (const t of ['03:00', '00:00', '23:30', '07:59', '21:01']) {
+    const r = await rs(g4, { date: '2026-11-07', time: t, dryRun: true }); assert.equal(r.status, 409, t); assert.match(r.body.errors.join(' '), /outside game hours \(08:00–21:00/, t);
+  }
+  for (const t of ['08:00', '21:00']) assert.equal((await rs(g4, { date: '2026-11-07', time: t, dryRun: true })).status, 200, t);
+  for (const d of ['2026-02-30', '2026-02-31', '2026-13-01']) { const r = await rs(g4, { date: d, time: '10:00' }); assert.equal(r.status, 400, d); assert.match(r.body.error, /calendar date/); }
 
   // final -> the note disappears
   await pool.query(`UPDATE games SET status='complete', final_home=1, final_away=0 WHERE id=$1`, [g1]);
   sched = await (await fetch(`${BASE}/api/public/schedule?date=2026-11-07`)).json();
   assert.equal(sched.games.find((g: any) => g.id === g1).movedFrom, undefined);
+});
+
+// QA r17 BLOCKER: a SyntaxError in public/lobby.js blanked the lobby. Every browser script must parse.
+test('every public/*.js file parses (node --check)', { skip: noPub }, async () => {
+  const { execFileSync } = await import('node:child_process');
+  const files = fs.readdirSync(PUB).filter((f) => f.endsWith('.js'));
+  assert.ok(files.includes('lobby.js') && files.length > 5);
+  const bad: string[] = [];
+  for (const f of files) { try { execFileSync(process.execPath, ['--check', path.join(PUB, f)], { stdio: 'pipe' }); } catch (e: any) { bad.push(`${f}: ${String(e.stderr).split('\n').find((l: string) => /Error/.test(l))}`); } }
+  assert.deepEqual(bad, []);
 });

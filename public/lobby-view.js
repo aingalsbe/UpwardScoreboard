@@ -171,5 +171,11 @@ export function tipOffText(g, slot) {
   return slot === 'now' && g && g.status !== 'active' && g.time ? `Tip-Off: ${ampm(g.time)}` : null;
 }
 
-/** Rescheduled game note: "Moved from Sat 11:00 AM" until the game is final (lobby only; the server sends movedFrom). */
-export const movedText = (g) => (g?.movedFrom && g.status !== 'complete' ? `Moved from ${g.movedFrom.day} ${ampm(g.movedFrom.time)}` : null);
+/** Rescheduled game note until the game is final (lobby only; the server sends movedFrom): "Moved from 11:00 AM" when only
+ *  the time changed, "Moved from Sat 10/24 11:00 AM" when the date changed (QA r17). */
+export const movedText = (g) => {
+  const m = g?.movedFrom; if (!m || g.status === 'complete') return null;
+  if (m.sameDay) return `Moved from ${ampm(m.time)}`;
+  const [, mo, d] = String(m.date || '').split('-').map(Number);
+  return `Moved from ${m.day}${mo && d ? ` ${mo}/${d}` : ''} ${ampm(m.time)}`;
+};

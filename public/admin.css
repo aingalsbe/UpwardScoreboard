@@ -222,3 +222,9 @@ dialog.resched, #history-dlg { max-width: 34rem; border-radius: .6rem; border: 1
 dialog.resched label { display: block; margin: .5rem 0; }
 #resched-preview .errors { color: #a40000; } #resched-preview .ok { color: #1d6b2a; }
 .moved-tag { background: #fff3c4; color: #5a3b00; }
+/* SAGE: stopgap (QA r17): at phone width the Reschedule…/History links made the Today card 460px wide. The action
+   buttons get their own full-width row and wrap. Sage to restyle (maybe a small "⋯" menu). */
+@media (max-width: 600px) {
+  #today .tbl tr.today-row { grid-template-areas: "when court" "match match" "score score" "status status" "actions actions"; }
+  #today .tbl tr.today-row td.right { flex-wrap: wrap; justify-content: flex-start; min-width: 0; }
+}

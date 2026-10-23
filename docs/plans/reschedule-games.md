@@ -6,6 +6,9 @@ Status: **APPROVED** by Aaron 2026-10-23, with the changes under "Approved decis
 1. **Moved note is public.** "Moved from <Day> <time>" shows on the lobby and Up Next (and any schedule list) until the game is final. Never on court TVs, the overlay or the scorekeeper.
 2. **Fri/Sat only**, judged on the league-local date (LEAGUE_TZ). Any other day is a hard 409.
 3. **Date and tip-off time only; no court picker.** Court and lockers are never changed or cleared. Checks still run: shared floor, same court, team double-booked, natural-key duplicate. Cheer comes from the new hour. Only `scheduled` games can move.
+3b. **Game hours (QA r17, DEFAULT for Aaron to confirm):** no game-day hours were configured anywhere (the split-court 08:00–16:00 rule is only a warning), so tip-off must be 08:00–21:00 league time (last tip 21:00). Constant `GAME_TIP_WINDOW` in src/schedule.ts. Outside -> 409.
+3c. **Plain edit = reschedule rules (QA r17):** a `PUT /api/games/:id` that changes `scheduled_at` gets the same Fri/Sat + game-hours checks, sets `moved_from` on the first move and writes a `game_changes` row (kind `reschedule`; court/length-only edits log kind `edit`). An impossible date (2026-02-30) is a 400.
+3d. **Note text (QA r17):** "Moved from Sat 10/24 11:00 AM" when the date changed; "Moved from 11:00 AM" when only the time changed.
 4. **No swap.** Logged as a backlog item in UpwardScoreboard-Bugs.md.
 - `time` is optional in the API and defaults to the current tip-off; the dialog pre-fills it.
 - Kept from the proposal: `POST /api/games/:id/reschedule {date,time?,reason?,dryRun?}` in one transaction with a row lock; dry-run preview (conflicts + cheer at old and new hour); `games.moved_from` set on the first move only; `game_changes` audit table, History view and `GET /api/games/:id/changes`; CSV `moved_from_date`/`moved_from_time` (read-only; import keeps the move and warns); same-court and team checks also on the plain PUT; additive schema only.

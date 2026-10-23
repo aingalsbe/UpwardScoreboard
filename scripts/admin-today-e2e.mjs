@@ -1,6 +1,6 @@
 // Browser e2e for bug A1 (Admin Today list): a completed game shows FINAL with its score, the active game shows LIVE
 // and updates live over the WebSocket (score, complete, reopen) without a reload; at 390px nothing scrolls sideways.
-// Creates two games today on East (05:00 final, 06:00 live) with its own teams, and removes them afterwards.
+// Creates two games today on East (09:00 final, 10:00 live; inside the 08:00–21:00 game hours) with its own teams, and removes them afterwards.
 // Screenshots: OUT_DIR (default: <tmp>/upward-admin-today, so a run never overwrites the tracked docs/screenshots/admin;
 // set OUT_DIR=docs/screenshots/admin on purpose to refresh those)/admin-today-{390,1440}.png
 // Usage: [BASE_URL=http://localhost:3000] [CHROME_PATH=/usr/bin/google-chrome] node scripts/admin-today-e2e.mjs
@@ -29,7 +29,7 @@ for (const g of (await api('/api/games')).filter((g) => g.status === 'active' &&
 const RUN = Date.now().toString(36).slice(-5);
 const mk = async (n) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `${n}-${RUN}`, short_name: n.slice(0, 3), grade: '3rd Grade', gender: 'Boys' }) })).id;
 const tA = await mk('Admn'), tB = await mk('Bdmn');
-const imp = await csv(`date,time,court,grade,gender,home,away\n${today},05:00,east,3rd Grade,Boys,Admn-${RUN},Bdmn-${RUN}\n${today},06:00,east,3rd Grade,Boys,Bdmn-${RUN},Admn-${RUN}\n`);
+const imp = await csv(`date,time,court,grade,gender,home,away\n${today},09:00,east,3rd Grade,Boys,Admn-${RUN},Bdmn-${RUN}\n${today},10:00,east,3rd Grade,Boys,Bdmn-${RUN},Admn-${RUN}\n`);
 const mine = (await api('/api/games')).filter((g) => [tA, tB].includes(g.home_team_id));
 const fin = mine.find((g) => g.home_team_id === tA), act = mine.find((g) => g.home_team_id === tB);
 ok(imp.created === 2 && fin && act, `two games today (${today}) on East`);
@@ -54,7 +54,7 @@ const f1 = await row(fin.id), a1 = await row(act.id);
 ok(f1 && f1.result === 'final' && f1.score === '21–17 ✓ FINAL' && f1.winner === 'home', `completed game shows FINAL with its score, home first ("${f1?.score}")`);
 ok(a1 && a1.result === 'live' && a1.score === '2–0 ● LIVE', `active game shows LIVE with the live score ("${a1?.score}")`);
 const order = await page.evaluate(() => [...document.querySelectorAll('#today-games tr[data-game-id]')].map((r) => Number(r.dataset.gameId)));
-ok(order.indexOf(fin.id) < order.indexOf(act.id), 'order: 05:00 before 06:00');
+ok(order.indexOf(fin.id) < order.indexOf(act.id), 'order: 09:00 before 10:00');
 const mu = await page.evaluate((id) => { const td = document.querySelector(`#today-games tr[data-game-id="${id}"] td.matchup`); return { home: td.querySelector('span.home')?.textContent, away: td.querySelector('span.away')?.textContent, text: td.textContent.replace(/\s+/g, ' ').trim() }; }, fin.id);
 ok(mu.home === `Admn-${RUN}` && mu.away === `Bdmn-${RUN}` && mu.text.startsWith(`3rd Grade Boys · Admn-${RUN} vs Bdmn-${RUN}`), `matchup hook: span.home + span.away, home first, text unchanged ("${mu.text}")`);
 const t0 = Date.now();
@@ -77,11 +77,13 @@ await page.waitForFunction((id) => document.querySelector(`#today-games tr[data-
 await api(`/api/games/${act.id}/complete`, { method: 'POST' });
 const tie = await page.waitForFunction((id) => document.querySelector(`#today-games tr[data-game-id="${id}"]`)?.dataset.result === 'tie', act.id, { timeout: 5000 }).then(() => true).catch(() => false);
 ok(tie && (await row(act.id)).score === '3–3 ✓ FINAL TIE', 'tied final shows FINAL + TIE');
-// edit is pushed too: move the 06:00 game to 04:30 in Admin -> it jumps above the 05:00 final without a reload.
-const at0430 = new Date(new Date(fin.scheduled_at).getTime() - 30 * 60_000).toISOString();
-await api(`/api/games/${act.id}`, { method: 'PUT', body: JSON.stringify({ scheduled_at: at0430 }) });
+// edit is pushed too: move the 10:00 game to 08:00 in Admin -> it jumps above the 09:00 final without a reload.
+// (08:00–09:00 is free: the same-court check still refuses any overlap with the 09:00 final, e.g. 08:30.)
+const at0800 = new Date(new Date(fin.scheduled_at).getTime() - 60 * 60_000).toISOString();
+const editRes = await api(`/api/games/${act.id}`, { method: 'PUT', body: JSON.stringify({ scheduled_at: at0800 }) });
+if (editRes?.error) console.log('  edit refused:', editRes.error, '(the plain edit only allows Fri/Sat; run this on a Friday/Saturday)');
 const moved = await page.waitForFunction(([a, f]) => { const ids = [...document.querySelectorAll('#today-games tr[data-game-id]')].map((r) => Number(r.dataset.gameId)); return ids.indexOf(a) > -1 && ids.indexOf(a) < ids.indexOf(f); }, [act.id, fin.id], { timeout: 5000 }).then(() => true).catch(() => false);
-ok(moved, 'edit (time 06:00 -> 04:30): order updates live (time slot, then court)');
+ok(moved, 'edit (time 10:00 -> 08:00): order updates live (time slot, then court)');
 await api(`/api/games/${act.id}`, { method: 'PUT', body: JSON.stringify({ scheduled_at: act.scheduled_at }) });
 await api(`/api/games/${act.id}/reopen`, { method: 'POST', body: '{"force":true}' }); await sleep(400);
 await page.evaluate(() => document.querySelector('#today-games').closest('.tbl-wrap').scrollIntoView()); await sleep(200);

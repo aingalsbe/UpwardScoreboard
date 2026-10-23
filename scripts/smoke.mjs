@@ -302,7 +302,8 @@ for (const c of [brute2, other, tvA, ph2, ph3, ph4]) c.ws.close();
 
 console.log('14. Shared floor: Full cannot overlap West or East; West and East can overlap');
 const local = (ms) => new Date(ms).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(0, 16).split(' '); // [date, HH:MM]
-const D = (() => { const d = new Date(); d.setUTCHours(21, 0, 0, 0); return d.getTime() + (1 + Math.floor(Math.random() * 900)) * 86_400_000; })(); // ~15:00-16:00 Chicago
+// A random future Saturday (plain edits that move a game follow the Fri/Sat + 08:00–21:00 game-hours rules)
+const D = (() => { const d = new Date(); d.setUTCHours(21, 0, 0, 0); d.setUTCDate(d.getUTCDate() + ((6 - d.getUTCDay() + 7) % 7 || 7)); return d.getTime() + Math.floor(Math.random() * 128) * 7 * 86_400_000; })(); // Sat ~15:00-16:00 Chicago
 const iso = (ms) => new Date(ms).toISOString();
 const made = [];
 const post = async (court, h, a, ms, extra = {}) => { const r = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: court.id, home_team_id: h.id, away_team_id: a.id, scheduled_at: iso(ms), division: `Floor ${RUN}`, ...extra }) }); if (r.body.id) made.push(r.body.id); return r; };
@@ -361,7 +362,7 @@ ok(badLogo.status >= 400 && badLogo.status < 500 && (await api(`/api/games`)).bo
 const exp3 = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).then((r) => r.text());
 const hdr = exp3.split(/\r?\n/)[0];
 const line3 = exp3.split(/\r?\n/).find((l) => l.startsWith(g1.id + ','));
-ok(hdr.endsWith('minutes,grade,gender,swap_colors,home_locker,away_locker') && line3.endsWith(',true,,'), `export carries swap + locker columns; cheer moved to cheer_slots.csv (${line3})`);
+ok(hdr.endsWith('minutes,grade,gender,swap_colors,home_locker,away_locker,moved_from_date,moved_from_time') && line3.endsWith(',true,,,,'), `export carries swap + locker + read-only moved_from columns; cheer moved to cheer_slots.csv (${line3})`);
 const slots3 = await fetch(BASE + '/api/export/cheer_slots.csv', { headers: auth }).then((r) => r.text());
 ok(slots3.includes(`,Cheer ${RUN},`), 'cheer_slots.csv export lists the slot the admin edit set');
 // Only this run's game: other games (e.g. the demo seed) reuse names across grades and need the grade column.
