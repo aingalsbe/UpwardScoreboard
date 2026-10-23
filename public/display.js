@@ -63,16 +63,18 @@ function render() {
     dots(document.querySelector('[data-timeouts="home"]'), s.home.timeoutsLeft, timeoutCap(s.rules));
     dots(document.querySelector('[data-timeouts="away"]'), s.away.timeoutsLeft, timeoutCap(s.rules));
   } else {
-    // Idle: drop every per-game side class and color variable (incl. the ones contrast.js derived), so nothing
-    // from the last game (e.g. home-light) leaks into the Next up screen.
+    // Idle: drop the per-game colors and state classes so nothing from the last game leaks into the Next up screen.
+    // The derived --*-fg/logo-fg/on-dark/ring and *-light/*-accent-fixed stay: contrast.js owns them and recomputes
+    // them from the (season default) colors right after this render (Avery R21b: removing them left #111/#fff).
     for (const side of ['home', 'away']) {
-      for (const v of ['color', 'accent', 'fg', 'logo-fg', 'on-dark', 'ring']) root.style.removeProperty(`--${side}-${v}`);
-      root.classList.remove(`${side}-light`, `${side}-accent-fixed`, `${side}-bonus`, `poss-${side}`);
+      for (const v of ['color', 'accent']) root.style.removeProperty(`--${side}-${v}`);
+      root.classList.remove(`${side}-bonus`, `poss-${side}`);
     }
     root.classList.remove('has-banner', 'final', 'clock-running');
     delete root.dataset.homeSide; delete root.dataset.swapped;
   }
   bindText(document, view);
+  window.Contrast?.reapply?.(); // always re-derive fg vars after a render (idle -> game, game -> idle -> game)
 }
 
 const conn = connect({

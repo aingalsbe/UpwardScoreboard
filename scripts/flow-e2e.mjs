@@ -101,7 +101,7 @@ ok(await ph4.$eval('#pin-err', (e) => /Too many invalid QR codes/.test(e.textCon
 await api(`/api/games/${g2}/complete`, { method: 'POST' });
 await tv.waitForFunction(() => document.documentElement.dataset.status === 'idle', null, { timeout: 6000 }).catch(() => {});
 const idle = await tv.evaluate(() => { const r = document.documentElement; return { cls: [...r.classList].filter((c) => /-(light|accent-fixed)$|^poss-|bonus/.test(c)), color: r.style.getPropertyValue('--home-color'), conn: document.getElementById('idle')?.dataset.conn }; });
-ok(!idle.cls.length && !idle.color && idle.conn === 'online', `idle TV: no leftover side classes/colors, #idle has data-conn (${JSON.stringify(idle)})`);
+ok(!idle.cls.filter((c) => !/-(light|accent-fixed)$/.test(c)).length && !idle.color && idle.conn === 'online', `idle TV: no leftover side classes/colors, #idle has data-conn (${JSON.stringify(idle)})`);
 ok(await ph.evaluate(() => document.getElementById('pin-gate').dataset.conn === 'online' && document.getElementById('picker').dataset.conn === 'online'), 'scorekeeper screens carry data-conn');
 
 await browser.close();

@@ -60,11 +60,14 @@
   const CHROME = '#1b2340';
   const root = document.documentElement;
   let last = '';
-  function apply() {
+  function apply(force) {
     const cs = getComputedStyle(root);
     const vals = ['home', 'away'].map((s) => [cs.getPropertyValue(`--${s}-color`).trim(), cs.getPropertyValue(`--${s}-accent`).trim()]);
     const key = JSON.stringify(vals);
-    if (key === last) return;
+    // Avery R21b: the cache is only valid while the derived vars are still on <html>; if any is missing (e.g. a page
+    // cleared them), recompute even when the colors themselves did not change.
+    const missing = ['home', 'away'].some((s) => ['fg', 'logo-fg', 'on-dark', 'ring'].some((v) => !root.style.getPropertyValue(`--${s}-${v}`)));
+    if (key === last && !force && !missing) return;
     last = key;
     ['home', 'away'].forEach((side, i) => {
       const [color, accent] = vals[i];
@@ -82,7 +85,8 @@
       root.classList.toggle(`${side}-accent-fixed`, logoFg !== acc);
     });
   }
-  new MutationObserver(apply).observe(root, { attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(() => apply()).observe(root, { attributes: true, attributeFilter: ['style'] });
+  Contrast.reapply = () => apply(true); // display.js calls this after every render
   apply();
 })();
 

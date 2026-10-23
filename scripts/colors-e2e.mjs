@@ -142,6 +142,34 @@ try {
   await p.waitForTimeout(11500);
   ok(await p.inputValue('#season-form [name=light]') === '#12', 'typed season light kept across the background reload');
   ok(/#224466/i.test(await p.inputValue('#season-form [name=dark]')), 'untouched season dark was refreshed to #224466');
+  // 11) Avery R21b: idle -> game and game -> idle -> game on /upwardbasketballscores/westcourt keep the derived
+  //     panel fg (contrast.js) — team names and fouls stay >= 4.5:1 for season #FFF0B0 / #010101.
+  await call('/api/settings/season', 'PUT', { name: season0.name, light: '#FFF0B0', dark: '#010101' });
+  const courts = (await call('/api/courts')).body, west = courts.find((c) => c.slug === 'west');
+  for (const x of (await call('/api/games')).body) if (x.court_id === west.id && x.status === 'active') await call(`/api/games/${x.id}/complete`, 'POST');
+  const tms = (await call('/api/teams')).body.slice(0, 4);
+  const day = new Date(); do day.setDate(day.getDate() + 1); while (day.getDay() !== 6); day.setHours(10, 0, 0, 0); const base = day.getTime(); // next Saturday 10:00, inside game hours
+  // W1 normal, W2 swapped (home wears the season dark, where the #111 fallback would be unreadable)
+  let mkErr = '';
+  // first free hour 08:00-18:00 on one of the next 4 Saturdays (seeded data already uses some West slots)
+  const used = new Set();
+  const mk = async (h, a, swap) => { for (let hr = 0; hr < 4 * 24; hr++) { if (used.has(hr) || hr % 24 > 10) continue; const r = await call('/api/games', 'POST', { court_id: west.id, home_team_id: h.id, away_team_id: a.id, swap_colors: swap, scheduled_at: new Date(base - 2 * 3600e3 + (hr % 24) * 3600e3 + Math.floor(hr / 24) * 7 * 864e5).toISOString() }); if (r.body?.id) { used.add(hr); used.add(hr + 1); used.add(hr - 1); return r.body.id; } mkErr = `${r.status} ${JSON.stringify(r.body)}`; } };
+  const W1 = await mk(tms[0], tms[1], false), W2 = await mk(tms[0], tms[1], true);
+  ok(W1 && W2, `two West games created (2nd swapped) (${W1}, ${W2}) ${mkErr}`);
+  const wtv = await open('/upwardbasketballscores/westcourt'); await wtv.pg.evaluate(CONTRAST);
+  const status = () => wtv.pg.evaluate(() => document.documentElement.dataset.status);
+  const waitStatus = async (want) => { for (let i = 0; i < 60 && (await status()) !== want; i++) await wtv.pg.waitForTimeout(100); return status(); };
+  ok((await waitStatus('idle')) === 'idle', 'West TV starts idle (no game)');
+  const SEL = ['[data-bind="home.name"]', '[data-bind="away.name"]', '[data-bind="home.fouls"]', '[data-bind="away.fouls"]'];
+  const check = async (when) => { await wtv.pg.waitForTimeout(400); for (const q of SEL) { const r = await wtv.pg.evaluate((x) => window.__ratio(x), q); ok(r >= 4.5, `${when}: ${q} ${r}:1 >= 4.5`); }
+    // the derived vars must really be there (not the CSS #111/#fff fallback that only happens to read on some seasons)
+    const v = await wtv.pg.evaluate(() => ['home', 'away'].map((s) => document.documentElement.style.getPropertyValue(`--${s}-fg`)));
+    ok(v.every(Boolean), `${when}: contrast.js --home-fg/--away-fg set (${v.join(' / ')})`); };
+  await call(`/api/games/${W1}/start`, 'POST', { force: true }); await waitStatus('active'); await check('idle -> game');
+  await call(`/api/games/${W1}/complete`, 'POST'); ok((await waitStatus('idle')) === 'idle', 'West TV back to idle');
+  await call(`/api/games/${W2}/start`, 'POST', { force: true }); await waitStatus('active'); await check('game -> idle -> game');
+  ok(wtv.loads() === 1, 'West TV never reloaded');
+  await call(`/api/games/${W2}/complete`, 'POST'); await wtv.pg.close();
   await call('/api/settings/season', 'PUT', season0);
 } finally { await b.close(); }
 console.log(`result: ${pass} passed, ${fail} failed`);

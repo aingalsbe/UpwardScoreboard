@@ -203,9 +203,9 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
    gold / black-with-maroon-rim / pink rows. */
 .row.home { color: var(--season-light-fg); }
 .row.away { background: var(--season-dark); color: var(--season-dark-fg); border-color: #000; }
-.home .coach { color: color-mix(in srgb, var(--season-light-fg) 85%, var(--season-light)); }
-.away .coach { color: color-mix(in srgb, var(--season-dark-fg) 85%, var(--season-dark)); }
+.home .coach { color: var(--season-light-fg); } /* SAGE: plain fg (was an 85% mix) */
+.away .coach { color: var(--season-dark-fg); } /* SAGE: plain fg (was an 85% mix) */
 .home .locker, .home .side { background: var(--season-light-fg); color: var(--season-light); }
 .away .locker, .away .side { background: var(--season-dark-fg); color: var(--season-dark); box-shadow: none; }
-.cheer .coach { color: color-mix(in srgb, #000 85%, var(--pink)); }
+.cheer .coach { color: #000; } /* SAGE: plain fg on the light cheer tint */
 .mascot.badge { color: var(--season-light-on-dark); }
