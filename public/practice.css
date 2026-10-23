@@ -3,7 +3,7 @@
 @font-face { font-family: "Anton"; src: url(/fonts/Anton-Regular-latin.woff2) format("woff2"); }
 @font-face { font-family: "Montserrat"; src: url(/fonts/Montserrat-Variable-latin.woff2) format("woff2"); font-weight: 100 900; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 10px; --gold: var(--season-light); --maroon: var(--season-dark); --pink: color-mix(in srgb, var(--season-light) 45%, #fff); --teal: color-mix(in srgb, var(--season-dark) 55%, #fff); } /* SAGE: season vars (were #ffc72c / #800000 / #f47cc6 / #5ce1e6) */
+html { font-size: 10px; --gold: var(--season-light); --maroon: var(--season-dark); --pink: var(--season-cheer-primary); --teal: var(--season-cheer-secondary); } /* SAGE: cheer primary/secondary (were tints of season light/dark) */
 body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", sans-serif; color: #fff; position: relative;
   background: radial-gradient(ellipse 55% 30% at 50% 100%, transparent 62%, rgba(255,255,255,.35) 63%, transparent 65%),
               linear-gradient(90deg, rgba(0,0,0,.08) 0 2px, transparent 2px 120px) , linear-gradient(180deg,#a8652c,#c98a4b 45%,#9a5a25); }
@@ -11,7 +11,7 @@ body::before { content:""; position:absolute; inset:0; background: rgba(0,0,0,.2
 header { position: relative; z-index:1; display:flex; justify-content:space-between; align-items:center; padding: 2.4rem 6rem 0; }
 h1 { font-family:"Anton"; font-weight:400; font-size: 11rem; line-height:1; letter-spacing:.3rem; color:#d9d9d9;
   -webkit-text-stroke:.5rem #111; paint-order:stroke fill; text-shadow:0 .6rem 1.2rem rgba(0,0,0,.6); }
-body.cheer h1 { color: var(--pink); }
+body.cheer h1 { color: var(--season-cheer-primary-on-dark); } /* cheer header reads on the dark stage */
 .page { font: 800 3rem "Montserrat"; background:#000; color:#fff; border:.4rem solid var(--gold); border-radius:3rem; padding:.8rem 2.4rem; letter-spacing:.1rem; }
 .page b { color: var(--season-light-on-dark); } /* SAGE: season light on black (white if too dark) */
 .dots { display:inline-flex; gap:.8rem; margin-left:1.4rem; vertical-align:middle; }
@@ -20,12 +20,15 @@ main { position:relative; z-index:1; }
 /* cheer: cards like the slides — black card, colored room pill, squad + coach */
 .cheer-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 3rem 4rem; padding: 4rem 8rem 0; }
 .card { background:#000; border:.6rem solid #000; border-radius:2.4rem; box-shadow:0 .8rem 2rem rgba(0,0,0,.55); padding:1.6rem 2rem 2rem; text-align:center; }
-.card .room { display:block; border-radius:1.6rem; font:900 4.4rem/1.15 "Montserrat"; color:#000; padding:.4rem 1rem; }  /* black on pink 9.3:1, teal 13:1 */
-.card.pink .room { background:var(--pink); } .card.teal .room { background:var(--teal); }
+.card .room { display:block; border-radius:1.6rem; font:900 4.4rem/1.15 "Montserrat"; color:#000; padding:.4rem 1rem; }
+.card.primary .room, .card.pink .room { background: var(--season-cheer-primary); color: var(--season-cheer-primary-fg); } /* .pink aliases primary */
+.card.secondary .room, .card.teal .room { background: var(--season-cheer-secondary); color: var(--season-cheer-secondary-fg); } /* .teal aliases secondary */
 .card .team { font:900 4.6rem/1.2 "Montserrat"; margin-top:1.2rem; }
-.card.pink .team, .card.pink .coach { color:var(--pink); }        /* pink on black 9.3:1 */
-.card.teal .team, .card.teal .coach { color:var(--teal); }        /* teal on black 13:1 */
+.card.primary .team, .card.primary .coach, .card.pink .team, .card.pink .coach { color: var(--season-cheer-primary-on-dark); }
+.card.secondary .team, .card.secondary .coach, .card.teal .team, .card.teal .coach { color: var(--season-cheer-secondary-on-dark); }
 .card .team { border-bottom:.4rem solid var(--gold); padding-bottom:.6rem; }
+.card.primary .team, .card.pink .team { border-bottom-color: var(--season-cheer-secondary-on-dark); }
+.card.secondary .team, .card.teal .team { border-bottom-color: var(--season-cheer-primary-on-dark); }
 .card .coach { font:700 3.6rem/1.3 "Montserrat"; margin-top:.6rem; }
 /* basketball: grey frame, 2x2 gold court cards, West left / East right like the slides */
 .frame { margin: 3.6rem auto 0; width: 150rem; background:#cfcfcf; border:.8rem solid #111; border-radius:3rem; padding:2.6rem;
@@ -61,8 +64,8 @@ main.idle { display: grid; place-items: center; height: 80rem; }
 .demo { position: absolute; z-index: 2; right: 2rem; top: 1.4rem; font: 800 2.8rem "Montserrat", sans-serif; background: var(--maroon); color: #fff; padding: .4rem 1.6rem; border-radius: 1rem; } /* white on maroon 10.9:1 */
 [hidden] { display: none !important; }
 
-/* SAGE: season colors only (Aaron 2026-10-23): court cards = season light with --season-light-fg text; the room pills
-   alternate season light / a light tint of the season dark (black text); demo tag = season dark. Live via season.js. */
+/* SAGE: season colors only (Aaron 2026-10-23): court cards = season light with --season-light-fg text; demo tag = season dark.
+   Cheer cards alternate Cheer Primary / Cheer Secondary (Morgan). Basketball practice does not use cheer colors. Live via season.js. */
 .court { color: var(--season-light-fg); }
 .court .label { background: var(--season-light-fg); color: var(--season-light); }
 .court[data-empty] .team { color: color-mix(in srgb, var(--season-light-fg) 70%, var(--season-light)); }

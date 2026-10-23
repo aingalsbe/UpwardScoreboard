@@ -59,7 +59,8 @@ function render() {
     $('[data-bind="header"]').textContent = plan.header; page.hidden = false;
     setHtml(page, `ALL EVENING · <b>${i + 1} of ${plan.pages.length}</b>`);
     main.className = 'cheer-grid'; main.dataset.list = 'cheer'; main.dataset.page = String(i + 1);
-    setHtml(main, plan.pages[i].map((x, k) => `<div class="card ${k % 2 ? 'teal' : 'pink'}"><span class="room" data-bind="room">${esc(x.room)}</span>${who(x.squad.name, x.squad.coach, x.squad.logo)}</div>`).join(''));
+    // Even cards = Cheer Primary, odd = Cheer Secondary (the slides alternate; .pink/.teal stay as CSS aliases).
+    setHtml(main, plan.pages[i].map((x, k) => `<div class="card ${k % 2 ? 'secondary' : 'primary'}"><span class="room" data-bind="room">${esc(x.room)}</span>${who(x.squad.name, x.squad.coach, x.squad.logo)}</div>`).join(''));
     setHtml(foot, plan.startsText ? `<b>${esc(plan.startsText)}</b> · find your squad's room` : `Cheer practice: <b>find your squad's room</b> · Basketball on West &amp; East Courts`);
     return;
   }

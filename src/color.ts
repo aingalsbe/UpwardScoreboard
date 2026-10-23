@@ -20,3 +20,24 @@ export function toHexLoose(v: unknown): string | null {
   const c = [m[1], m[2], m[3]].map(Number); if (c.some((x) => x > 255)) return null;
   return '#' + c.map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
+
+/** WCAG relative luminance of a #RRGGBB color. */
+export function lumHex(h: string): number {
+  const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+/** Black or white text on h, whichever contrasts more (always >= ~4.5:1). */
+export function fgFor(h: string): string { return lumHex(h) > 0.179 ? '#000000' : '#FFFFFF'; }
+/** h itself when it reads >= 4.5:1 on black, otherwise white (season-colored text on black). */
+export function onDarkFor(h: string): string { return (lumHex(h) + 0.05) / 0.05 >= 4.5 ? h : '#FFFFFF'; }
+
+/**
+ * The <style id="season-vars"> block injected into every HTML page. The first six variables stay in the
+ * original order; cheer primary/secondary (and their -fg / -on-dark) follow. A value that isn't #RRGGBB
+ * becomes #808080, same as the old seasonStyle() ok().
+ */
+export function seasonCss(s: { light?: unknown; dark?: unknown; cheerPrimary?: unknown; cheerSecondary?: unknown }): string {
+  const ok = (h: unknown) => (typeof h === 'string' && /^#[0-9A-Fa-f]{6}$/.test(h) ? h : '#808080');
+  const L = ok(s.light), D = ok(s.dark), P = ok(s.cheerPrimary), S = ok(s.cheerSecondary);
+  return `<style id="season-vars">:root{--season-light:${L};--season-dark:${D};--season-light-fg:${fgFor(L)};--season-dark-fg:${fgFor(D)};--season-light-on-dark:${onDarkFor(L)};--season-dark-on-dark:${onDarkFor(D)};--season-cheer-primary:${P};--season-cheer-secondary:${S};--season-cheer-primary-fg:${fgFor(P)};--season-cheer-secondary-fg:${fgFor(S)};--season-cheer-primary-on-dark:${onDarkFor(P)};--season-cheer-secondary-on-dark:${onDarkFor(S)}}</style>`;
+}

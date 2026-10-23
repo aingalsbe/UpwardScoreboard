@@ -1,8 +1,10 @@
 // Season colors on every screen (Aaron: season colors only, no screen-specific colors).
 // The server injects the current values into each HTML page (<style id="season-vars">) so the first paint is right;
 // this keeps them live: a read-only role=season WebSocket gets the colors on connect and after every season save.
-// Sets on <html>: --season-light (home), --season-dark (away), --season-light-fg / --season-dark-fg (#000 or #fff,
-// whichever reads best on that color). Fires window 'season' (detail = { name, dark, light }).
+// Sets on <html>: --season-light (home), --season-dark (away), --season-cheer-primary / --season-cheer-secondary,
+// each with -fg (#000 or #fff, whichever reads best) and -on-dark (the color on black, else white).
+// Same thresholds as fgFor/onDarkFor in src/color.ts. A missing or invalid cheer color falls back to light / dark.
+// Fires window 'season' (detail = { name, dark, light, cheerPrimary, cheerSecondary }).
 (function () {
   'use strict';
   const root = document.documentElement;
@@ -14,12 +16,18 @@
   function apply(s) {
     if (!s || !HEX.test(s.light || '') || !HEX.test(s.dark || '')) return;
     const L = s.light.toUpperCase(), D = s.dark.toUpperCase();
-    if (current && current.light === L && current.dark === D) return;
-    current = { name: s.name, light: L, dark: D };
+    const P = HEX.test(s.cheerPrimary || '') ? s.cheerPrimary.toUpperCase() : L; // missing/invalid cheer -> season pair
+    const S = HEX.test(s.cheerSecondary || '') ? s.cheerSecondary.toUpperCase() : D;
+    if (current && current.light === L && current.dark === D && current.cheerPrimary === P && current.cheerSecondary === S) return;
+    current = { name: s.name, light: L, dark: D, cheerPrimary: P, cheerSecondary: S };
     root.style.setProperty('--season-light', L); root.style.setProperty('--season-dark', D);
     root.style.setProperty('--season-light-fg', fg(L)); root.style.setProperty('--season-dark-fg', fg(D));
     root.style.setProperty('--season-light-on-dark', onDark(L)); root.style.setProperty('--season-dark-on-dark', onDark(D));
+    root.style.setProperty('--season-cheer-primary', P); root.style.setProperty('--season-cheer-secondary', S);
+    root.style.setProperty('--season-cheer-primary-fg', fg(P)); root.style.setProperty('--season-cheer-secondary-fg', fg(S));
+    root.style.setProperty('--season-cheer-primary-on-dark', onDark(P)); root.style.setProperty('--season-cheer-secondary-on-dark', onDark(S));
     root.dataset.seasonLight = L; root.dataset.seasonDark = D;
+    root.dataset.seasonCheerPrimary = P; root.dataset.seasonCheerSecondary = S;
     window.dispatchEvent(new CustomEvent('season', { detail: { ...current } }));
   }
   window.Season = { apply, get: () => current && { ...current } };

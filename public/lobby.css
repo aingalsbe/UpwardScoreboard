@@ -3,8 +3,8 @@
 /* Lobby v2 mockup (Sage) — static, SAMPLE DATA. Style follows Aaron's lobby slides (uploads/lobby/mockup.pptx):
    condensed grey day/time header with black outline, court tabs (parallelograms), gold HOME row / black AWAY row,
    Locker Room pills, pink CHEER row. Added: LIVE + score/period/clock, UP NEXT + tip-off, coaches, cheer coach.
-   Season colors (SAGE, Aaron 2026-10-23): Home row = season light, Away row = season dark, cheer = a light tint of the
-   season light; all text on them = --season-*-fg (black or white by contrast). See the SAGE block at the end.
+   Season colors (SAGE, Aaron 2026-10-23): Home row = season light, Away row = season dark.
+   Cheer rows = Cheer Primary (Morgan) with --season-cheer-primary-fg text. See the SAGE blocks at the end.
    Hooks follow Devon's plan (docs/plans/locker-rooms-coaches.md): data-court, data-slot=now|next, data-row=home|away|cheer,
    data-bind=name|locker|coach|time|header, data-state=live|upcoming|empty; empty locker pill = data-empty (hidden).
    Coach: small secondary line under the name (Q4 default). 1rem = 10px at 1920x1080. */
@@ -12,7 +12,7 @@
 @font-face { font-family: "Anton"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/Anton-Regular-latin.woff2") format("woff2"); }
 @font-face { font-family: "Montserrat"; font-style: normal; font-weight: 400 900; font-display: swap; src: url("/fonts/Montserrat-Variable-latin.woff2") format("woff2"); }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 10px; --gold: var(--season-light); --maroon: var(--season-dark); --ink: #fff; --pink: color-mix(in srgb, var(--season-light) 45%, #fff); } /* SAGE: season vars (were #ffc72c / #800000 / #f47cc6) */
+html { font-size: 10px; --gold: var(--season-light); --maroon: var(--season-dark); --ink: #fff; --pink: var(--season-cheer-primary); } /* SAGE: cheer primary (was a tint of season light) */
 body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", "Archivo", Arial, sans-serif; color: var(--ink);
   background:
     radial-gradient(ellipse 60% 35% at 50% 18%, rgba(120,150,200,.35), transparent 70%),
@@ -209,3 +209,10 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 .away .locker, .away .side { background: var(--season-dark-fg); color: var(--season-dark); box-shadow: none; }
 .cheer .coach { color: #000; } /* SAGE: plain fg on the light cheer tint */
 .mascot.badge { color: var(--season-light-on-dark); }
+
+/* SAGE: cheer colors (Morgan brief). Cheer rows use Cheer Primary, not a tint of season light.
+   Text, the coach line and the locker/side pills use the auto fg so any cheer color stays readable.
+   Home and away rows are unchanged. */
+.row.cheer { background: var(--season-cheer-primary); color: var(--season-cheer-primary-fg); }
+.cheer .locker, .cheer .side { background: var(--season-cheer-primary-fg); color: var(--season-cheer-primary); }
+.cheer .coach, .cheer .row-note { color: var(--season-cheer-primary-fg); }

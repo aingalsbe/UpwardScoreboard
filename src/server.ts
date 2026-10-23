@@ -7,7 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { normHex, COLOR_HELP } from './color.js';
+import { normHex, COLOR_HELP, lumHex, seasonCss } from './color.js';
 import { pool, migrate, migrateColors, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
 import { scorekeeperView, publicView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
@@ -171,13 +171,17 @@ async function gameHidesScore(gameId: number): Promise<boolean> {
 // ------------------------------------------------------------ view models
 // Season colors: every team wears the season's dark or light color. Default home = light, away = dark;
 // games.swap_colors flips it. Per-game theme colors are retired: displays never read them (the stored values stay in the DB, unused).
-let season = { name: '2026–27 Upward', dark: '#800000', light: '#FFC72C' };
+let season = { name: '2026–27 Upward', dark: '#800000', light: '#FFC72C', cheerPrimary: '#FFC72C', cheerSecondary: '#800000' };
+// slice(7) would turn season_cheer_primary into cheer_primary, not cheerPrimary. Map explicitly.
+const SEASON_KEY = { season_name: 'name', season_dark: 'dark', season_light: 'light', season_cheer_primary: 'cheerPrimary', season_cheer_secondary: 'cheerSecondary' } as const;
 async function loadSeason() {
-  const { rows } = await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_name','season_dark','season_light')`);
-  for (const r of rows) (season as any)[r.key.slice(7)] = r.value;
+  const { rows } = await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_name','season_dark','season_light','season_cheer_primary','season_cheer_secondary')`);
+  const got = new Set(rows.map((r) => r.key as string));
+  for (const r of rows) { const k = SEASON_KEY[r.key as keyof typeof SEASON_KEY]; if (k) season[k] = r.value; }
+  // A missing cheer row follows the season pair (the migration normally writes the rows).
+  if (!got.has('season_cheer_primary')) season.cheerPrimary = season.light;
+  if (!got.has('season_cheer_secondary')) season.cheerSecondary = season.dark;
 }
-/** Relative luminance (WCAG) for server-side season validation. */
-const lum = (h: string) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
 /** The cheer squad of the game's time slot (one per hour, shared by every court), or null. Coach = first name only. */
 function cheerView(r: any) {
   if (!r.cheer_squad_id) return null;
@@ -309,15 +313,7 @@ function scheduleChanged() {
 const seasonMsg = () => ({ type: 'state', kind: 'season', serverNow: Date.now(), season: { ...season } });
 function broadcastSeason() { const m = seasonMsg(); for (const c of clients) if (c.role === 'season') send(c, m); }
 /** Inline <style> with the season variables, injected into every HTML page so the first paint already has them. */
-function seasonStyle() {
-  const ok = (h: string) => (/^#[0-9A-Fa-f]{6}$/.test(h) ? h : '#808080');
-  // fg = black or white, whichever contrasts more (always >= 4.58:1); on-dark = the color itself when it reads >= 4.5:1
-  // on black, else white (for season-colored text on the black cards/pills).
-  const fg = (h: string) => (lum(ok(h)) > 0.179 ? '#000000' : '#FFFFFF');
-  const onDark = (h: string) => ((lum(ok(h)) + 0.05) / 0.05 >= 4.5 ? ok(h) : '#FFFFFF');
-  const L = season.light, D = season.dark;
-  return `<style id="season-vars">:root{--season-light:${ok(L)};--season-dark:${ok(D)};--season-light-fg:${fg(L)};--season-dark-fg:${fg(D)};--season-light-on-dark:${onDark(L)};--season-dark-on-dark:${onDark(D)}}</style>`;
-}
+function seasonStyle() { return seasonCss(season); }
 async function broadcastCourt(slug: string) {
   scheduleChanged();
   const targets = [...clients].filter((c) => c.court === slug);
@@ -1308,9 +1304,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       const b = await readJson(req);
       const dark = color(b.dark, null, 'dark'), light = color(b.light, null, 'light');
       if (!dark || !light) throw new HttpError(400, `dark and light are required; ${COLOR_HELP}`);
-      if (lum(dark) >= lum(light)) throw new HttpError(400, 'the dark color must be darker than the light color');
+      if (lumHex(dark) >= lumHex(light)) throw new HttpError(400, 'the dark color must be darker than the light color');
+      // Omitted or blank keeps the stored cheer color. A present invalid hex throws (400) before any write.
+      const cheerPrimary = color(b.cheerPrimary, season.cheerPrimary, 'cheerPrimary');
+      const cheerSecondary = color(b.cheerSecondary, season.cheerSecondary, 'cheerSecondary');
+      if (!cheerPrimary || !cheerSecondary) throw new HttpError(400, `cheerPrimary and cheerSecondary are required; ${COLOR_HELP}`);
       const name = String(b.name ?? season.name).trim().slice(0, 40) || season.name;
-      for (const [k, v] of [['season_name', name], ['season_dark', dark], ['season_light', light]]) await pool.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
+      for (const [k, v] of [['season_name', name], ['season_dark', dark], ['season_light', light], ['season_cheer_primary', cheerPrimary], ['season_cheer_secondary', cheerSecondary]]) await pool.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
       await loadSeason(); await refreshAllCourts(); broadcastSeason(); scheduleChanged();
       return json(res, 200, season);
     }

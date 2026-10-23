@@ -152,6 +152,7 @@ export async function migrate(): Promise<void> {
   await migrateSixPeriods();
   await migrateSixMinPeriods();
   await migrateColors();
+  await migrateCheerColors(); // after colors are canonical #RRGGBB, so the copy is uppercase
 }
 
 /**
@@ -165,12 +166,23 @@ export async function migrateColors(): Promise<number> {
   let n = 0;
   const fix = (v: any, where: string) => { const h = toHexLoose(v); if (!h) console.warn(`Color migration: ${where} has "${v}", not a color; left as is.`); return h; };
   // teams.primary_color/secondary_color are retired (season colors only) and left exactly as they are.
-  for (const r of (await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_dark','season_light') AND value !~ $1`, [CANON])).rows) {
+  for (const r of (await pool.query(`SELECT key, value FROM settings WHERE key IN ('season_dark','season_light','season_cheer_primary','season_cheer_secondary') AND value !~ $1`, [CANON])).rows) {
     const h = fix(r.value, `setting ${r.key}`); if (h && h !== r.value) { await pool.query('UPDATE settings SET value=$2 WHERE key=$1', [r.key, h]); n++; }
   }
   // games.theme color keys are retired (season colors only) and left exactly as they are (an earlier version uppercased them).
   if (n) console.log(`Color migration: ${n} row(s) converted to #RRGGBB.`);
   return n;
+}
+
+/**
+ * Cheer colors (Morgan): copy season light -> season_cheer_primary and season dark -> season_cheer_secondary
+ * once, as real settings rows (admin always shows a value). ON CONFLICT DO NOTHING: a later run, including
+ * one after an admin save, never overwrites. Returns the number of rows inserted.
+ */
+export async function migrateCheerColors(): Promise<number> {
+  const primary = await pool.query(`INSERT INTO settings(key, value) SELECT 'season_cheer_primary', value FROM settings WHERE key='season_light' ON CONFLICT (key) DO NOTHING`);
+  const secondary = await pool.query(`INSERT INTO settings(key, value) SELECT 'season_cheer_secondary', value FROM settings WHERE key='season_dark' ON CONFLICT (key) DO NOTHING`);
+  return (primary.rowCount ?? 0) + (secondary.rowCount ?? 0);
 }
 
 export const SIX_MIN_MS = 6 * 60_000;
@@ -423,6 +435,10 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
     await client.query('TRUNCATE game_events, cheer_slots, cheer_squads, games, teams, courts RESTART IDENTITY CASCADE');
     for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
       await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
+    }
+    // Stored cheer colors (not a null fallback). DO NOTHING so a reseed does not wipe an admin's choice.
+    for (const [k, v] of [['season_cheer_primary', '#FFC72C'], ['season_cheer_secondary', '#800000']]) {
+      await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
     }
     await client.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
       ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')`);

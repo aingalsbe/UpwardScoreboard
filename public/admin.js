@@ -324,6 +324,10 @@ function seasonCheck() {
   if (dvl < 1.5) rows.push(`⚠ Dark vs light only ${C.fmt(dvl)} (under 1.5:1): home and away will look almost the same. You can still save.`);
   else rows.push(`Dark vs light (side by side): ${C.fmt(dvl)} ${dvl >= 3 ? '✔' : 'ℹ fairly close'}`);
   if (C.luminance(d) >= C.luminance(l)) rows.push('⚠ The dark color must be darker than the light color.');
+  // Cheer colors have no dark-before-light rule. A bad hex is a warning; a good one shows its auto text color.
+  const cheerLine = (label, el) => { const h = normHex(el.value); if (!h) rows.push(`⚠ ${label}: enter a hex color like #FF00AA or #FC2.`); else rows.push(`Text on ${label} (auto ${tw(h)}): ${C.fmt(best(h))} ✔`); };
+  cheerLine('cheer primary', f.elements.cheerPrimary);
+  cheerLine('cheer secondary', f.elements.cheerSecondary);
   box.innerHTML = rows.map((r) => `<div class="cw-row">${esc(r)}</div>`).join(''); box.hidden = false;
   box.classList.toggle('bad', rows.some((r) => r.includes('⚠')));
 }
@@ -333,7 +337,7 @@ $('#season-form').addEventListener('input', seasonCheck);
 $('#season-form').addEventListener('input', (e) => { if (e.isTrusted && e.target.name) e.target.dataset.touched = '1'; });
 $('#season-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;
-  const r = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify({ name: f.elements.name.value, dark: f.elements.dark.value, light: f.elements.light.value }) });
+  const r = await api('/api/settings/season', { method: 'PUT', body: JSON.stringify({ name: f.elements.name.value, dark: f.elements.dark.value, light: f.elements.light.value, cheerPrimary: f.elements.cheerPrimary.value, cheerSecondary: f.elements.cheerSecondary.value }) });
   seasonColors = r.dark ? r : await api('/api/settings/season'); renderTeams();
   for (const el of f.elements) delete el.dataset.touched;
   const C = window.Contrast, dvl = C && r.dark ? C.ratio(r.dark, r.light) : 9;
@@ -346,6 +350,8 @@ async function loadSeason() {
   if (fresh('name')) f.elements.name.value = s.name;
   if (fresh('dark')) setHex(f, 'dark', s.dark);
   if (fresh('light')) setHex(f, 'light', s.light);
+  if (fresh('cheerPrimary')) setHex(f, 'cheerPrimary', s.cheerPrimary);
+  if (fresh('cheerSecondary')) setHex(f, 'cheerSecondary', s.cheerSecondary);
   seasonCheck();
 }
 

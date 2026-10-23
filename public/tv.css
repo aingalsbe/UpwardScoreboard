@@ -47,13 +47,15 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score { font-size: 17rem; font-weight: 900; line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.3rem; }
 
-/* Cheer: ONE squad per game (not per side). Single line in .center: optional logo (data-bind="cheer-logo")
-   + name (data-bind="cheer"). Shown only with root/game class .has-cheer; its height is always reserved
-   (visibility, not display) so the center column never jumps. Logo box is a fixed 1em; with no logo
-   a 📣 of the same 1em width takes its place, so a missing logo never shifts anything. Neutral colors
-   (white on dark, 15.8:1): the squad belongs to neither team. */
-.cheer { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; gap: .5em;
-  height: 1.6em; line-height: 1; font-size: 1.9rem; font-weight: 800; color: var(--ink); max-width: 100%; margin-top: .4rem; }
+/* Cheer: ONE squad per game (not per side). A Cheer Primary bar across .center: optional logo
+   (data-bind="cheer-logo") + name (data-bind="cheer"). Shown only with root/game class .has-cheer; its
+   height is always reserved (visibility, not display) so the center column never jumps. Logo box is a
+   fixed 1em; with no logo a 📣 of the same 1em width takes its place, so a missing logo never shifts
+   anything. Text is --season-cheer-primary-fg (black or white, >= 4.5:1 on the bar). */
+.cheer { visibility: hidden; display: flex; align-items: center; justify-content: center; gap: .5em;
+  align-self: stretch; box-sizing: border-box; min-height: 1.6em; line-height: 1; font-size: 1.9rem; font-weight: 800;
+  color: var(--season-cheer-primary-fg); background: var(--season-cheer-primary);
+  padding: .35em 1em; border-radius: 1rem; max-width: 100%; margin-top: .4rem; }
 .has-cheer .cheer { visibility: visible; }
 .cheer-logo { flex: none; width: 1em; height: 1em; border-radius: 50%; object-fit: cover; background: #fff; }
 .cheer-logo[hidden] { display: none; }
