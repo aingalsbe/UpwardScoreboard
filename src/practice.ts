@@ -132,3 +132,15 @@ export async function seedPracticeDemo(q: Q): Promise<boolean> {
   await savePractice(q, schedule);
   return true;
 }
+
+const DAY3 = ['', 'Mon', 'Tue', 'Wed', 'Thu'];
+/** QA r17: what a save would remove versus the saved week (a team's slot or a squad's room that is no longer there).
+ *  The PUT refuses these with 409 unless the body says confirmRemove: true. */
+export function droppedSlots(old: { basketball: any[]; cheer: any[] }, next: PSchedule): string[] {
+  const out: string[] = [];
+  for (const b of old.basketball) if (!next.basketball.some((x) => x.day === b.day && x.start === b.start && x.court === b.court && x.teamId === b.teamId))
+    out.push(`${DAY3[b.day] || b.day} ${b.start} ${b.court}: ${b.team?.name || 'team ' + b.teamId} would be removed`);
+  for (const c of old.cheer) if (!next.cheer.some((x) => x.day === c.day && x.squadId === c.squadId && roomKey(x.room) === roomKey(c.room)))
+    out.push(`${DAY3[c.day] || c.day} cheer ${c.room}: ${c.squad?.name || 'squad ' + c.squadId} would be removed`);
+  return out;
+}

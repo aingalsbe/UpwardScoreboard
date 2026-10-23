@@ -25,3 +25,25 @@ export function onLogoError(e) {
   t.replaceWith(s); return true;
 }
 export const installLogoFallback = (doc = document) => doc.addEventListener('error', onLogoError, true);
+
+/** Court TV / overlay team logo: <img> in el, or the initial when there's no logo or it fails to load (404 etc.). */
+export function fillTeamLogo(el, url, name) {
+  if (!el) return;
+  const u = safeLogo(url);
+  const showInitial = () => { el.innerHTML = ''; el.textContent = initialOf(name); el.classList?.add('logo-initial'); };
+  if (!u || failed.has(u)) { el.dataset.src = ''; showInitial(); return; }
+  if (el.dataset.src === u) return;
+  el.dataset.src = u; el.innerHTML = ''; el.classList?.remove('logo-initial');
+  const img = el.ownerDocument.createElement('img');
+  img.alt = '';
+  img.onerror = () => { failed.add(u); if (el.dataset.src === u) { el.dataset.src = ''; showInitial(); } };
+  img.src = u; el.appendChild(img);
+}
+/** Single image bind (church / cheer logo): shown when src loads, hidden when missing or broken. */
+export function fillImg(el, url) {
+  const u = safeLogo(url);
+  if (!el.onerror) el.onerror = () => { const s = el.getAttribute('src'); if (s) failed.add(s); el.hidden = true; };
+  if (!u || failed.has(u)) { el.removeAttribute('src'); el.hidden = true; return; }
+  if (el.getAttribute('src') !== u) el.src = u;
+  el.hidden = false;
+}

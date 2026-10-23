@@ -132,10 +132,21 @@ test('DB: additive migration, demo seed = 44 teams once a week on one court + 4 
   assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots`)).rows[0].n, 52, 'rejected save changed nothing');
   // Wednesday 4:30–6:30 -> 5:00–6:00 drops to one slot; the client trims outside slots before saving
   const wed = { ...week, days: week.days.map((d: any) => (d.day === 3 ? { ...d, start: '17:00', end: '18:00' } : d)), basketball: week.basketball.filter((b: any) => b.day !== 3).concat([{ day: 3, start: '17:00', court: 'east2', teamId: week.basketball.find((b: any) => b.day === 3).teamId }]) };
-  const ok = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify(wed) });
+  // QA r17: a save that removes saved teams needs confirmRemove: true, else 409 + errors[] and nothing changes
+  const w409 = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify(wed) });
+  assert.equal(w409.status, 409); const wj = await w409.json();
+  assert.equal(wj.errors.length, 8, 'the 8 Wednesday teams that leave are listed'); assert.match(wj.errors[0], /^Wed 1\d:\d\d \w+: .+ would be removed$/);
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots WHERE day_of_week=3`)).rows[0].n, 8, 'unconfirmed save changed nothing');
+  // Tuesday turned off (Avery r17 repro): 409 listing all 16 teams, Tuesday kept
+  const tueOff = { ...week, days: week.days.filter((d: any) => d.day !== 2), basketball: week.basketball.filter((b: any) => b.day !== 2) };
+  const t409 = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify(tueOff) });
+  assert.equal(t409.status, 409); assert.equal((await t409.json()).errors.filter((e: string) => e.startsWith('Tue ')).length, 16);
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots WHERE day_of_week=2`)).rows[0].n, 16, 'Tuesday kept');
+  assert.equal((await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ ...tueOff, confirmRemove: 'yes' }) })).status, 409, 'only literal true confirms');
+  const ok = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ ...wed, confirmRemove: true }) });
   assert.equal(ok.status, 200, await ok.clone().text());
   assert.deepEqual((await pool.query(`SELECT count(*)::int n FROM practice_slots WHERE day_of_week=3`)).rows[0], { n: 1 });
-  const fk = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ ...wed, cheer: [{ day: 1, room: 'X', squadId: 99999 }] }) });
+  const fk = await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ ...wed, cheer: [{ day: 1, room: 'X', squadId: 99999 }], confirmRemove: true }) });
   assert.equal(fk.status, 400);
   // QA NO-GO (Avery): unknown team/squad -> errors[]; malformed bodies never wipe the week; hours change never drops silently
   assert.ok(Array.isArray((await fk.json()).errors), 'unknown squad has errors[]');
@@ -162,8 +173,11 @@ test('DB: additive migration, demo seed = 44 teams once a week on one court + 4 
   const pub2 = await (await fetch(BASE + '/api/public/practice')).json();
   assert.ok(pub2.cheer.length && pub2.cheer.every((x: any) => !('slotId' in x) && !('squadId' in x)));
   // explicit, well-formed empty week clears it
-  assert.equal((await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ days: [], basketball: [], cheer: [] }) })).status, 200);
+  assert.equal((await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ days: [], basketball: [], cheer: [] }) })).status, 409, 'clearing needs confirmRemove');
+  assert.equal((await fetch(BASE + '/api/practice', { method: 'PUT', headers: h, body: JSON.stringify({ days: [], basketball: [], cheer: [], confirmRemove: true }) })).status, 200);
   assert.equal((await pool.query(`SELECT count(*)::int n FROM practice_slots`)).rows[0].n, 0);
   const adminSrc = fs.readFileSync(path.join(PUB, 'practice-admin.js'), 'utf8');
-  assert.match(adminSrc, /confirm\(`These \$\{out.length\} practice slot/, 'editor asks before removing out-of-hours slots');
+  assert.match(adminSrc, /confirm\(`This save removes \$\{removed.length\} practice slot/, 'editor asks before removing slots');
+  assert.match(adminSrc, /confirmRemove: true/);
+  assert.doesNotMatch(adminSrc, /week\.basketball = week\.basketball\.filter\(\(x\) => x\.day !== cur\)/, 'unchecking a night no longer deletes its teams');
 });

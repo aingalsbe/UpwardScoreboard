@@ -17,8 +17,11 @@ async function api(path, opts = {}) {
   if (!r.ok) throw Object.assign(new Error(b.error || r.statusText), { errors: b.errors });
   return b;
 }
+let saved = [], savedCheer = [];
+const offHours = {}; // a night's hours while it is unchecked, restored on re-check
 function fromServer(b) {
   teams = b.teams || teams; squads = b.squads || squads;
+  saved = b.basketball.map((x) => ({ ...x })); savedCheer = b.cheer.map((x) => ({ ...x }));
   week = { days: b.days.map((d) => ({ ...d })), basketball: b.basketball.map((x) => ({ day: x.day, start: x.start, court: x.court, teamId: x.teamId })),
     cheer: b.cheer.map((x) => ({ day: x.day, room: x.room, squadId: x.squadId })) };
 }
@@ -61,29 +64,36 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.id === 'on') { week.days = week.days.filter((x) => x.day !== cur); if (t.checked) week.days.push({ day: cur, start: '17:00', end: '21:00' });
-    else { week.basketball = week.basketball.filter((x) => x.day !== cur); week.cheer = week.cheer.filter((x) => x.day !== cur); } render(); }
+  // QA r17: unchecking a night keeps its teams in the UI state; Save lists and confirms anything it would remove.
+  if (t.id === 'on') { const d = week.days.find((x) => x.day === cur); if (d) offHours[cur] = { ...d };
+    week.days = week.days.filter((x) => x.day !== cur); if (t.checked) week.days.push(offHours[cur] || { day: cur, start: '17:00', end: '21:00' }); render(); }
   if (t.id === 'start' || t.id === 'end') { const d = week.days.find((x) => x.day === cur); d[t.id] = t.value; render(); }
   if (t.dataset.court) { week.basketball = week.basketball.filter((x) => !(x.day === cur && x.start === t.dataset.slot && x.court === t.dataset.court));
     if (t.value) week.basketball.push({ day: cur, start: t.dataset.slot, court: t.dataset.court, teamId: Number(t.value) }); render(); }
   if (t.dataset.room) { week.cheer[Number(t.dataset.room)].room = t.value; render(); }
   if (t.dataset.squad) { week.cheer[Number(t.dataset.squad)].squadId = Number(t.value); render(); }
 });
+const tname = (id) => teams.find((t) => t.id === id)?.name || 'team';
+const sname = (id) => squads.find((q) => q.id === id)?.name || 'squad';
+/** Saved slots the next week no longer has (exported shape for tests via the same rule as the server's droppedSlots). */
+function removedList(next) {
+  const d3 = (d) => DAYS[d].slice(0, 3);
+  return [...saved.filter((b) => !next.basketball.some((x) => x.day === b.day && x.start === b.start && x.court === b.court && x.teamId === b.teamId)).map((b) => `${d3(b.day)} ${b.start} ${b.court}: ${tname(b.teamId)}`),
+    ...savedCheer.filter((c) => !next.cheer.some((x) => x.day === c.day && x.squadId === c.squadId && x.room.trim().toLowerCase() === c.room.trim().toLowerCase())).map((c) => `${d3(c.day)} cheer ${c.room}: ${sname(c.squadId)}`)];
+}
 async function save() {
   $('#errors').innerHTML = '';
-  // drop basketball slots that fell outside a night's changed hours
-  // QA: never drop teams silently. Assignments outside a night's new hours are listed; the admin confirms removing
-  // them (or cancels and fixes the hours). The server also refuses them with errors[].
-  const out = week.basketball.filter((b) => !slots(week.days.find((d) => d.day === b.day)).includes(b.start));
-  if (out.length) {
-    const name = (b) => teams.find((t) => t.id === b.teamId)?.name || 'team';
-    const list = out.map((b) => `${DAYS[b.day].slice(0, 3)} ${b.start} ${b.court}: ${name(b)}`);
-    if (!confirm(`These ${out.length} practice slot(s) are outside the night's hours and would be removed:\n\n${list.join('\n')}\n\nRemove them and save? (Cancel to keep them and change the hours.)`)) {
-      msg('Not saved: some teams are outside the new hours.', true); $('#errors').innerHTML = list.map((x) => `<li>${esc(x)} is outside the hours</li>`).join(''); return;
-    }
-    week.basketball = week.basketball.filter((b) => !out.includes(b));
+  // QA: never drop teams silently. Slots outside a night's hours (or on a night turned off) are pruned only after the
+  // admin confirms a list of every saved team/squad the save removes. The server refuses removals without confirmRemove.
+  const night = (day) => week.days.find((d) => d.day === day);
+  const next = { days: week.days, basketball: week.basketball.filter((b) => slots(night(b.day)).includes(b.start)), cheer: week.cheer.filter((c) => night(c.day)) };
+  const removed = removedList(next);
+  if (removed.length && !confirm(`This save removes ${removed.length} practice slot(s):\n\n${removed.join('\n')}\n\nRemove them and save? (Cancel to keep them.)`)) {
+    msg('Not saved: nothing was removed.', true); $('#errors').innerHTML = removed.map((x) => `<li>${esc(x)} would be removed</li>`).join(''); return;
   }
-  try { fromServer({ teams, squads, ...(await api('/api/practice', { method: 'PUT', body: JSON.stringify(week) })) }); msg('Saved. The practice TVs update within a minute.'); render(); }
+  week = next;
+  const body = { ...week, ...(removed.length ? { confirmRemove: true } : {}) };
+  try { fromServer({ teams, squads, ...(await api('/api/practice', { method: 'PUT', body: JSON.stringify(body) })) }); msg('Saved. The practice TVs update within a minute.'); render(); }
   catch (e) { if (e.message === 'login') return; msg('Not saved: fix the items below.', true); $('#errors').innerHTML = (e.errors || [e.message]).map((x) => `<li>${esc(x)}</li>`).join(''); }
 }
 api('/api/practice').then((b) => { fromServer(b); render(); }).catch(() => {});

@@ -37,3 +37,27 @@ test('broken logo (404) -> the <img> is swapped for the initial badge, and later
   for (const f of ['lobby.js', 'practice.js']) assert.match(fs.readFileSync(path.join(PUB, f), 'utf8'), /installLogoFallback\(\)/, f);
   for (const f of ['tv.js', 'overlay.js', 'score.js']) if (fs.existsSync(path.join(PUB, f))) assert.doesNotMatch(fs.readFileSync(path.join(PUB, f), 'utf8'), /logo-badge/, `${f} untouched`);
 });
+
+// Avery r17 (M): court TV + overlay (display.js) had no broken-logo fallback.
+test('court TV / overlay: a 404 team logo falls back to the initial; a broken cheer logo is hidden', { skip }, async () => {
+  const { fillTeamLogo, fillImg } = await import(path.join(PUB, 'logo-badge.js'));
+  const mkImg = () => { const a: any = { attrs: {} as any, setAttribute(k: string, v: string) { this.attrs[k] = v; }, getAttribute(k: string) { return k === 'src' ? this.src : this.attrs[k]; }, removeAttribute(k: string) { if (k === 'src') this.src = undefined; } }; return a; };
+  const el: any = { dataset: {}, innerHTML: '', textContent: '', children: [] as any[], classList: { add() {}, remove() {} },
+    appendChild(c: any) { this.children.push(c); }, ownerDocument: { createElement: () => mkImg() } };
+  const url = '/team-logos/teams/zz-missing-404.png';
+  fillTeamLogo(el, url, 'Eagles');
+  assert.equal(el.children.length, 1); const img = el.children[0]; assert.equal(img.src, url);
+  img.onerror();
+  assert.equal(el.textContent, 'E', '404 -> initial (no empty circle)');
+  el.textContent = 'E'; el.children = [];
+  fillTeamLogo(el, url, 'Eagles');
+  assert.equal(el.children.length, 0, 'remembered as failed: re-render keeps the initial, no retry');
+  fillTeamLogo(el, null, 'lady sparks'); assert.equal(el.textContent, 'L', 'no logo -> initial');
+  const ch = mkImg(); ch.hidden = false;
+  fillImg(ch, '/logos/squad/999'); assert.equal(ch.src, '/logos/squad/999'); assert.equal(ch.hidden, false);
+  ch.onerror(); assert.equal(ch.hidden, true, 'broken cheer logo hidden (no broken-image icon)');
+  fillImg(ch, '/logos/squad/999'); assert.equal(ch.hidden, true, 'stays hidden on re-render');
+  const disp = fs.readFileSync(path.join(PUB, 'display.js'), 'utf8');
+  assert.match(disp, /fillTeamLogo\(el, team\.logo/); assert.match(disp, /fillImg\(el, src\)/);
+  for (const f of ['tv.html', 'overlay.html']) assert.match(fs.readFileSync(path.join(PUB, f), 'utf8'), /display\.js/, `${f} uses display.js`);
+});

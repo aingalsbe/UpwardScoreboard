@@ -1,5 +1,6 @@
 // Display logic shared by tv.html and overlay.html. Markup and CSS own the look;
 // this file only fills [data-bind] text, sets CSS variables and state classes.
+import { fillTeamLogo, fillImg } from './logo-badge.js';
 import { connect, courtFromPath, displayNow, clockMs, fmtClock, periodLabel, bindText, timeoutCap } from './common.js';
 
 const court = courtFromPath();
@@ -7,12 +8,8 @@ const role = document.body.dataset.role || 'tv';
 const root = document.documentElement;
 let snap = null;
 
-function logo(el, team) {
-  if (!el) return;
-  if (team.logo) {
-    if (el.dataset.src !== team.logo) { el.innerHTML = ''; const img = new Image(); img.src = team.logo; img.alt = ''; el.appendChild(img); el.dataset.src = team.logo; }
-  } else { el.dataset.src = ''; el.textContent = (team.short || team.name || '?').slice(0, 1); }
-}
+// Broken logo (404 etc.) -> the initial, never an empty circle (logo-badge.js).
+function logo(el, team) { fillTeamLogo(el, team.logo, team.short || team.name); }
 function dots(el, left, total) {
   if (!el) return;
   el.innerHTML = Array.from({ length: total }, (_, i) => `<span class="${i < left ? 'on' : 'off'}"></span>`).join('');
@@ -21,7 +18,7 @@ function dots(el, left, total) {
 /** Image binds (church-logo, cheer-logo): set src, hidden when there's no value. */
 function img(key, src) {
   document.querySelectorAll(`img[data-bind="${key}"]`).forEach((el) => {
-    if (src) { if (el.getAttribute('src') !== src) el.src = src; el.hidden = false; } else { el.removeAttribute('src'); el.hidden = true; }
+    fillImg(el, src); // missing or broken -> hidden (no broken-image icon)
   });
 }
 

@@ -13,7 +13,7 @@ import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
-import { loadPractice, validatePractice, savePractice } from './practice.js';
+import { loadPractice, validatePractice, savePractice, droppedSlots } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand,
@@ -1097,7 +1097,12 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     const { schedule, errors } = validatePractice(body);
     if (errors.length) return json(res, 400, { error: errors[0], errors });
     const client = await pool.connect();
-    try { await client.query('BEGIN'); await savePractice(client, schedule); await client.query('COMMIT'); }
+    try { await client.query('BEGIN'); await client.query('LOCK TABLE practice_slots IN EXCLUSIVE MODE');
+      // QA r17: never drop teams/squads silently. Removing any saved slot needs confirmRemove: true.
+      const dropped = droppedSlots(await loadPractice(client), schedule);
+      if (dropped.length && body.confirmRemove !== true) { await client.query('ROLLBACK');
+        return json(res, 409, { error: `this save removes ${dropped.length} practice slot(s); send confirmRemove: true to remove them`, errors: dropped, removed: dropped.length }); }
+      await savePractice(client, schedule); await client.query('COMMIT'); }
     catch (e: any) { await client.query('ROLLBACK'); if (e.code === '23503') return json(res, 400, { error: 'unknown team or cheer squad', errors: ['unknown team or cheer squad (reload the page; it may have been deleted)'] }); throw e; }
     finally { client.release(); }
     return json(res, 200, { ok: true, ...(await loadPractice(pool)) });
