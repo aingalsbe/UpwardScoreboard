@@ -79,7 +79,7 @@ Manual: `docker compose up -d --build`, `docker compose logs app`, `docker compo
 
 - **Migrate:** automatic. The server runs `migrate()` on start, and old schemas are upgraded in place.
 - **Seed:** `docker compose exec app npm run seed:demo` (only seeds if needed) or `docker compose exec app npm run seed:demo:reset` (wipe and reseed), then `docker compose restart app`.
-- **Six-period migration (2026-10):** also automatic, once (settings key `migration_six_periods`). Every **scheduled** game gets 6 periods (3 per half, 2 timeouts per half); **complete (final) and active games are not touched**. Back up first (dump below). The log line reads `Six-period migration: N scheduled game(s) ...`. Check: `docker compose exec db psql -U scoreboard -d scoreboard -c "SELECT value FROM settings WHERE key='migration_six_periods'"`.
+- **Six-period migration (2026-10):** also automatic, once (settings key `migration_six_periods`). Every **scheduled** game gets 6 periods (3 per half, 2 timeouts per half); **complete (final) and active games are not touched**. Back up first (dump below). The log line reads `Six-period migration: N scheduled game(s) ...`. A second one-time step (key `migration_six_min_periods`) gives scheduled games **6-minute periods** (rules, saved state and clock set to 6:00); it also runs on a database that already had the six-period step. Log: `Six-minute migration: N scheduled game(s) ...`. Check: `docker compose exec db psql -U scoreboard -d scoreboard -c "SELECT key, value FROM settings WHERE key LIKE 'migration_six%'"`.
 - **Data:** everything, including uploaded logos (bytea), lives in Postgres in the `pgdata` volume. One dump covers it all.
 
 Dump (inside the container, then copy out):
@@ -124,7 +124,7 @@ None. UpwardScoreboard has no cron jobs and no `DIGEST_CRON_ENABLED` or `WEATHER
 - [ ] http://localhost:3000/api/health returns 200
 - [ ] Admin login works with the dev password
 - [ ] A scorekeeper tap shows on the matching TV (3rd Grade or older; 2nd Grade and below show no score on the TV by design)
-- [ ] The TV period reads like "1st Half · P1"
+- [ ] The TV period reads like "1st Half · P1" and a new game's clock starts at 6:00
 - [ ] Optional, with Node 20: `npm ci` then `npm test`; `npm run smoke` against the running app
 - [ ] `git status` shows no `.env`
 

@@ -76,7 +76,7 @@ The scorekeeper lists today's games on its court; when there are none today it l
 7. Tap Undo: the last action is reversed on the TV.
 8. Tap Complete game and confirm. The score locks, the TV shows Next up with the final score, and the schedule shows FINAL.
 
-Game rules (2026-10): **6 periods, 3 per half**, halftime after P3. Every screen labels the period the same way: **"1st Half · P1"–"1st Half · P3", "2nd Half · P4"–"2nd Half · P6"**, then "OT", "OT2". Show it: tap Next period three times (or let P3's clock run out): the TV shows HALFTIME, team fouls go back to 0 (bonus is per half) and each team has 2 timeouts again. Prev right after an accidental Next restores fouls, timeouts and the clock.
+Game rules (2026-10): **6 periods of 6:00 (36-minute game), 3 per half**, halftime after P3. Every screen labels the period the same way: **"1st Half · P1"–"1st Half · P3", "2nd Half · P4"–"2nd Half · P6"**, then "OT", "OT2". Show it: tap Next period three times (or let P3's clock run out): the TV shows HALFTIME, team fouls go back to 0 (bonus is per half) and each team has 2 timeouts again. Prev right after an accidental Next restores fouls, timeouts and the clock.
 
 **2nd Grade and below (incl. K and 1st): no score on the TV, overlay or lobby**, only clock and period. The scorekeeper still keeps the score (it notes "score hidden on TV") so the result is on record in Admin and the CSV export. To demo the scoreboard with a score, load a 3rd Grade or older game; load a 2nd Grade game to show the score-free TV.
 
