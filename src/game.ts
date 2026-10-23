@@ -15,13 +15,13 @@ export interface Rules {
 }
 
 /**
- * League rules (2026-10): 6 periods = two halves of 3, halftime after period 3.
+ * League rules (2026-10): 6 periods of 6 minutes (36-minute game) = two halves of 3, halftime after period 3.
  * Fouls reset at halftime (bonus is per half); timeouts are per half (2) and refill at halftime.
  * Overtime (period 7+) continues the 2nd half: fouls and remaining timeouts carry over.
  */
 export const DEFAULT_RULES: Rules = {
   periods: 6,
-  periodLengthMs: 8 * 60_000,
+  periodLengthMs: 6 * 60_000, // 6-minute periods = 36-minute game (2026-10)
   timeoutsPerGame: 4,
   timeoutsPerHalf: 2,
   bonusFouls: 7,

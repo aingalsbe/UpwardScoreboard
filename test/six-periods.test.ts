@@ -17,7 +17,8 @@ const T0 = 1_000_000;
 test('default rules: 6 periods, two halves of 3, 2 timeouts per half', () => {
   assert.equal(DEFAULT_RULES.periods, 6);
   const s = initialState();
-  assert.equal(s.rules.periods, 6); assert.equal(timeoutCap(s.rules), 2); assert.equal(s.home.timeoutsLeft, 2);
+  assert.equal(s.rules.periods, 6); assert.equal(s.rules.periodLengthMs, 6 * 60_000); assert.equal(s.clock.remainingMs, 360_000, 'clock starts at 6:00');
+  assert.equal(timeoutCap(s.rules), 2); assert.equal(s.home.timeoutsLeft, 2);
   assert.equal(timeoutCap({ ...s.rules, timeoutsPerHalf: undefined, timeoutsPerGame: 3 }), 3, 'legacy games keep per-game timeouts');
 });
 
@@ -111,7 +112,8 @@ test('migration: scheduled games -> 6 periods; finals + active untouched; runs o
   await pool.query(`INSERT INTO courts(slug, name, conflicts_with) VALUES ('full','Full','{west,east}'),('west','West','{}'),('east','East','{}')`);
   const team = async (n: string, g: string) => (await pool.query(`INSERT INTO teams(name, short_name, grade, grade_order) VALUES ($1,upper($1),$2,$3) RETURNING id`, [n, g, gradeOrder(g)])).rows[0].id;
   const b = await team('Bears', '2nd Grade'), d = await team('Dolphins', '2nd Grade'), h = await team('Hawks', '3rd Grade'), t = await team('Tigers', '3rd Grade');
-  const old = { ...initialState({ periods: 4, timeoutsPerGame: 3, timeoutsPerHalf: 0 }) };
+  const old = { ...initialState({ periods: 4, timeoutsPerGame: 3, timeoutsPerHalf: 0, periodLengthMs: 8 * 60_000 }) };
+  old.beforeNext = { period: 1, homeFouls: 0, awayFouls: 0, remainingMs: 7 * 60_000 };
   const hist = (st: any) => JSON.stringify({ present: st, past: [], future: [] });
   const fin = { ...old, status: 'complete', home: { ...old.home, score: 20 }, away: { ...old.away, score: 18 } };
   const ins = (h1: number, a1: number, at: string, status: string, history: string | null, rules = '{}', fh: number | null = null, fa: number | null = null) => pool.query(
@@ -121,6 +123,8 @@ test('migration: scheduled games -> 6 periods; finals + active untouched; runs o
   const schedHist = await ins(h, t, '2026-10-24 10:00-05', 'scheduled', hist(old));
   const final = await ins(h, t, '2026-10-17 10:00-05', 'complete', hist(fin), '{"periods":4}', 20, 18);
   const before = (await pool.query('SELECT rules, history, final_home, final_away, updated_at FROM games WHERE id=$1', [final])).rows[0];
+  const live = await ins(b, d, '2026-10-23 18:00-05', 'active', hist({ ...old, status: 'active' }), '{"periods":4}');
+  const liveBefore = (await pool.query('SELECT rules, history FROM games WHERE id=$1', [live])).rows[0];
   assert.equal(await db.migrateSixPeriods(), 2);
   const g = async (id: number) => (await pool.query('SELECT rules, history FROM games WHERE id=$1', [id])).rows[0];
   assert.equal((await g(sched)).rules.periods, 6);
@@ -128,8 +132,21 @@ test('migration: scheduled games -> 6 periods; finals + active untouched; runs o
   assert.equal(sh.rules.periods, 6); assert.equal(sh.rules.timeoutsPerHalf, 2); assert.equal(sh.home.timeoutsLeft, 2);
   assert.deepEqual((await pool.query('SELECT rules, history, final_home, final_away, updated_at FROM games WHERE id=$1', [final])).rows[0], before, 'final untouched');
   assert.equal(await db.migrateSixPeriods(), -1, 'runs once');
-  await db.migrate(); // full startup path is a no-op now
-  assert.equal((await g(schedHist)).history.present.rules.periods, 6);
+  assert.equal(sh.clock.remainingMs, 8 * 60_000, 'six-period migration alone keeps the period length');
+
+  // A DB that already ran migration_six_periods still gets 6:00 periods (separate key), via the normal startup path.
+  assert.equal((await pool.query(`SELECT 1 FROM settings WHERE key='migration_six_min_periods'`)).rowCount, 0);
+  await db.migrate();
+  assert.equal((await g(sched)).rules.periodLengthMs, 360_000); assert.equal((await g(sched)).rules.periods, 6);
+  const m = (await g(schedHist)).history.present;
+  assert.equal(m.rules.periodLengthMs, 360_000); assert.equal(m.rules.periods, 6);
+  assert.deepEqual(m.clock, { running: false, remainingMs: 360_000, startedAt: null }, 'saved clock reset to 6:00');
+  assert.equal(m.beforeNext.remainingMs, 360_000, 'Prev snapshot capped at 6:00');
+  assert.deepEqual((await pool.query('SELECT rules, history, final_home, final_away, updated_at FROM games WHERE id=$1', [final])).rows[0], before, 'final still untouched');
+  assert.equal((await g(final)).history.present.rules.periodLengthMs, 8 * 60_000);
+  assert.equal(await db.migrateSixMinPeriods(), -1, 'runs once');
+  assert.deepEqual((await pool.query('SELECT rules, history FROM games WHERE id=$1', [live])).rows[0], liveBefore, 'in-progress game untouched');
+  await pool.query('DELETE FROM games WHERE id=$1', [live]);
 });
 
 test('server: 2nd Grade game hides score on tv/overlay/viewer/lobby + public HTTP; scorekeeper sees it', { skip }, async () => {

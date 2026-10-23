@@ -94,7 +94,7 @@ export function parseDemo(params) {
  * score, or 0-0; a frozen, plausible period + clock), earlier ones are complete, later ones scheduled. Pure; the
  * server is never told.
  */
-export function demoGames(games, at, quarterMs = 8 * 60000) {
+export function demoGames(games, at, quarterMs = 6 * 60000) {
   const t = toMin(at);
   return (games || []).map((g) => {
     if (!g.time) return g;
