@@ -57,7 +57,7 @@
           <button class="btn sm" data-cmd='{"type":"CLOCK_ADJUST","ms":1000}'>+1 s</button>
         </div>
         <button class="btn sm" id="set-clock">Set clock…</button>
-        <div class="per">Period <b data-bind="period"></b> of <span data-bind="periods"></span></div>
+        <div class="per"><b data-bind="period"></b> of <span data-bind="periods"></span><span class="no-score-note" data-bind="scoreNote"></span></div>
         <div class="row">
           <button class="btn sm" data-cmd='{"type":"PERIOD","delta":-1}'>◀ Prev</button>
           <button class="btn sm" data-cmd='{"type":"PERIOD","delta":1}'>Next ▶</button>

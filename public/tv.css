@@ -164,3 +164,9 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 #idle > * { flex-shrink: 0; }
 #idle:is([data-conn="offline"], [data-conn="connecting"]) .next-matchup { font-size: 5.6rem; }
 #idle:is([data-conn="offline"], [data-conn="connecting"]) .idle-brand .church-logo { height: 7rem; }
+
+/* SAGE: minimal stopgap (2026-10, six-periods change) — 2nd Grade and below show no score (root .no-score);
+   the server already sends none. Please restyle as you see fit. */
+.no-score .score { visibility: hidden; }
+/* SAGE: stopgap — the period now reads "1st Half · P2" (was "2"); smaller so it fits the center column. */
+.period { font-size: 3.6rem; white-space: nowrap; }

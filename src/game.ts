@@ -5,20 +5,43 @@
 export type Side = 'home' | 'away';
 
 export interface Rules {
-  periods: number;          // e.g. 4 quarters or 2 halves
+  periods: number;          // regulation periods; the game is split into two halves of ceil(periods/2)
   periodLengthMs: number;   // e.g. 8 min
-  timeoutsPerGame: number;
+  timeoutsPerGame: number;  // legacy per-game allotment (used when timeoutsPerHalf is not set)
+  /** Timeouts per half, refilled at halftime (2026-10). Unset/0 = legacy per-game timeouts. */
+  timeoutsPerHalf?: number;
   bonusFouls: number;       // team fouls at which the OPPONENT is in the bonus
   foulReset: 'period' | 'half' | 'game';
 }
 
+/**
+ * League rules (2026-10): 6 periods = two halves of 3, halftime after period 3.
+ * Fouls reset at halftime (bonus is per half); timeouts are per half (2) and refill at halftime.
+ * Overtime (period 7+) continues the 2nd half: fouls and remaining timeouts carry over.
+ */
 export const DEFAULT_RULES: Rules = {
-  periods: 4,
+  periods: 6,
   periodLengthMs: 8 * 60_000,
-  timeoutsPerGame: 3,
+  timeoutsPerGame: 4,
+  timeoutsPerHalf: 2,
   bonusFouls: 7,
   foulReset: 'half',
 };
+
+/** Periods in the first half (halftime comes after this period). */
+export const periodsPerHalf = (r: Pick<Rules, 'periods'>) => Math.ceil(r.periods / 2);
+/** Timeouts a team can hold: per half when timeoutsPerHalf is set, else per game (legacy). */
+export const timeoutCap = (r: Rules) => (r.timeoutsPerHalf && r.timeoutsPerHalf > 0 ? r.timeoutsPerHalf : r.timeoutsPerGame);
+
+/**
+ * The one period label used on every screen (TV, overlay, scorekeeper, lobby; mirrored in public/common.js):
+ * "1st Half · P2", "2nd Half · P5", "OT", "OT2". Periods are numbered P1..P6 across the game.
+ */
+export function periodLabel(p: number, periods: number): string {
+  if (!p) return '';
+  if (p > periods) return `OT${p - periods > 1 ? p - periods : ''}`;
+  return `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`;
+}
 
 export interface TeamState { score: number; fouls: number; timeoutsLeft: number; }
 
@@ -36,7 +59,7 @@ export interface GameState {
   rules: Rules;
   lastLabel: string | null; // human label of last change, for the Undo button
   /** Snapshot taken when "Next period" was pressed, so an accidental Next can be reversed with Prev. */
-  beforeNext?: { period: number; homeFouls: number; awayFouls: number; remainingMs: number } | null;
+  beforeNext?: { period: number; homeFouls: number; awayFouls: number; remainingMs: number; homeTimeouts?: number; awayTimeouts?: number; banner?: string | null } | null;
 }
 
 export type Command =
@@ -61,7 +84,7 @@ export const HISTORY_LIMIT = 100;
 
 export function initialState(rules: Partial<Rules> = {}): GameState {
   const r = { ...DEFAULT_RULES, ...rules };
-  const team = (): TeamState => ({ score: 0, fouls: 0, timeoutsLeft: r.timeoutsPerGame });
+  const team = (): TeamState => ({ score: 0, fouls: 0, timeoutsLeft: timeoutCap(r) });
   return {
     seq: 0, status: 'scheduled', period: 1,
     clock: { running: false, remainingMs: r.periodLengthMs, startedAt: null },
@@ -111,7 +134,7 @@ export function apply(s: GameState, c: Command, now: number): GameState {
     }
     case 'TIMEOUT': {
       const t = next[c.team];
-      const v = clamp(t.timeoutsLeft + Math.trunc(c.delta), 0, s.rules.timeoutsPerGame);
+      const v = clamp(t.timeoutsLeft + Math.trunc(c.delta), 0, timeoutCap(s.rules));
       if (v === t.timeoutsLeft) return s;
       t.timeoutsLeft = v;
       if (c.delta < 0) next.clock = frozen(next.clock, now); // timeout stops the clock
@@ -127,7 +150,9 @@ export function apply(s: GameState, c: Command, now: number): GameState {
       next.clock = frozen(s.clock, now); label = 'Clock stop'; break;
     case 'CLOCK_EXPIRE':
       if (!s.clock.running || remainingMs(s.clock, now) > 0) return s;
-      next.clock = { running: false, remainingMs: 0, startedAt: null }; label = 'End of period'; break;
+      next.clock = { running: false, remainingMs: 0, startedAt: null }; label = 'End of period';
+      if (s.period === periodsPerHalf(s.rules)) next.banner = 'HALFTIME'; // end of the 1st half (P3 by default)
+      break;
     case 'CLOCK_ADJUST': {
       const f = frozen(s.clock, now);
       const v = clamp(f.remainingMs + c.ms, 0, s.rules.periodLengthMs);
@@ -143,13 +168,22 @@ export function apply(s: GameState, c: Command, now: number): GameState {
       next.period = p;
       next.clock = { running: false, remainingMs: s.rules.periodLengthMs, startedAt: null };
       const back = c.delta < 0 && s.beforeNext && s.beforeNext.period === p ? s.beforeNext : null;
-      const half = Math.ceil(s.rules.periods / 2);
-      const reset = s.rules.foulReset === 'period' ||
-        (s.rules.foulReset === 'half' && c.delta > 0 && s.period <= half && p > half);
+      const half = periodsPerHalf(s.rules);
+      const intoSecondHalf = c.delta > 0 && s.period <= half && p > half;
+      const reset = s.rules.foulReset === 'period' || (s.rules.foulReset === 'half' && intoSecondHalf);
       if (reset) { next.home.fouls = 0; next.away.fouls = 0; }
-      if (c.delta > 0) next.beforeNext = { period: s.period, homeFouls: s.home.fouls, awayFouls: s.away.fouls, remainingMs: remainingMs(s.clock, now) };
-      if (back) { // Prev right after Next: bring back that period's fouls and clock (QA #11)
+      if (intoSecondHalf) {
+        if (s.rules.timeoutsPerHalf) next.home.timeoutsLeft = next.away.timeoutsLeft = timeoutCap(s.rules); // refill at halftime
+        next.banner = 'HALFTIME'; // shown until the 2nd half clock starts
+      }
+      else if (s.banner === 'HALFTIME') next.banner = null; // any other period change drops a stale HALFTIME
+      if (c.delta > 0) next.beforeNext = { period: s.period, homeFouls: s.home.fouls, awayFouls: s.away.fouls, remainingMs: remainingMs(s.clock, now),
+        homeTimeouts: s.home.timeoutsLeft, awayTimeouts: s.away.timeoutsLeft, banner: s.banner };
+      if (back) { // Prev right after Next: bring back that period's fouls, timeouts and clock (QA #11)
         next.home.fouls = back.homeFouls; next.away.fouls = back.awayFouls;
+        if (back.homeTimeouts != null) next.home.timeoutsLeft = back.homeTimeouts;
+        if (back.awayTimeouts != null) next.away.timeoutsLeft = back.awayTimeouts;
+        if (back.banner !== undefined) next.banner = back.banner;
         next.clock = { running: false, remainingMs: back.remainingMs, startedAt: null };
       }
       if (c.delta < 0) next.beforeNext = null;

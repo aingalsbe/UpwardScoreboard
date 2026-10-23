@@ -36,7 +36,8 @@ const locker = (v) => `<div class="locker" data-bind="locker"${v ? '' : ' data-e
 const who = (name, coach) => `<div class="who"><div class="name" data-bind="name">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div></div>`;
 function teamRow(g, side, live) {
   const t = g[side];
-  const score = live ? `<span class="score" data-bind="${side}-score">${esc(t.score ?? 0)}</span>` : '<span></span>';
+  // 2nd Grade and below (g.hideScore): no score, the server sends none (empty span keeps the grid).
+  const score = live && !g.hideScore ? `<span class="score" data-bind="${side}-score">${esc(t.score ?? 0)}</span>` : '<span></span>';
   return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}
       ${who(t.name, t.coach)}${score}<span class="side">${side.toUpperCase()}</span></div>`;
 }

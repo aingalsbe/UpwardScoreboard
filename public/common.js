@@ -101,10 +101,17 @@ export function fmtClock(ms) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-export function periodLabel(p, periods) {
+/**
+ * The one period label for every screen (TV, overlay, scorekeeper, lobby; same as periodLabel in src/game.ts):
+ * "1st Half · P2", "2nd Half · P5", "OT", "OT2". 6 periods = two halves of 3, halftime after P3.
+ */
+export function periodLabel(p, periods = 6) {
+  if (!p) return '';
   if (p > periods) return `OT${p - periods > 1 ? p - periods : ''}`;
-  return String(p);
+  return `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`;
 }
+/** Timeouts a team can hold: per half (2026-10 rules) or per game (older games). */
+export const timeoutCap = (r) => (r && r.timeoutsPerHalf > 0 ? r.timeoutsPerHalf : r?.timeoutsPerGame ?? 0);
 
 /** Set every [data-bind="a.b"] element's text from an object. */
 export function bindText(root, data) {

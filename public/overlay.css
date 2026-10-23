@@ -39,3 +39,7 @@ body { position: fixed; inset: 0; display: flex; flex-direction: column; justify
 .no-game .bug, .no-game .church { display: none; }
 /* Offline / reconnecting: frozen clock, desaturated but readable (~9:1), dashed underline as a non-color cue. */
 [data-conn="offline"] [data-clock], [data-conn="connecting"] [data-clock] { color: #d9b3b0; text-decoration: underline dashed 2px #8a90a6; text-underline-offset: 6px; }
+
+/* SAGE: minimal stopgap (2026-10, six-periods change) — 2nd Grade and below show no score (root .no-score);
+   the server already sends none. Please restyle as you see fit. */
+.no-score .score { visibility: hidden; }

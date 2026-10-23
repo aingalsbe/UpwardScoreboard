@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { pool, migrate, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
-import { scorekeeperView } from './payload.js';
+import { scorekeeperView, publicView, hidesScore } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
@@ -241,6 +241,9 @@ async function courtSnapshot(slug: string) {
      FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id
      WHERE g.court_id=$1 AND g.status='scheduled' AND g.id IS DISTINCT FROM $2 AND g.scheduled_at >= date_trunc('day', now())
      ORDER BY g.scheduled_at NULLS LAST, g.id LIMIT 3`, [c.id, active?.id ?? null])).rows;
+  // Young grades (2nd and below): flag rows so publicView() strips their scores for non-scorekeeper clients.
+  const flag = (x: any) => (x ? Object.assign(x, { hideScore: hidesScore(gradeOrder(x.grade)) }) : x);
+  [nextUp, lastFinal, ...today, ...upNext].forEach(flag);
   return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext, nextUp, lastFinal, today };
 }
 
@@ -256,6 +259,7 @@ async function gameViewNorm(gameId: number) {
     court: r.court_slug ? { slug: r.court_slug, name: r.court_name } : null,
     homeSide: sideOf(r.swap_colors, 'home'), swapped: !!r.swap_colors, grade: r.home_grade || r.away_grade || null,
     gender: r.home_gender || r.away_gender || null, label: divisionLabel(r.home_grade || r.away_grade, r.home_gender || r.away_gender),
+    hideScore: hidesScore(gradeOrder(r.home_grade || r.away_grade)), // 2nd Grade and below: public screens show no score
     cheer: cheerView(r),
     home: { ...teamView(r, 'home_team', theme, 'home'), bonus: isBonus(s, 'home') },
     away: { ...teamView(r, 'away_team', theme, 'away'), bonus: isBonus(s, 'away') },
@@ -267,9 +271,12 @@ async function gameViewNorm(gameId: number) {
 interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule'; authed: boolean; qrVer?: number | null; date?: string; }
 const clients = new Set<Client>();
 
-/** Scorekeepers never get cheer squad data (TV/overlay only) nor any coach name (deep-stripped). */
+/**
+ * Scorekeepers never get cheer squad data (TV/overlay only) nor any coach name (deep-stripped). Everyone else
+ * (tv, overlay, viewer, lobby/schedule) gets publicView: no scores for 2nd Grade and below.
+ */
 function forRole(c: Client, msg: any) {
-  return c.role === 'score' ? scorekeeperView(msg) : msg;
+  return c.role === 'score' ? scorekeeperView(msg) : publicView(msg);
 }
 function send(c: Client, msg: unknown) { if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(forRole(c, msg))); }
 
@@ -632,6 +639,7 @@ async function scheduleSnapshot(date: string) {
     const s = live?.state;
     games.push({
       id: r.id, court: r.court_slug, time: t.rows[0].hm, dur: r.duration_min ?? GAME_MINUTES, status: r.status,
+      hideScore: hidesScore(gradeOrder(r.home_grade || r.away_grade)),
       home: { ...teamView(r, 'home_team', theme, 'home'), score: s ? s.home.score : r.final_home },
       away: { ...teamView(r, 'away_team', theme, 'away'), score: s ? s.away.score : r.final_away },
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
@@ -1031,7 +1039,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   }
   if (seg[1] === 'public' && seg[2] === 'court' && seg[3]) {
     const s = await courtSnapshot(seg[3]);
-    return s ? json(res, 200, s) : json(res, 404, { error: 'unknown court' });
+    return s ? json(res, 200, publicView(s)) : json(res, 404, { error: 'unknown court' });
   }
   // Lobby idle screen + demo mode (read-only): the game days from today on (league time) with the first tip-off.
   if (p === '/api/public/game-days') {
@@ -1041,7 +1049,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     return json(res, 200, { today, days: rows });
   }
   if (p === '/api/public/schedule') {
-    return json(res, 200, await scheduleSnapshot(resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now())));
+    return json(res, 200, publicView(await scheduleSnapshot(resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now()))));
   }
   // ---- everything below needs the admin session
   if (!validToken(tokenFrom(req))) return json(res, 401, { error: 'admin login required' });

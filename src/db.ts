@@ -133,6 +133,46 @@ export async function migrate(): Promise<void> {
   await migrateFloorCourts();
   await migrateCheer();
   await migrateCheerSlots();
+  await migrateSixPeriods();
+}
+
+/** Rule fields the 2026-10 six-period migration writes onto not-yet-played games. */
+export const SIX_PERIOD_RULES = { periods: 6, timeoutsPerHalf: 2, timeoutsPerGame: 4 } as const;
+
+/**
+ * One-time (settings key migration_six_periods) switch of every SCHEDULED game to the 6-period rules: 3 periods
+ * per half, halftime after P3, 2 timeouts per half. games.rules gets the new fields merged in; a stored history
+ * (any snapshot, incl. undo/redo) gets the same rules and timeoutsLeft capped at the new per-half allotment.
+ * Complete (final) and active (in-progress) games are NOT touched. Returns the number of games migrated, or -1
+ * when it already ran. `force` re-runs it (tests).
+ */
+export async function migrateSixPeriods(force = false): Promise<number> {
+  const KEY = 'migration_six_periods';
+  if (!force && (await pool.query('SELECT 1 FROM settings WHERE key=$1', [KEY])).rowCount) return -1;
+  const client = await pool.connect();
+  let n = 0;
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`SELECT id, rules, history FROM games WHERE status='scheduled' FOR UPDATE`);
+    for (const r of rows) {
+      const rules = { ...(r.rules || {}), ...SIX_PERIOD_RULES };
+      let h = r.history;
+      if (h && h.present) {
+        const fix = (st: any) => {
+          if (!st || !st.rules) return;
+          st.rules = { ...st.rules, ...SIX_PERIOD_RULES };
+          for (const side of ['home', 'away']) if (st[side]) st[side].timeoutsLeft = Math.min(st[side].timeoutsLeft ?? 2, 2);
+        };
+        fix(h.present); (h.past || []).forEach(fix); (h.future || []).forEach(fix);
+      } else h = null;
+      await client.query('UPDATE games SET rules=$2, history=$3 WHERE id=$1', [r.id, rules, h]);
+      n++;
+    }
+    await client.query(`INSERT INTO settings(key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, [KEY, new Date().toISOString() + ` games=${n}`]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  if (n) console.log(`Six-period migration: ${n} scheduled game(s) now use 6 periods (3 per half, halftime after P3); finals and active games untouched.`);
+  return n;
 }
 
 /** SQL for a game's cheer slot (league-local date + start floored to the hour). $tz is a bind parameter. */

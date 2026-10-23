@@ -1,6 +1,6 @@
 // Display logic shared by tv.html and overlay.html. Markup and CSS own the look;
 // this file only fills [data-bind] text, sets CSS variables and state classes.
-import { connect, courtFromPath, displayNow, clockMs, fmtClock, periodLabel, bindText } from './common.js';
+import { connect, courtFromPath, displayNow, clockMs, fmtClock, periodLabel, bindText, timeoutCap } from './common.js';
 
 const court = courtFromPath();
 const role = document.body.dataset.role || 'tv';
@@ -40,18 +40,20 @@ function render() {
   root.classList.toggle('has-next-up', !g && !!nx); root.classList.toggle('has-last-final', !g && !!lf);
   root.dataset.status = g ? g.state.status : 'idle';
   root.classList.toggle('no-game', !g);
+  root.classList.toggle('no-score', !!g?.hideScore); // 2nd Grade and below: clock + period only (see tv.css / overlay.css)
   const view = {
     league: snap.league, court: snap.court?.name,
     'church-name': snap.church?.name || '', cheer: ch?.name || '',
     gameInfo: g ? [snap.court?.name, g.label || g.grade || g.division, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ') : 'Waiting for the next game',
     grade: g?.label || g?.grade || '',
     next: nx ? { time: nx.is_today ? nx.time : `${nx.day} ${nx.time}`, grade: nx.label || nx.grade || '', matchup: `${nx.home} vs ${nx.away}` } : { time: '', grade: '', matchup: '' },
-    lastFinal: lf ? `Final: ${lf.label || lf.grade ? (lf.label || lf.grade) + ' · ' : ''}${lf.home} ${lf.final_home ?? ''} – ${lf.final_away ?? ''} ${lf.away}` : '', matchup: g ? `${[g.label || g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
+    // 2nd Grade and below (hideScore): the server sends no score, so the final line names the matchup only.
+    lastFinal: lf ? `Final: ${lf.label || lf.grade ? (lf.label || lf.grade) + ' · ' : ''}${lf.hideScore ? `${lf.home} vs ${lf.away}` : `${lf.home} ${lf.final_home ?? ''} – ${lf.final_away ?? ''} ${lf.away}`}` : '', matchup: g ? `${[g.label || g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')}` : '',
     upNext: (snap.upNext || []).map((u) => `${u.is_today === false && u.day ? u.day + ' · ' : ''}${u.time || ''}  ${u.label || u.grade ? (u.label || u.grade) + ' · ' : ''}${u.home} vs ${u.away}`).join('   ·   ') || 'Thanks for coming!',
   };
   if (g) {
     Object.assign(view, {
-      home: { ...g.home, ...s.home }, away: { ...g.away, ...s.away },
+      home: { ...g.home, ...s.home, score: g.hideScore ? '' : s.home.score }, away: { ...g.away, ...s.away, score: g.hideScore ? '' : s.away.score },
       period: periodLabel(s.period, s.rules.periods), banner: s.banner || '',
     });
     root.style.setProperty('--home-color', g.home.color); root.style.setProperty('--home-accent', g.home.accent);
@@ -61,8 +63,8 @@ function render() {
     root.classList.toggle('has-banner', !!s.banner); root.classList.toggle('final', s.status === 'final');
     root.classList.toggle('clock-running', s.clock.running);
     logo(document.querySelector('[data-logo="home"]'), g.home); logo(document.querySelector('[data-logo="away"]'), g.away);
-    dots(document.querySelector('[data-timeouts="home"]'), s.home.timeoutsLeft, s.rules.timeoutsPerGame);
-    dots(document.querySelector('[data-timeouts="away"]'), s.away.timeoutsLeft, s.rules.timeoutsPerGame);
+    dots(document.querySelector('[data-timeouts="home"]'), s.home.timeoutsLeft, timeoutCap(s.rules));
+    dots(document.querySelector('[data-timeouts="away"]'), s.away.timeoutsLeft, timeoutCap(s.rules));
   } else {
     // Idle: drop every per-game side class and color variable (incl. the ones contrast.js derived), so nothing
     // from the last game (e.g. home-light) leaks into the Next up screen.

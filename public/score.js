@@ -203,11 +203,13 @@ function render() {
     const side = (k) => ({
       ...g[k], ...s[k],
       foulText: `${s[k].fouls}${g[k === 'home' ? 'away' : 'home'].bonus ? ' · BONUS' : ''}`, // this team's fouls put the OTHER team in bonus
-      toText: `${s[k].timeoutsLeft} left`,
+      toText: `${s[k].timeoutsLeft} left${s.rules.timeoutsPerHalf ? ' this half' : ''}`,
     });
     Object.assign(view, {
       home: side('home'), away: side('away'),
       period: periodLabel(s.period, s.rules.periods), periods: s.rules.periods,
+      // 2nd Grade and below: TV/overlay/lobby hide the score; it is still kept here for the record.
+      scoreNote: g.hideScore ? ' · score hidden on TV (2nd Grade & below)' : '',
       possText: s.possession ? (s.possession === 'home' ? `◀ ${g.home.name}` : `${g.away.name} ▶`) : 'not set',
       undoText: g.canUndo && s.lastLabel ? `last: ${s.lastLabel}` : '',
     });

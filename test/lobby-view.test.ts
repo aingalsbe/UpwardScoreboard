@@ -64,7 +64,7 @@ test('nothing left today = empty; header and time formatting', { skip }, async (
   assert.equal(p.empty, true); assert.equal(p.now, null); assert.equal(p.next, null);
   assert.equal(headerText('2026-10-24', '11:00'), 'SATURDAY 11:00 AM'); assert.equal(headerText('2026-10-23', '17:15'), 'FRIDAY 5:15 PM');
   assert.equal(ampm('00:30'), '12:30 AM'); assert.equal(ampm('12:00'), '12:00 PM');
-  assert.equal(quarter(2, 4), 'Q2'); assert.equal(quarter(5, 4), 'OT'); assert.equal(quarter(6, 4), 'OT2'); assert.equal(hourOf('09:59'), '09:00');
+  assert.equal(quarter(2, 6), '1st Half · P2'); assert.equal(quarter(4, 6), '2nd Half · P4'); assert.equal(quarter(7, 6), 'OT'); assert.equal(quarter(8, 6), 'OT2'); assert.equal(quarter(3), '1st Half · P3'); assert.equal(hourOf('09:59'), '09:00');
 });
 
 test('mixed days and empty-court text', { skip }, async () => {
@@ -118,8 +118,9 @@ test('demo mode: ?at / ?day&at parsing, game-day pick, time-based live/next (rea
   const d = demoGames(gs, '11:20');
   assert.deepEqual(d.map((g: any) => g.status), ['complete', 'active', 'active', 'scheduled', 'scheduled']);
   assert.deepEqual([d[1].home.score, d[1].away.score], [0, 0], 'no stored score -> 0-0');
+  assert.deepEqual(demoGames([{ ...gs[1], hideScore: true }], '11:20').map((g: any) => [g.home.score, g.away.score]), [[null, null]], '2nd Grade and below: no demo score');
   assert.deepEqual([d[2].home.score, d[2].away.score], [12, 10], 'stored score kept');
-  assert.equal(d[1].period, 2); assert.equal(d[1].clock.running, false); assert.ok(d[1].clock.remainingMs > 0 && d[1].clock.remainingMs <= 8 * 60000);
+  assert.equal(d[1].period, 3, '20 of 60 min with 6 periods = P3'); assert.equal(d[1].periods, 6); assert.equal(d[1].clock.running, false); assert.ok(d[1].clock.remainingMs > 0 && d[1].clock.remainingMs <= 8 * 60000);
   assert.equal(gs[1].status, 'scheduled', 'input not mutated');
   const p = planLobby(d);
   assert.deepEqual([p.now.courts.west.id, p.now.courts.east.id, p.next.courts.west.id, p.next.courts.east.id], [2, 3, 4, 5]);

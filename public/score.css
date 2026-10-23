@@ -162,3 +162,6 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 }
 @media (min-width: 600px) { .picker, .resume { max-width: 640px; margin: 0 auto; } }
 [hidden] { display: none !important; }
+
+/* SAGE: minimal stopgap (2026-10) — longer period label ("1st Half · P2") and the score-hidden note. Restyle freely. */
+.per .no-score-note { font-size: .8em; opacity: .75; }

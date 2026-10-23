@@ -12,8 +12,8 @@ export const ampm = (hm) => { const [h, m] = String(hm).split(':').map(Number); 
 const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 /** "2026-10-24", "11:00" -> "SATURDAY 11:00 AM" (the lobby header). */
 export const headerText = (date, hm) => `${DAYS[new Date(`${date}T12:00:00Z`).getUTCDay()]}${hm ? ' ' + ampm(hm) : ''}`;
-/** Period label like the mockup: Q1..Q4, OT, OT2. */
-export const quarter = (p, periods) => (!p ? '' : p > periods ? `OT${p - periods > 1 ? p - periods : ''}` : `Q${p}`);
+/** Period label, same scheme as every screen (common.js periodLabel): "1st Half · P2", "2nd Half · P5", OT, OT2. */
+export const quarter = (p, periods = 6) => (!p ? '' : p > periods ? `OT${p - periods > 1 ? p - periods : ''}` : `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`);
 
 /**
  * games: the schedule snapshot's games for one day ({ id, court, time 'HH:MM', status, ... }).
@@ -98,13 +98,13 @@ export function demoGames(games, at, quarterMs = 8 * 60000) {
   const t = toMin(at);
   return (games || []).map((g) => {
     if (!g.time) return g;
-    const start = toMin(g.time), dur = g.dur || 60, periods = g.periods || 4;
+    const start = toMin(g.time), dur = g.dur || 60, periods = g.periods || 6;
     if (t < start) return { ...g, status: 'scheduled' };
     if (t >= start + dur) return { ...g, status: 'complete' };
     const frac = (t - start) / dur, period = Math.min(periods, Math.floor(frac * periods) + 1);
     const inPeriod = frac * periods - (period - 1);
     return { ...g, status: 'active', period, periods, clock: { running: false, startedAt: null, remainingMs: Math.max(1000, Math.round(quarterMs * (1 - inPeriod) / 1000) * 1000) },
-      home: { ...g.home, score: g.home?.score ?? 0 }, away: { ...g.away, score: g.away?.score ?? 0 } };
+      home: { ...g.home, score: g.hideScore ? null : g.home?.score ?? 0 }, away: { ...g.away, score: g.hideScore ? null : g.away?.score ?? 0 } };
   });
 }
 /** "DEMO · Sat 11:00 AM" */
