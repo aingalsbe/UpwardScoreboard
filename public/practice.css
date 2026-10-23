@@ -1,0 +1,62 @@
+/* Practice TVs. Base = Sage's mockup CSS (deliverables/mockups/practice/practice.css, commit 80a2fcf), copied verbatim
+   except the font URLs. Additions at the end are marked SAGE: (stopgaps for her to restyle). */
+@font-face { font-family: "Anton"; src: url(/fonts/Anton-Regular-latin.woff2) format("woff2"); }
+@font-face { font-family: "Montserrat"; src: url(/fonts/Montserrat-Variable-latin.woff2) format("woff2"); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 10px; --gold: #ffc72c; --maroon: #800000; --pink: #f47cc6; --teal: #5ce1e6; }
+body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Montserrat", sans-serif; color: #fff; position: relative;
+  background: radial-gradient(ellipse 55% 30% at 50% 100%, transparent 62%, rgba(255,255,255,.35) 63%, transparent 65%),
+              linear-gradient(90deg, rgba(0,0,0,.08) 0 2px, transparent 2px 120px) , linear-gradient(180deg,#a8652c,#c98a4b 45%,#9a5a25); }
+body::before { content:""; position:absolute; inset:0; background: rgba(0,0,0,.28); }
+header { position: relative; z-index:1; display:flex; justify-content:space-between; align-items:center; padding: 2.4rem 6rem 0; }
+h1 { font-family:"Anton"; font-weight:400; font-size: 11rem; line-height:1; letter-spacing:.3rem; color:#d9d9d9;
+  -webkit-text-stroke:.5rem #111; paint-order:stroke fill; text-shadow:0 .6rem 1.2rem rgba(0,0,0,.6); }
+body.cheer h1 { color: var(--pink); }
+.page { font: 800 3rem "Montserrat"; background:#000; color:#fff; border:.4rem solid var(--gold); border-radius:3rem; padding:.8rem 2.4rem; letter-spacing:.1rem; }
+.page b { color: var(--gold); }                                   /* gold on black 13.5:1 */
+.dots { display:inline-flex; gap:.8rem; margin-left:1.4rem; vertical-align:middle; }
+.dots i { width:1.4rem; height:1.4rem; border-radius:50%; background:#555; border:.2rem solid #fff; } .dots i.on { background: var(--gold); }
+main { position:relative; z-index:1; }
+/* cheer: cards like the slides — black card, colored room pill, squad + coach */
+.cheer-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 3rem 4rem; padding: 4rem 8rem 0; }
+.card { background:#000; border:.6rem solid #000; border-radius:2.4rem; box-shadow:0 .8rem 2rem rgba(0,0,0,.55); padding:1.6rem 2rem 2rem; text-align:center; }
+.card .room { display:block; border-radius:1.6rem; font:900 4.4rem/1.15 "Montserrat"; color:#000; padding:.4rem 1rem; }  /* black on pink 9.3:1, teal 13:1 */
+.card.pink .room { background:var(--pink); } .card.teal .room { background:var(--teal); }
+.card .team { font:900 4.6rem/1.2 "Montserrat"; margin-top:1.2rem; }
+.card.pink .team, .card.pink .coach { color:var(--pink); }        /* pink on black 9.3:1 */
+.card.teal .team, .card.teal .coach { color:var(--teal); }        /* teal on black 13:1 */
+.card .team { border-bottom:.4rem solid var(--gold); padding-bottom:.6rem; }
+.card .coach { font:700 3.6rem/1.3 "Montserrat"; margin-top:.6rem; }
+/* basketball: grey frame, 2x2 gold court cards, West left / East right like the slides */
+.frame { margin: 3.6rem auto 0; width: 150rem; background:#cfcfcf; border:.8rem solid #111; border-radius:3rem; padding:2.6rem;
+  display:grid; grid-template-columns:1fr 1fr; gap:2.6rem; box-shadow:0 1rem 3rem rgba(0,0,0,.6); }
+.court { background:var(--gold); border:.6rem solid #000; border-radius:2.4rem; text-align:center; padding:1.8rem 2rem 2.2rem; color:#000; }  /* black on gold 13.5:1 */
+.court .label { display:inline-block; background:#000; color:var(--gold); font:900 4.6rem/1.1 "Montserrat"; padding:.6rem 4rem; border-radius:3rem; }
+.court .team { font:900 7.2rem/1.15 "Montserrat"; margin-top:1.4rem; }
+.court .coach { font:700 4.8rem/1.2 "Montserrat"; margin-top:.4rem; padding-top:.8rem; border-top:.5rem dotted var(--maroon); display:inline-block; }
+.court[data-empty] .team { color:#5a4300; font-style:italic; }   /* 7.4:1 on gold */
+footer { position:absolute; z-index:1; left:6rem; bottom:2.4rem; font:700 2.8rem "Montserrat"; text-shadow:0 .2rem .6rem #000; }
+footer b { color:var(--gold); }
+.sample { position:absolute; right:2rem; bottom:1.4rem; z-index:2; font:700 1.6rem "Montserrat"; background:rgba(0,0,0,.75); padding:.4rem 1.2rem; border-radius:1rem; letter-spacing:.1rem; }
+.route { position:absolute; z-index:1; right:2rem; bottom:5rem; font:600 1.6rem "Montserrat"; color:#ddd; background:rgba(0,0,0,.75); padding:.3rem 1rem; border-radius:.8rem; } /* setup aid; #ddd on ~black 14:1 */
+
+/* SAGE: stopgap — scale the fixed 1920x1080 stage to any TV (letterboxed), like the lobby. */
+html { background: #000; overflow: hidden; }
+body { transform-origin: 0 0; transform: translate(var(--x, 0), var(--y, 0)) scale(var(--scale, 1)); }
+.stage { display: contents; }
+/* SAGE: stopgap — mascot logo / initial badge next to the team or squad name (Aaron, 2026-10-23). */
+.mascot { display: block; margin: 1rem auto 0; width: 9rem; height: 9rem; object-fit: contain; }
+.court .mascot { width: 10rem; height: 10rem; }
+.mascot.badge { display: grid; place-items: center; border-radius: 50%; background: #000; color: var(--gold); border: .4rem solid #fff;
+  font: 900 4.6rem/1 "Montserrat", sans-serif; }                                   /* gold on black 13.5:1 */
+.court .team { margin-top: .6rem; }
+/* SAGE: stopgap — four courts + logos must fit 1080px: tighter court cards than the mockup. */
+.court { padding: 1.2rem 2rem 1.6rem; }
+.court .team { font-size: 6.2rem; }
+/* SAGE: stopgap — idle screen ("No practice right now" + next practice) and the demo tag. */
+main.idle { display: grid; place-items: center; height: 80rem; }
+.idle-card { background: #000; border: .6rem solid var(--gold); border-radius: 3rem; padding: 5rem 8rem; text-align: center; }
+.idle-title { font: 900 7rem/1.1 "Montserrat", sans-serif; color: #fff; }
+.idle-next { margin-top: 2rem; font: 800 4.8rem "Montserrat", sans-serif; color: var(--gold); }   /* gold on black 13.5:1 */
+.demo { position: absolute; z-index: 2; right: 2rem; top: 1.4rem; font: 800 2.8rem "Montserrat", sans-serif; background: var(--maroon); color: #fff; padding: .4rem 1.6rem; border-radius: 1rem; } /* white on maroon 10.9:1 */
+[hidden] { display: none !important; }

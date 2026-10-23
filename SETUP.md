@@ -111,6 +111,10 @@ docker compose exec upward-app node dist/src/load-logos.js --overwrite # replace
 
 Teams match on name + division ("5th Grade Boys"), squads on name, ignoring case and extra spaces. The report lists matched, filled, skipped (already set), manifest entries with no team, and teams/squads with no logo.
 
+### Practice schedule (Mon–Thu)
+
+Tables `practice_days` (day 1–4, basketball hours) and `practice_slots` (basketball: day, 1-hour start, court west1/west2/east1/east2, team; cheer: day, room, squad) are created by the normal start-up migration (additive, no data change). The demo seed fills a demo week; an existing database: `docker compose exec upward-app node dist/src/seed-practice.js` (only when no practice schedule exists). Real teams: Admin > Practice (`/admin/practice`). Displays: `/upwardbasketballscores/practice/basketball` and `/upwardbasketballscores/practice/cheer`.
+
 ## 8. URLs, ports and dev logins
 
 App on **http://localhost:3000** (health: `/api/health`). Postgres is not published to the host.
@@ -137,6 +141,7 @@ None. UpwardScoreboard has no cron jobs and no `DIGEST_CRON_ENABLED` or `WEATHER
 - [ ] Admin login works with the dev password
 - [ ] A scorekeeper tap shows on the matching TV (3rd Grade or older; K–2nd Grade show no score on the TV, and their scorekeeper has no points/fouls/timeouts, by design)
 - [ ] `curl -I http://localhost:3000/team-logos/cheer/lenexa-lil-cheer.png` returns 200 image/png; a team page/TV shows its mascot
+- [ ] `/practice/basketball?day=mon&at=17:10` shows Monday 5:00 PM with 4 courts and logos; `/practice/cheer?day=mon&at=17:10` shows the cheer rooms
 - [ ] Lobby halftime roll-up: `/lobby?day=sat&at=11:18` shows the 12:00 games on top with "Tip-Off: 12:00 PM" and 1:00 in Up Next
 - [ ] The TV period reads like "1st Half · P1" and a new game's clock starts at 6:00
 - [ ] Optional, with Node 20: `npm ci` then `npm test`; `npm run smoke` against the running app

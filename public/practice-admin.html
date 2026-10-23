@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin · Practice schedule</title><link rel="stylesheet" href="/admin.css"><link rel="stylesheet" href="/practice-admin.css"></head>
+<body class="practice-admin">
+<header class="pa-head"><h1>Practice schedule (Mon–Thu, every week)</h1><a href="/admin">← Admin</a></header>
+<p class="hint">Basketball: 1-hour slots in each night's hours; a team keeps one court all season. Cheer: each squad has its room all evening (no times) and keeps it all season. A night is all practice or all games.</p>
+<nav class="tabs" role="tablist"></nav>
+<section id="day"></section>
+<div class="pa-actions">
+  <label>Copy this night to:</label><span id="copyTo"></span><button id="copy" type="button">Copy (overwrites)</button>
+  <button id="save" type="button" class="primary">Save week</button>
+</div>
+<div id="msg" class="msg" role="status"></div>
+<ul id="errors" class="errors"></ul>
+<p class="hint">TVs: <a href="/upwardbasketballscores/practice/basketball">/upwardbasketballscores/practice/basketball</a> ·
+<a href="/upwardbasketballscores/practice/cheer">/upwardbasketballscores/practice/cheer</a> (demo: add <code>?day=mon&amp;at=17:10</code>)</p>
+<script type="module" src="/practice-admin.js"></script></body></html>

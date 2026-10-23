@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { PRACTICE_SCHEMA, seedPracticeDemo } from './practice.js';
 import { demoWeekend, demoSeedPlan, gradeOrder, LEAGUE_TZ, hourSlot, DEMO_COACHES, slotRooms, slotSeed } from './schedule.js';
 
 export const pool = new pg.Pool({
@@ -130,6 +131,7 @@ CREATE TABLE IF NOT EXISTS cheer_slots (
 
 export async function migrate(): Promise<void> {
   await pool.query(SCHEMA);
+  await pool.query(PRACTICE_SCHEMA); // Mon–Thu practice schedule (additive)
   await migrateFloorCourts();
   await migrateCheer();
   await migrateCheerSlots();
@@ -405,6 +407,8 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
         await client.query('UPDATE cheer_slots SET locker=$3 WHERE date=$1 AND slot_start=$2', [g.date, hourSlot(g.time), g.cheerLocker ?? null]);
       }
     }
+    await client.query('DELETE FROM practice_slots'); await client.query('DELETE FROM practice_days');
+    await seedPracticeDemo(client); // Mon–Thu practice week from the demo teams + squads
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   return true;

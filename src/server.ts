@@ -13,6 +13,7 @@ import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
+import { loadPractice, validatePractice, savePractice } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand,
@@ -1071,9 +1072,30 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   if (p === '/api/public/schedule') {
     return json(res, 200, publicView(await scheduleSnapshot(resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now()))));
   }
+  // Mon–Thu practice displays: the fixed weekly schedule + league-local "now" (day of week 0–6, HH:MM).
+  if (p === '/api/public/practice') {
+    const now = (await pool.query(`SELECT extract(isodow FROM now() AT TIME ZONE $1)::int % 7 AS dow, to_char(now() AT TIME ZONE $1, 'HH24:MI') AS hm`, [LEAGUE_TZ])).rows[0];
+    const sched = await loadPractice(pool);
+    return json(res, 200, { serverNow: Date.now(), now: { dow: now.dow, hm: now.hm }, days: sched.days,
+      basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, ...x }) => x) });
+  }
   // ---- everything below needs the admin session
   if (!validToken(tokenFrom(req))) return json(res, 401, { error: 'admin login required' });
   if (p === '/api/me') return json(res, 200, { role: 'admin', tz: process.env.TZ || 'UTC' });
+  if (p === '/api/practice' && m === 'GET') {
+    const teams = (await pool.query(`SELECT id, name, grade, gender, coach FROM teams ORDER BY grade_order NULLS LAST, grade, gender, lower(name)`)).rows;
+    const squads = (await pool.query(`SELECT id, name, coach FROM cheer_squads ORDER BY lower(name)`)).rows;
+    return json(res, 200, { ...(await loadPractice(pool)), teams, squads });
+  }
+  if (p === '/api/practice' && m === 'PUT') {
+    const { schedule, errors } = validatePractice(await readJson(req));
+    if (errors.length) return json(res, 400, { error: errors[0], errors });
+    const client = await pool.connect();
+    try { await client.query('BEGIN'); await savePractice(client, schedule); await client.query('COMMIT'); }
+    catch (e: any) { await client.query('ROLLBACK'); if (e.code === '23503') throw new HttpError(400, 'unknown team or cheer squad'); throw e; }
+    finally { client.release(); }
+    return json(res, 200, { ok: true, ...(await loadPractice(pool)) });
+  }
 
   if (seg[1] === 'teams') {
     const id = seg[2] ? Number(seg[2]) : undefined;
@@ -1331,6 +1353,8 @@ function csvOut(res: http.ServerResponse, name: string, body: string) {
 
 const PAGES: [RegExp, string][] = [
   [/^\/$/, 'index.html'], [/^\/admin\/?$/, 'admin.html'],
+  // Practice TVs (Mon–Thu): /upwardbasketballscores/practice/{cheer,basketball}, alias /practice/...; editor /admin/practice.
+  [/^\/(?:upwardbasketballscores\/)?practice\/(?:cheer|basketball)\/?$/, 'practice.html'], [/^\/admin\/practice\/?$/, 'practice-admin.html'],
   // Lobby TV (live + next per court, cheer per slot, lockers, coaches): /upwardbasketballscores/lobby, alias /lobby.
   // Before the <slug>court rule. The old full-day schedule screen (/schedule) was retired 2026-10-20 and 404s.
   // Lobby TV v2 (live + next per court, cheer per slot, lockers, coaches): /upwardbasketballscores/lobby, alias /lobby.
