@@ -84,6 +84,22 @@ test('season.js: cheer-only change reapplies, missing/invalid cheer falls back, 
   }
 });
 
+test('AC1 AC9 lobby .row.cheer has no filter or opacity, and a dashed fg border', () => {
+  const css = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public/lobby.css'), 'utf8');
+  const rules = css.split('}').map((chunk) => {
+    const i = chunk.lastIndexOf('{');
+    if (i < 0) return null;
+    return { sel: chunk.slice(0, i), body: chunk.slice(i + 1) };
+  }).filter((r): r is { sel: string; body: string } => !!r);
+  const cheer = rules.filter((r) => /\.row\.cheer\b/.test(r.sel));
+  assert.ok(cheer.length > 0, 'expected .row.cheer rules');
+  for (const r of cheer) {
+    assert.doesNotMatch(r.body, /(?:^|[;{])\s*filter\s*:/, `filter on ${r.sel.trim()}`);
+    assert.doesNotMatch(r.body, /(?:^|[;{])\s*opacity\s*:/, `opacity on ${r.sel.trim()}`);
+  }
+  assert.ok(cheer.some((r) => /border:\s*\.4rem\s+dashed\s+var\(--season-cheer-primary-fg\)/.test(r.body)), 'dashed border in --season-cheer-primary-fg');
+});
+
 const BASE_URL = process.env.TEST_DATABASE_URL || '';
 const skip = !BASE_URL ? 'TEST_DATABASE_URL not set' : !/test/i.test(new URL(BASE_URL).pathname) ? 'TEST_DATABASE_URL database name must contain "test"' : false;
 let db: typeof import('../src/db.js'); let srv: ChildProcess | null = null; let URL_ = '', BASE = '', token = '';
@@ -213,4 +229,66 @@ test('AC3 AC4 AC6 AC8 AC13 season API, HTML vars, live socket, absent-row startu
   assert.match(html, /--season-cheer-primary:#FFC72C;--season-cheer-secondary:#800000;/);
   const stored = await settings();
   assert.equal(stored.season_cheer_primary, '#FFC72C'); assert.equal(stored.season_cheer_secondary, '#800000');
+});
+
+async function stopServer() {
+  if (srv && srv.exitCode == null) {
+    const child = srv; srv = null;
+    await new Promise((res) => { child.once('exit', res); child.kill(); });
+  }
+}
+
+test('AC4 a stored invalid cheer value falls back to light/dark on GET and in season-vars', { skip }, async () => {
+  await stopServer();
+  await db.pool.query(`INSERT INTO settings(key, value) VALUES
+    ('season_name','Cheer'),('season_light','#FFEEDD'),('season_dark','#112233'),
+    ('season_cheer_primary','nope'),('season_cheer_secondary','#00CCDD')
+    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+  const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = started.srv; BASE = `http://127.0.0.1:${started.port}`;
+  token = (await api('/api/login', 'POST', { password: ADMIN })).body.token; assert.ok(token);
+  const body = (await api('/api/settings/season')).body;
+  const pub = await (await fetch(`${BASE}/api/public/season`)).json();
+  for (const b of [body, pub]) {
+    assert.equal(b.light, '#FFEEDD'); assert.equal(b.dark, '#112233');
+    assert.equal(b.cheerPrimary, '#FFEEDD', 'invalid primary falls back to light');
+    assert.equal(b.cheerSecondary, '#00CCDD', 'valid secondary is kept');
+  }
+  let html = await (await fetch(`${BASE}/upwardbasketballscores/lobby`)).text();
+  let style = html.match(/<style id="season-vars">[^<]*<\/style>/)![0];
+  assert.equal(style.includes('nope'), false, style);
+  assert.match(style, /--season-cheer-primary:#FFEEDD;/);
+  assert.match(style, /--season-cheer-secondary:#00CCDD;/);
+  await stopServer();
+  await db.pool.query(`UPDATE settings SET value='nope' WHERE key='season_cheer_secondary'`);
+  const again = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
+  srv = again.srv; BASE = `http://127.0.0.1:${again.port}`;
+  token = (await api('/api/login', 'POST', { password: ADMIN })).body.token; assert.ok(token);
+  const both = (await api('/api/settings/season')).body;
+  assert.equal(both.cheerPrimary, '#FFEEDD'); assert.equal(both.cheerSecondary, '#112233', 'invalid secondary falls back to dark');
+  html = await (await fetch(`${BASE}/practice/cheer`)).text();
+  style = html.match(/<style id="season-vars">[^<]*<\/style>/)![0];
+  assert.equal(style.includes('nope'), false, style);
+  assert.match(style, /--season-cheer-primary:#FFEEDD;--season-cheer-secondary:#112233;/);
+});
+
+test('AC5 seedDemo reset overwrites cheer colors; if-needed does not', { skip }, async () => {
+  await stopServer();
+  await db.pool.query(`INSERT INTO settings(key, value) VALUES ('season_cheer_primary','#112233'),('season_cheer_secondary','#445566')
+    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+  const seeded = await db.seedDemo('if-needed');
+  let s = await settings();
+  assert.equal(s.season_cheer_primary, '#112233', `if-needed keeps primary (seeded=${seeded})`);
+  assert.equal(s.season_cheer_secondary, '#445566', 'if-needed keeps secondary');
+  assert.equal(await db.seedDemo('reset'), true);
+  s = await settings();
+  assert.equal(s.season_cheer_primary, '#FFC72C');
+  assert.equal(s.season_cheer_secondary, '#800000');
+  await db.pool.query(`UPDATE settings SET value='#ABCDEF' WHERE key='season_cheer_primary'`);
+  await db.pool.query(`UPDATE settings SET value='#123456' WHERE key='season_cheer_secondary'`);
+  const again = await db.seedDemo('if-needed');
+  assert.equal(again, false, 'games from the reset are already in the demo weekend');
+  s = await settings();
+  assert.equal(s.season_cheer_primary, '#ABCDEF', 'if-needed with games does not overwrite');
+  assert.equal(s.season_cheer_secondary, '#123456');
 });

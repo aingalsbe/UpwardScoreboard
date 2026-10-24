@@ -181,6 +181,12 @@ async function loadSeason() {
   // A missing cheer row follows the season pair (the migration normally writes the rows).
   if (!got.has('season_cheer_primary')) season.cheerPrimary = season.light;
   if (!got.has('season_cheer_secondary')) season.cheerSecondary = season.dark;
+  // migrateColors leaves a value it can't read ("nope") as-is. Same rule as season.js: that must not
+  // reach GET /api/settings/season or the injected season-vars (first paint). #808080 is only seasonCss's
+  // last resort when light/dark themselves aren't hex.
+  const HEX6 = /^#[0-9A-Fa-f]{6}$/;
+  if (!HEX6.test(season.cheerPrimary)) season.cheerPrimary = season.light;
+  if (!HEX6.test(season.cheerSecondary)) season.cheerSecondary = season.dark;
 }
 /** The cheer squad of the game's time slot (one per hour, shared by every court), or null. Coach = first name only. */
 function cheerView(r: any) {

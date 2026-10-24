@@ -325,9 +325,20 @@ function seasonCheck() {
   else rows.push(`Dark vs light (side by side): ${C.fmt(dvl)} ${dvl >= 3 ? '✔' : 'ℹ fairly close'}`);
   if (C.luminance(d) >= C.luminance(l)) rows.push('⚠ The dark color must be darker than the light color.');
   // Cheer colors have no dark-before-light rule. A bad hex is a warning; a good one shows its auto text color.
-  const cheerLine = (label, el) => { const h = normHex(el.value); if (!h) rows.push(`⚠ ${label}: enter a hex color like #FF00AA or #FC2.`); else rows.push(`Text on ${label} (auto ${tw(h)}): ${C.fmt(best(h))} ✔`); };
+  // The swatch sample uses that same black/white pick (--sample-fg). Practice cards draw the color on black,
+  // or white when it would be under 4.5:1 (onDarkFor). Nearly-equal cheer colors make the cards look the same.
+  const cheerLine = (label, el) => {
+    const h = normHex(el.value), swatch = el.closest('.season-swatch');
+    if (!h) { rows.push(`⚠ ${label}: enter a hex color like #FF00AA or #FC2.`); if (swatch) swatch.style.removeProperty('--sample-fg'); return; }
+    rows.push(`Text on ${label} (auto ${tw(h)}): ${C.fmt(best(h))} ✔`);
+    if (swatch) swatch.style.setProperty('--sample-fg', tw(h) === 'black' ? '#000' : '#fff');
+    const onBlack = C.ratio(h, '#000000');
+    if (onBlack < 4.5) rows.push(`ℹ Cheer ${label.replace(/^cheer /, '')} ${h} is only ${C.fmt(onBlack)} on the black practice cards — shown as white there.`);
+  };
   cheerLine('cheer primary', f.elements.cheerPrimary);
   cheerLine('cheer secondary', f.elements.cheerSecondary);
+  const cp = normHex(f.elements.cheerPrimary.value), cs = normHex(f.elements.cheerSecondary.value);
+  if (cp && cs) { const pvs = C.ratio(cp, cs); if (pvs < 1.5) rows.push(`⚠ Cheer primary vs secondary only ${C.fmt(pvs)} — practice cards will look the same.`); }
   box.innerHTML = rows.map((r) => `<div class="cw-row">${esc(r)}</div>`).join(''); box.hidden = false;
   box.classList.toggle('bad', rows.some((r) => r.includes('⚠')));
 }

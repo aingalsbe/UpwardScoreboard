@@ -123,13 +123,14 @@ main.split .band.next .row { min-height: 6.8rem; padding: .4rem 1.2rem; }
 main.split .band.next .locker { min-height: 5.8rem; } main.split .band.next .locker b { font-size: 3.2rem; }
 main.split .band.next .who .name { font-size: 3.2rem; }
 main.split .band.next .side { font-size: 2.5rem; min-width: 13rem; padding: .4rem 1.4rem; }
-.cheer-band.next .row.cheer { filter: brightness(.82); }
+/* Next cheer is the smaller type above, not a brightness filter. A filter would darken the row
+   after --season-cheer-primary-fg was chosen and drop mid-tone Cheer Primary under 4.5:1 (Avery R22). */
 /* Friday: next game BELOW the bar, not beside */
 .full .pair { grid-template-columns: 1fr; gap: 1.6rem; }
 .full .pair .next-bar { margin-top: 1.4rem; }
 .full .game.next { width: 82%; margin: 0 auto; }
 
-/* Aaron 3:01 PM: no cheer captions; cheer rows just sit under the courts, next one full width + dimmed */
+/* Aaron 3:01 PM: no cheer captions; cheer rows just sit under the courts, next one full width (smaller type, not dimmed) */
 .cheer-band.next { flex-direction: column; }
 .cheer-band.next .row.cheer { width: 100%; }
 main.split { gap: 1.1rem; }
@@ -213,6 +214,6 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 /* SAGE: cheer colors (Morgan brief). Cheer rows use Cheer Primary, not a tint of season light.
    Text, the coach line and the locker/side pills use the auto fg so any cheer color stays readable.
    Home and away rows are unchanged. */
-.row.cheer { background: var(--season-cheer-primary); color: var(--season-cheer-primary-fg); }
+.row.cheer { background: var(--season-cheer-primary); color: var(--season-cheer-primary-fg); border: .4rem dashed var(--season-cheer-primary-fg); } /* dashed fg rim so cheer ≠ gold HOME; the rim is not behind the text */
 .cheer .locker, .cheer .side { background: var(--season-cheer-primary-fg); color: var(--season-cheer-primary); }
 .cheer .coach, .cheer .row-note { color: var(--season-cheer-primary-fg); }

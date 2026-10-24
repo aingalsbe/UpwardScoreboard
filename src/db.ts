@@ -436,9 +436,13 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
     for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
       await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
     }
-    // Stored cheer colors (not a null fallback). DO NOTHING so a reseed does not wipe an admin's choice.
+    // Stored cheer colors (not a null fallback). reset puts the demo pair back with light/dark;
+    // if-needed keeps an admin's choice (DO NOTHING).
+    const cheerSql = mode === 'reset'
+      ? 'INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value'
+      : 'INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING';
     for (const [k, v] of [['season_cheer_primary', '#FFC72C'], ['season_cheer_secondary', '#800000']]) {
-      await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
+      await client.query(cheerSql, [k, v]);
     }
     await client.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
       ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')`);

@@ -62,7 +62,7 @@ input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
 .season-swatch input[type=color]::-webkit-color-swatch { border: 0; border-radius: 12px; }
 .swatch-sample { position: absolute; left: 14px; bottom: 12px; pointer-events: none; font-size: 26px; font-weight: 900; letter-spacing: .5px; }
 .season-swatch.dark .swatch-sample { color: #fff; } .season-swatch.light .swatch-sample { color: #111; }
-.season-swatch.cheer .swatch-sample { color: #111; text-shadow: 0 0 3px #fff, 0 0 3px #fff; } /* readable on either cheer color */
+.season-swatch.cheer .swatch-sample { color: var(--sample-fg, #111); text-shadow: none; } /* auto black/white from seasonCheck, same pick as the contrast row */
 .season-contrast { background: #171c2e; color: #e8eaf2; border-color: #3a4262; font-size: 15px; }
 .season-contrast .cw-row { font-variant-numeric: tabular-nums; }
 .season-contrast.bad { background: #3a3010; color: #ffe08a; border-color: #6b5a1f; border-left-width: 5px; }
