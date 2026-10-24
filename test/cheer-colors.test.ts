@@ -15,6 +15,10 @@ import { startServer } from './_server.js';
 const COLORS = ['#FFFFFF', '#000000', '#777777', '#FF00AA', '#00CCDD', '#FFC72C', '#800000'];
 const ratio = (a: string, b: string) => { const x = lumHex(a), y = lumHex(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 
+// The image build (Dockerfile test stage) has no public/ folder: skip the two tests that read it there; they run everywhere else.
+const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public');
+const noPublic = fs.existsSync(PUBLIC_DIR) ? false : 'public/ not present (image build)';
+
 test('fgFor / onDarkFor stay >= 4.5:1 on the cheer color and on black', () => {
   for (const h of COLORS) {
     assert.ok(ratio(fgFor(h), h) >= 4.5, `${h} fg ${fgFor(h)} ${ratio(fgFor(h), h)}`);
@@ -42,7 +46,7 @@ test('seasonCss keeps the legacy six vars first, then the six cheer vars; bad he
   }
 });
 
-test('season.js: cheer-only change reapplies, missing/invalid cheer falls back, contrast holds (AC7, AC13)', () => {
+test('season.js: cheer-only change reapplies, missing/invalid cheer falls back, contrast holds (AC7, AC13)', { skip: noPublic }, () => {
   const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public/season.js'), 'utf8');
   const props = new Map<string, string>();
   let sets = 0;
@@ -84,7 +88,7 @@ test('season.js: cheer-only change reapplies, missing/invalid cheer falls back, 
   }
 });
 
-test('AC1 AC9 lobby .row.cheer has no filter or opacity, and a dashed fg border', () => {
+test('AC1 AC9 lobby .row.cheer has no filter or opacity, and a dashed fg border', { skip: noPublic }, () => {
   const css = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public/lobby.css'), 'utf8');
   const rules = css.split('}').map((chunk) => {
     const i = chunk.lastIndexOf('{');
