@@ -20,13 +20,26 @@ export const parseConflicts = (v: unknown): string[] => {
 };
 
 // ---- Grades: teams are organized by grade, then name. A game must be within one grade.
+export const GRADES = ['Kindergarten', '1st-2nd Grade', '3rd-4th Grade', '5th-6th Grade'] as const;
+export const DIVISIONS = [
+  'Kindergarten',
+  '1st-2nd Grade Boys',
+  '1st-2nd Grade Girls',
+  '3rd-4th Grade Boys',
+  '3rd-4th Grade Girls',
+  '5th-6th Grade Boys',
+  '5th-6th Grade Girls',
+] as const;
 const ORD = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
-/** "5", "5th", "5th grade", "Grade 5" -> "5th Grade"; "K"/"Kindergarten" -> "Kindergarten"; empty -> null; else trimmed text as-is. */
+/** Combined grade bands: Kindergarten, 1st-2nd Grade, 3rd-4th Grade, 5th-6th Grade (single 1..6 map to their combined band; 7..12 -> Nth Grade). */
 export function normalizeGrade(v: unknown): string | null {
   const t = String(v ?? '').trim(); if (!t) return null;
-  if (/^(k|kg|kinder|kindergarten)$/i.test(t)) return 'Kindergarten';
+  if (/^(?:k|kg|kinder|kindergarten)(?:\s+grade)?(?:\s+(?:boys?|girls?|coed|mixed))?$/i.test(t)) return 'Kindergarten';
+  if (/^(?:grades?\s*)?(?:(?:1(?:st)?|first)(?:\s*(?:[-–—/&]|to|and)\s*(?:2(?:nd)?|second))?|2(?:nd)?|second)(?:\s*grade)?$/i.test(t)) return '1st-2nd Grade';
+  if (/^(?:grades?\s*)?(?:(?:3(?:rd)?|third)(?:\s*(?:[-–—/&]|to|and)\s*(?:4(?:th)?|fourth))?|4(?:th)?|fourth)(?:\s*grade)?$/i.test(t)) return '3rd-4th Grade';
+  if (/^(?:grades?\s*)?(?:(?:5(?:th)?|fifth)(?:\s*(?:[-–—/&]|to|and)\s*(?:6(?:th)?|sixth))?|6(?:th)?|sixth)(?:\s*grade)?$/i.test(t)) return '5th-6th Grade';
   const m = /^(?:grade\s*)?(\d{1,2})(?:st|nd|rd|th)?(?:\s*grade)?$/i.exec(t);
-  if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12) return `${ORD(Number(m[1]))} Grade`;
+  if (m && Number(m[1]) >= 7 && Number(m[1]) <= 12) return `${ORD(Number(m[1]))} Grade`;
   if (t.length > 30) throw Object.assign(new Error(`grade "${t.slice(0, 20)}…" is longer than 30 characters`), { status: 400 });
   return t;
 }
@@ -69,14 +82,19 @@ export function gradeOrder(g: string | null | undefined): number {
   if (!g) return 100;
   if (g === 'Kindergarten') return 0;
   const n = gradeNumbers(g);
-  return n && n.length === 1 ? n[0] : 99;
+  if (!n || !n.length) return 99;
+  if (n.length === 1) return n[0];
+  if (n.length === 2 && n[1] === n[0] + 1) return n[0] === 1 ? 2 : n[0];
+  return 99;
 }
 /** null if OK, else a message. Teams without a grade are allowed (legacy data). */
+const normGr = (g: string | null | undefined) => { try { return g ? normalizeGrade(g) : null; } catch { return g ?? null; } };
 export function gradeMismatch(home: { name: string; grade: string | null }, away: { name: string; grade: string | null }, stated?: string | null): string | null {
-  if (home.grade && away.grade && home.grade !== away.grade) return `a game must be within one grade: ${home.name} is ${home.grade}, ${away.name} is ${away.grade}`;
-  const g = home.grade || away.grade;
-  if (stated && g && stated !== g) return `grade "${stated}" doesn't match the teams (${g})`;
-  if (stated && (!home.grade || !away.grade) && [home, away].some((t) => t.grade && t.grade !== stated)) return `grade "${stated}" doesn't match the teams`;
+  const hg = normGr(home.grade), ag = normGr(away.grade), sg = normGr(stated);
+  if (hg && ag && hg !== ag) return `a game must be within one grade: ${home.name} is ${home.grade}, ${away.name} is ${away.grade}`;
+  const g = hg || ag, gDisp = home.grade || away.grade;
+  if (sg && g && sg !== g) return `grade "${stated}" doesn't match the teams (${gDisp})`;
+  if (sg && (!hg || !ag) && [hg, ag].some((x) => x && x !== sg)) return `grade "${stated}" doesn't match the teams`;
   return null;
 }
 
@@ -96,8 +114,25 @@ export function normalizeGender(v: unknown): 'Boys' | 'Girls' | null {
   if (['girls', 'girl', 'g', 'f', 'female', 'women'].includes(t)) return 'Girls';
   throw Object.assign(new Error(`gender "${String(v).slice(0, 20)}" must be Boys or Girls (or empty)`), { status: 400 });
 }
-/** "3rd Grade" + "Girls" -> "3rd Grade Girls". */
-export const divisionLabel = (grade: string | null | undefined, gender: string | null | undefined) => [grade, gender].filter(Boolean).join(' ') || null;
+/** "3rd-4th Grade" + "Girls" -> "3rd-4th Grade Girls"; Kindergarten is mixed (always "Kindergarten"). */
+export const divisionLabel = (grade: string | null | undefined, gender: string | null | undefined) =>
+  grade === 'Kindergarten' ? 'Kindergarten' : [grade, gender].filter(Boolean).join(' ') || null;
+/** Normalize a division string if it names a league grade (+ optional Boys/Girls), else keep custom text as-is. */
+export function normalizeDivision(v: unknown): string | null {
+  const t = String(v ?? '').trim(); if (!t) return null;
+  const m = /^(.+?)\s+(boys?|girls?)$/i.exec(t);
+  if (m) {
+    try {
+      const gr = normalizeGrade(m[1]);
+      if (gr && (GRADES as readonly string[]).includes(gr)) return divisionLabel(gr, normalizeGender(m[2]));
+    } catch {}
+  }
+  try {
+    const gr = normalizeGrade(t);
+    if (gr && (GRADES as readonly string[]).includes(gr)) return divisionLabel(gr, null);
+  } catch {}
+  return t;
+}
 /** null if OK, else a message. Teams without a gender are allowed (legacy data). */
 export function genderMismatch(home: { name: string; gender?: string | null }, away: { name: string; gender?: string | null }, stated?: string | null): string | null {
   if (home.gender && away.gender && home.gender !== away.gender) return `a game must be within one gender: ${home.name} is ${home.gender}, ${away.name} is ${away.gender}`;
@@ -195,7 +230,7 @@ export function scheduleWarnings(games: WarnGame[]): Warning[] {
     if (split && g.startMin != null && !inHours) out.push({ gameId: g.id, code: 'split-outside-hours', message: `game #${g.id} on ${g.court} at ${hhmm(g.startMin)}–${hhmm(g.startMin + g.durMin)} is outside the split-court hours 08:00–16:00` });
     if (g.hasCheer) {
       const go = gradeOrder(g.grade);
-      const why = !(go >= 2 && go <= 4) ? `cheer squads are for 2nd–4th grade (this is ${g.grade || 'no grade'})`
+      const why = !(go >= 0 && go <= 4) ? `cheer squads are for 2nd–4th grade (this is ${g.grade || 'no grade'})`
         : !(g.date && dowOf(g.date) === 6 && split && inHours) ? 'cheer squads are only on Saturday split-court games (West/East, 08:00–16:00)' : null;
       const slot = g.startMin != null ? ` at ${hhmm(slotStartMin(g.startMin))}` : '';
       if (why) out.push({ gameId: g.id, code: 'cheer-not-allowed', message: `game #${g.id} (${g.home} vs ${g.away}) is in the cheer slot${slot}${g.cheer ? ' (' + g.cheer + ')' : ''}: ${why}` });
@@ -205,7 +240,7 @@ export function scheduleWarnings(games: WarnGame[]): Warning[] {
 }
 
 // ---- Demo seed plan (pure, so tests can check the invariants without a database).
-export type SeedGame = { date: string; time: string; court: 'full' | 'west' | 'east'; grade: string; gender: 'Boys' | 'Girls'; home: string; away: string; cheer?: string;
+export type SeedGame = { date: string; time: string; court: 'full' | 'west' | 'east'; grade: string; gender: 'Boys' | 'Girls' | null; home: string; away: string; cheer?: string;
   /** Example data (2026-10): coach first names (season-long), locker rooms (per game), cheer squad coach + slot locker. */
   homeCoach: string; awayCoach: string; homeLocker: string; awayLocker: string; cheerCoach?: string; cheerLocker?: string };
 /** Example first names (one coach per team for the season; pages show "Coach <name>"). */
@@ -230,39 +265,38 @@ export function slotRooms(taken: (string | null | undefined)[], need: number, se
   while (out.length < need) out.push(rooms[(seed + out.length) % rooms.length]);
   return out;
 }
-const BOYS = ['Eagles', 'Lions', 'Bears', 'Hawks', 'Tigers', 'Rams', 'Knights', 'Warriors', 'Panthers', 'Falcons', 'Wildcats', 'Mustangs'];
-const GIRLS = ['Stars', 'Comets', 'Lightning', 'Sparks', 'Hornets', 'Cardinals', 'Blaze', 'Jaguars', 'Storm', 'Thunder', 'Doves', 'Bluebirds'];
+export const BOYS = ['Eagles', 'Lions', 'Bears', 'Hawks', 'Tigers', 'Rams', 'Knights', 'Warriors', 'Panthers', 'Falcons', 'Wildcats', 'Mustangs'];
+export const GIRLS = ['Lady Stars', 'Lady Comets', 'Lady Lightning', 'Lady Sparks', 'Lady Hornets', 'Lady Cardinals', 'Lady Blaze', 'Lady Jaguars', 'Lady Storm', 'Lady Thunder', 'Lady Doves', 'Lady Bluebirds'];
 /**
- * The demo weekend: Friday Full Court 17:30/18:30/19:30; Saturday West + East hourly 08:00–15:00 (16 games,
- * 2nd grade 08–10, 3rd 11–13, 4th 14–15), then Full Court 16:30/17:30/18:30. Full Court = grades 5–6.
- * Each slot has one Boys and one Girls game (West Boys/East Girls, swapped every other slot). Every team plays
- * exactly once (2 teams per game, names unique per grade + gender). One cheer squad on a few Saturday split games.
+ * The demo weekend: Friday Full Court 17:30/18:30/19:30; Saturday West + East hourly 08:00–15:00 (16 games:
+ * Kindergarten 08:00 mixed, 1st-2nd Grade 09:00–10:00, 3rd-4th Grade 11:00–15:00), then Full Court 16:30/17:30/18:30 (5th-6th Grade).
+ * Numbered grade slots have one Boys and one Girls game (West Boys/East Girls, swapped every other slot); Kindergarten is mixed (gender null).
+ * Every team plays exactly once (2 teams per game, names unique per grade + gender). One cheer squad on a few Saturday split games.
  */
 export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
   const used = new Map<string, number>();
-  const pair = (grade: string, gender: 'Boys' | 'Girls') => {
-    const k = `${grade}|${gender}`, i = used.get(k) ?? 0, pool = gender === 'Boys' ? BOYS : GIRLS;
+  const pair = (grade: string, gender: 'Boys' | 'Girls' | null) => {
+    const k = `${grade}|${gender ?? ''}`, i = used.get(k) ?? 0, pool = gender === 'Girls' ? GIRLS : BOYS;
     used.set(k, i + 2); return [pool[i], pool[i + 1]] as const;
   };
   const games: SeedGame[] = [];
-  const add = (date: string, time: string, court: SeedGame['court'], grade: string, gender: 'Boys' | 'Girls', cheer?: string) => {
+  const add = (date: string, time: string, court: SeedGame['court'], grade: string, gender: 'Boys' | 'Girls' | null, cheer?: string) => {
     const [home, away] = pair(grade, gender);
     const i = games.length, C = DEMO_COACHES;
     games.push({ date, time, court, grade, gender, home, away, homeCoach: C[(2 * i) % C.length], awayCoach: C[(2 * i + 1) % C.length],
       homeLocker: '', awayLocker: '', ...(cheer ? { cheer } : {}) });
   };
-  // Friday night: Full Court, grades 5–6.
-  add(w.fri, '17:30', 'full', '5th Grade', 'Boys'); add(w.fri, '18:30', 'full', '5th Grade', 'Girls'); add(w.fri, '19:30', 'full', '6th Grade', 'Boys');
-  // Saturday split block.
-  const gradeAt = (h: number) => (h <= 10 ? '2nd Grade' : h <= 13 ? '3rd Grade' : '4th Grade');
-  // One cheer squad per game (not per side), on a few Saturday split games, 2nd–4th grade.
+  // Friday night: Full Court, 5th-6th Grade.
+  add(w.fri, '17:30', 'full', '5th-6th Grade', 'Boys'); add(w.fri, '18:30', 'full', '5th-6th Grade', 'Girls'); add(w.fri, '19:30', 'full', '5th-6th Grade', 'Boys');
+  // Saturday split block: Kindergarten at 08:00 (mixed), 1st-2nd Grade at 09:00–10:00, 3rd-4th Grade at 11:00–15:00.
+  const gradeAt = (h: number) => (h === 8 ? 'Kindergarten' : h <= 10 ? '1st-2nd Grade' : '3rd-4th Grade');
   const cheers: Record<string, string> = { '09:00 west': 'Lenexa Lil Cheer', '11:00 east': 'LBC Sparkle Squad', '12:00 west': 'Joyful Noise Cheer', '14:00 east': 'LBC Spirit Cheer' };
   for (let h = 8; h <= 15; h++) {
-    const t = `${String(h).padStart(2, '0')}:00`, boysWest = h % 2 === 0;
-    add(w.sat, t, 'west', gradeAt(h), boysWest ? 'Boys' : 'Girls', cheers[`${t} west`]);
-    add(w.sat, t, 'east', gradeAt(h), boysWest ? 'Girls' : 'Boys', cheers[`${t} east`]);
+    const t = `${String(h).padStart(2, '0')}:00`, gr = gradeAt(h), boysWest = h % 2 === 0;
+    add(w.sat, t, 'west', gr, gr === 'Kindergarten' ? null : (boysWest ? 'Boys' : 'Girls'), cheers[`${t} west`]);
+    add(w.sat, t, 'east', gr, gr === 'Kindergarten' ? null : (boysWest ? 'Girls' : 'Boys'), cheers[`${t} east`]);
   }
-  add(w.sat, '16:30', 'full', '6th Grade', 'Girls'); add(w.sat, '17:30', 'full', '6th Grade', 'Boys'); add(w.sat, '18:30', 'full', '5th Grade', 'Girls');
+  add(w.sat, '16:30', 'full', '5th-6th Grade', 'Girls'); add(w.sat, '17:30', 'full', '5th-6th Grade', 'Boys'); add(w.sat, '18:30', 'full', '5th-6th Grade', 'Girls');
   // Cheer squad coaches: the names after the team coaches, so every coach name in the demo is different.
   let k = 0;
   for (const g of games) if (g.cheer) { g.cheerCoach = DEMO_COACHES[(2 * games.length + k) % DEMO_COACHES.length]; k++; }

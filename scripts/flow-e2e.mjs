@@ -39,7 +39,7 @@ const H = { authorization: `Bearer ${token}`, 'content-type': 'application/json'
 const api = async (p, o = {}) => (await fetch(BASE + p, { ...o, headers: H })).json();
 for (const x of (await api('/api/games')).filter((x) => x.status === 'active' && ['West', 'East', 'Full'].includes(x.court))) await api(`/api/games/${x.id}/complete`, { method: 'POST' });
 const east = (await api('/api/courts')).find((c) => c.slug === 'east');
-const t = async (n) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `${n}-${RUN}`, grade: '5th Grade' }) })).id;
+const t = async (n) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name: `${n}-${RUN}`, grade: '5th-6th Grade' }) })).id;
 const A = await t('Eagles'), B = await t('Lions');
 const now = Math.floor(Date.now() / 60000) * 60000;
 // Two games today on East in free slots (like colors-e2e §11): the server refuses East overlaps, the shared East/Full
@@ -99,16 +99,16 @@ ok(!!(await ph.evaluate(() => localStorage.getItem('sb-session-east'))), 'QR exc
 console.log('2. pick a game');
 await ph.waitForSelector('#picker:not([hidden]) [data-game-id]', { timeout: 5000 }).catch(() => {});
 const items = await ph.$$eval('#picker-list [data-game-id]', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
-ok(items.some((x) => x.includes(`5th Grade Eagles-${RUN} vs Lions-${RUN}`) && x.includes('Scheduled')), `picker lists today's games with grade + status badge (${items.length} games)`);
+ok(items.some((x) => x.includes(`5th-6th Grade Eagles-${RUN} vs Lions-${RUN}`) && x.includes('Scheduled')), `picker lists today's games with grade + status badge (${items.length} games)`);
 await ph.click(`[data-game-id="${g1}"]`);
 await ph.waitForSelector('#confirm-dialog[open]', { timeout: 3000 }).catch(() => {});
 const ct = await ph.textContent('#confirm-text');
-ok(ct === `Load 5th Grade · Eagles-${RUN} vs Lions-${RUN} on East Court?` && (await ph.textContent('#confirm-ok')) === 'Load', `confirm: "${ct}"`);
+ok(ct === `Load 5th-6th Grade · Eagles-${RUN} vs Lions-${RUN} on East Court?` && (await ph.textContent('#confirm-ok')) === 'Load', `confirm: "${ct}"`);
 await ph.click('#confirm-ok');
 await ph.waitForSelector('main.grid:not([hidden])', { timeout: 5000 }).catch(() => {});
 ok(await ph.evaluate(() => document.documentElement.dataset.view === 'game'), 'Load: the controller shows the game');
 await tv.waitForSelector('html:not(.no-game)', { timeout: 5000 }).catch(() => {});
-ok((await tv.textContent('.home .name')).includes(`Eagles-${RUN}`) && (await tv.textContent('[data-bind="grade"]')) === '5th Grade', 'TV switched to the game automatically (with the grade)');
+ok((await tv.textContent('.home .name')).includes(`Eagles-${RUN}`) && (await tv.textContent('[data-bind="grade"]')) === '5th-6th Grade', 'TV switched to the game automatically (with the grade)');
 await ph.click('[data-cmd=\'{"type":"SCORE","team":"home","pts":2}\']');
 await tv.waitForFunction(() => document.querySelector('.home .score').textContent === '2', null, { timeout: 4000 }).catch(() => {});
 ok((await tv.textContent('.home .score')) === '2', 'tap +2 shows on the TV');
@@ -122,7 +122,7 @@ await ph.waitForSelector('#picker:not([hidden])', { timeout: 5000 }).catch(() =>
 const after = await ph.$$eval('#picker-list [data-game-id]', (els) => els.map((e) => e.dataset.gameId));
 ok(!after.includes(String(g1)) && after.includes(String(g2)), 'back to the picker; the completed game is gone from the list');
 await tv.waitForSelector('html.no-game', { timeout: 5000 }).catch(() => {});
-ok(/Final: 5th Grade · Eagles-\w+ 2 – 0 Lions/.test(await tv.textContent('[data-bind="lastFinal"]')), 'TV back to idle with the last final score');
+ok(/Final: 5th-6th Grade · Eagles-\w+ 2 – 0 Lions/.test(await tv.textContent('[data-bind="lastFinal"]')), 'TV back to idle with the last final score');
 
 console.log('4. resume on another device');
 await api(`/api/games/${g2}/start`, { method: 'POST' });

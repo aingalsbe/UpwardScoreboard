@@ -49,8 +49,8 @@
         <input type="hidden" name="id">
         <label>Name <input name="name" required maxlength="30"></label>
         <label>Short (3–4) <input name="short_name" maxlength="4"></label>
-        <label>Grade <input name="grade" maxlength="30" placeholder="5th Grade" list="grade-list"></label>
-        <datalist id="grade-list"></datalist>
+        <label>Grade <input name="grade" maxlength="30" placeholder="5th-6th Grade" list="grade-list"></label>
+        <datalist id="grade-list"><option value="Kindergarten"><option value="1st-2nd Grade"><option value="3rd-4th Grade"><option value="5th-6th Grade"></datalist>
         <label>Gender <select name="gender"><option value="">—</option><option>Boys</option><option>Girls</option></select></label>
         <label>Coach (first name) <input name="coach" maxlength="30" placeholder="Mike"></label>
         <label>Logo URL <input name="logo_url" placeholder="https://… (optional)"></label>
@@ -82,7 +82,7 @@
         <input type="hidden" name="id">
         <label>Court <select name="court_id" required></select></label>
         <label>When (league time) <input type="datetime-local" name="scheduled_at"></label>
-        <label>Division <input name="division" placeholder="5th–6th Grade"></label>
+        <label>Division <input name="division" placeholder="5th-6th Grade Boys"></label>
         <label>Home <select name="home_team_id" required></select></label>
         <label>Away <select name="away_team_id" required></select></label>
         <label class="swap-toggle"><input type="checkbox" name="swap_colors" id="swap-colors"> Swap colors (home wears dark, away wears light)</label>

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
+import { divisionLabel, normalizeDivision, normalizeGender, normalizeGrade } from './schedule.js';
 
 export const LOGO_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../deliverables/logos');
 export const LOGO_ROUTE = '/team-logos/';
@@ -14,6 +15,15 @@ export interface Manifest { teams: { name: string; division: string; file: strin
 export const readManifest = (dir = LOGO_DIR): Manifest => JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
 /** Case/space-insensitive key: "  5th grade   BOYS " -> "5th grade boys". */
 export const norm = (s: unknown) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+const normMascot = (s: unknown) => norm(s).replace(/^lady\s+/i, '');
+const normDiv = (div: unknown) => { try { return norm(normalizeDivision(div) ?? div); } catch { return norm(div); } };
+const normTeamDiv = (grade: unknown, gender: unknown) => {
+  let gr = String(grade ?? '').trim();
+  try { gr = normalizeGrade(gr) ?? gr; } catch {}
+  let ge: string | null = String(gender ?? '').trim() || null;
+  try { ge = normalizeGender(ge); } catch {}
+  return normDiv(divisionLabel(gr, ge));
+};
 export const logoUrl = (file: string) => LOGO_ROUTE + file.replace(/^\/+/, '');
 
 /** Resolve a /team-logos/... request to a PNG file in teams/ or cheer/ (null = 404). */
@@ -48,8 +58,8 @@ export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: bo
     r.unmatched = entries.filter((e) => !seen.has(e.k)).map((e) => e.label);
   };
   const teams = (await db.query(`SELECT id, name, grade, gender, logo_url, (logo_data IS NOT NULL) has_data, concat_ws(' · ', name, concat_ws(' ', grade, gender)) label FROM teams ORDER BY id`)).rows;
-  await run('teams', teams, (t) => norm(t.name) + '|' + norm(`${t.grade ?? ''} ${t.gender ?? ''}`),
-    man.teams.map((t) => ({ k: norm(t.name) + '|' + norm(t.division), label: `${t.name} · ${t.division}`, file: t.file })), 'teams');
+  await run('teams', teams, (t) => normMascot(t.name) + '|' + normTeamDiv(t.grade, t.gender),
+    man.teams.map((t) => ({ k: normMascot(t.name) + '|' + normDiv(t.division), label: `${t.name} · ${t.division}`, file: t.file })), 'teams');
   const squads = (await db.query(`SELECT id, name, name label, logo_url, (logo_data IS NOT NULL) has_data FROM cheer_squads ORDER BY id`)).rows;
   await run('squads', squads, (s) => norm(s.name), man.cheer.map((c) => ({ k: norm(c.name), label: c.name, file: c.file })), 'cheer_squads');
   return rep;

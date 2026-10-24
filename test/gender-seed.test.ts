@@ -12,8 +12,11 @@ const CT = (iso: string) => Date.parse(iso); // instants; tz math is done with A
 test('gender normalizes, labels and must match within a game', () => {
   assert.equal(normalizeGender('girls'), 'Girls'); assert.equal(normalizeGender('B'), 'Boys'); assert.equal(normalizeGender(' '), null);
   assert.throws(() => normalizeGender('coed'), /Boys or Girls/);
-  assert.equal(divisionLabel('3rd Grade', 'Girls'), '3rd Grade Girls'); assert.equal(divisionLabel('3rd Grade', null), '3rd Grade');
-  assert.match(genderMismatch({ name: 'Eagles', gender: 'Boys' }, { name: 'Stars', gender: 'Girls' })!, /one gender/);
+  assert.equal(divisionLabel('3rd-4th Grade', 'Girls'), '3rd-4th Grade Girls');
+  assert.equal(divisionLabel('3rd-4th Grade', null), '3rd-4th Grade');
+  assert.equal(divisionLabel('Kindergarten', 'Boys'), 'Kindergarten');
+  assert.equal(divisionLabel('Kindergarten', null), 'Kindergarten');
+  assert.match(genderMismatch({ name: 'Eagles', gender: 'Boys' }, { name: 'Lady Stars', gender: 'Girls' })!, /one gender/);
   assert.equal(genderMismatch({ name: 'A', gender: 'Boys' }, { name: 'B', gender: null }), null); // legacy team without gender
   assert.match(genderMismatch({ name: 'A', gender: 'Boys' }, { name: 'B', gender: 'Boys' }, 'Girls')!, /doesn't match/);
 });
@@ -39,24 +42,29 @@ test('demo seed invariants: counts, times, grades, genders, each team once, chee
   const split = sat.filter((g) => g.court !== 'full');
   assert.equal(split.length, 16);
   for (let h = 8; h <= 15; h++) { const t = `${String(h).padStart(2, '0')}:00`; assert.deepEqual(split.filter((g) => g.time === t).map((g) => g.court).sort(), ['east', 'west']); }
-  // youngest first, uneven split 6/6/4
+  // youngest first: Kindergarten (2), 1st-2nd Grade (4), 3rd-4th Grade (10)
   const order = split.map((g) => gradeOrder(g.grade)); assert.deepEqual([...order].sort((a, b) => a - b), order.slice().sort((a, b) => a - b));
   for (let i = 1; i < split.length; i++) assert.ok(gradeOrder(split[i].grade) >= gradeOrder(split[i - 1].grade), 'grades ascend through the day');
-  assert.deepEqual(['2nd Grade', '3rd Grade', '4th Grade'].map((g) => split.filter((x) => x.grade === g).length), [6, 6, 4]);
-  // Boys/Girls even: every split slot has one of each; Full: 3 + 3 across grades 5 and 6
-  for (const t of new Set(split.map((g) => g.time))) assert.deepEqual(split.filter((g) => g.time === t).map((g) => g.gender).sort(), ['Boys', 'Girls']);
+  assert.deepEqual(['Kindergarten', '1st-2nd Grade', '3rd-4th Grade'].map((g) => split.filter((x) => x.grade === g).length), [2, 4, 10]);
+  // Kindergarten is mixed (gender null); numbered split slots have one Boys and one Girls game
+  assert.deepEqual(split.filter((g) => g.time === '08:00').map((g) => g.gender), [null, null]);
+  for (const t of new Set(split.filter((g) => g.time !== '08:00').map((g) => g.time))) assert.deepEqual(split.filter((g) => g.time === t).map((g) => g.gender).sort(), ['Boys', 'Girls']);
   const full = plan.filter((g) => g.court === 'full');
-  assert.equal(full.length, 6); assert.ok(full.every((g) => ['5th Grade', '6th Grade'].includes(g.grade)));
+  assert.equal(full.length, 6); assert.ok(full.every((g) => g.grade === '5th-6th Grade'));
   assert.equal(full.filter((g) => g.gender === 'Boys').length, 3);
-  assert.ok(['5th Grade', '6th Grade'].every((gr) => full.some((g) => g.grade === gr && g.gender === 'Boys') && full.some((g) => g.grade === gr && g.gender === 'Girls')));
+  assert.equal(full.filter((g) => g.gender === 'Girls').length, 3);
+  // all Girls teams start with "Lady "
+  for (const g of plan.filter((x) => x.gender === 'Girls')) {
+    assert.match(g.home, /^Lady /); assert.match(g.away, /^Lady /);
+  }
   // every team exactly once (team identity = grade + gender + name), 2 teams per game
-  const keys = plan.flatMap((g) => [g.home, g.away].map((n) => `${g.grade}|${g.gender}|${n}`));
+  const keys = plan.flatMap((g) => [g.home, g.away].map((n) => `${g.grade}|${g.gender ?? ''}|${n}`));
   assert.equal(keys.length, plan.length * 2); assert.equal(new Set(keys).size, keys.length);
-  // cheer squads only on some Saturday split games, 2nd–4th
+  // cheer squads only on some Saturday split games
   const cheer = plan.filter((g) => g.cheer);
   assert.ok(plan.every((g) => !('homeCheer' in g) && !('awayCheer' in g)), 'one squad per game, never per side');
   assert.ok(cheer.length > 0 && cheer.length < split.length);
-  assert.ok(cheer.every((g) => g.date === w.sat && g.court !== 'full' && gradeOrder(g.grade) >= 2 && gradeOrder(g.grade) <= 4));
+  assert.ok(cheer.every((g) => g.date === w.sat && g.court !== 'full' && gradeOrder(g.grade) >= 0 && gradeOrder(g.grade) <= 4));
   assert.ok(dowOf(w.fri) === 5 && dowOf(w.sat) === 6);
 });
 
@@ -69,15 +77,15 @@ test('the seeded schedule has no warnings; each rule warns', () => {
   };
   const games = demoSeedPlan(w).map(toWarn);
   assert.deepEqual(scheduleWarnings(games), []);
-  const base: WarnGame = { id: 1, date: '2026-10-17', startMin: 9 * 60, durMin: 60, court: 'west', grade: '3rd Grade', label: '3rd Grade Girls', homeId: 1, awayId: 2, home: 'Stars', away: 'Comets', hasCheer: false };
-  const twice = scheduleWarnings([base, { ...base, id: 2, date: '2026-10-16', startMin: 18 * 60, court: 'full', awayId: 3, away: 'Sparks' }]);
-  assert.equal(twice.filter((x) => x.code === 'team-twice-weekend').length, 2); assert.match(twice[0].message, /Stars plays 2 times this weekend/);
+  const base: WarnGame = { id: 1, date: '2026-10-17', startMin: 9 * 60, durMin: 60, court: 'west', grade: '3rd-4th Grade', label: '3rd-4th Grade Girls', homeId: 1, awayId: 2, home: 'Lady Stars', away: 'Lady Comets', hasCheer: false };
+  const twice = scheduleWarnings([base, { ...base, id: 2, date: '2026-10-16', startMin: 18 * 60, court: 'full', awayId: 3, away: 'Lady Sparks' }]);
+  assert.equal(twice.filter((x) => x.code === 'team-twice-weekend').length, 2); assert.match(twice[0].message, /Lady Stars plays 2 times this weekend/);
   assert.deepEqual(scheduleWarnings([base, { ...base, id: 2, date: '2026-10-24', homeId: 1, awayId: 9 }]), []); // next weekend: fine
   assert.equal(scheduleWarnings([{ ...base, startMin: 15 * 60 + 30 }])[0].code, 'split-outside-hours'); // ends 16:30
   assert.equal(scheduleWarnings([{ ...base, startMin: 7 * 60 }])[0].code, 'split-outside-hours');
   assert.deepEqual(scheduleWarnings([{ ...base, startMin: 15 * 60 }]), []); // 15:00–16:00 is fine
   assert.equal(scheduleWarnings([{ ...base, court: 'full', startMin: 9 * 60 }]).length, 0); // Full court: no hours rule
-  assert.match(scheduleWarnings([{ ...base, hasCheer: true, grade: '5th Grade' }])[0].message, /2nd–4th grade/);
+  assert.match(scheduleWarnings([{ ...base, hasCheer: true, grade: '5th-6th Grade' }])[0].message, /2nd–4th grade/);
   assert.match(scheduleWarnings([{ ...base, hasCheer: true, date: '2026-10-16' }])[0].message, /Saturday split-court/);
   assert.match(scheduleWarnings([{ ...base, hasCheer: true, court: 'full' }])[0].message, /Saturday split-court/);
   assert.deepEqual(scheduleWarnings([{ ...base, hasCheer: true }]), []);

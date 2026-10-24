@@ -25,7 +25,7 @@ function fromServer(b) {
   week = { days: b.days.map((d) => ({ ...d })), basketball: b.basketball.map((x) => ({ day: x.day, start: x.start, court: x.court, teamId: x.teamId })),
     cheer: b.cheer.map((x) => ({ day: x.day, room: x.room, squadId: x.squadId })) };
 }
-const teamLabel = (t) => `${t.grade || ''} ${t.gender || ''} · ${t.name}${t.coach ? ' (Coach ' + t.coach + ')' : ''}`.trim();
+const teamLabel = (t) => `${[t.grade, t.gender].filter(Boolean).join(' ')} · ${t.name}${t.coach ? ' (Coach ' + t.coach + ')' : ''}`.trim();
 function render() {
   $('.tabs').innerHTML = [1, 2, 3, 4].map((d) => `<button type="button" role="tab" data-day="${d}" aria-selected="${d === cur}">${DAYS[d]}</button>`).join('');
   $('#copyTo').innerHTML = [1, 2, 3, 4].filter((d) => d !== cur).map((d) => `<label><input type="checkbox" value="${d}"> ${DAYS[d].slice(0, 3)}</label>`).join(' ');

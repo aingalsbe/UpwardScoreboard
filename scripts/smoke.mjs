@@ -389,19 +389,19 @@ tvC.ws.close(); skC.ws.close();
 const mk = async (name, grade) => (await api('/api/teams', { method: 'POST', body: JSON.stringify({ name, grade }) })).body.id;
 const G5a = await mk(`G5a-${RUN}`, '5th'), G5b = await mk(`G5b-${RUN}`, '5th grade'), G2 = await mk(`G2-${RUN}`, '2nd Grade');
 const tl = (await api('/api/teams')).body;
-ok(tl.find((t) => t.id === G5a).grade === '5th Grade' && tl.find((t) => t.id === G5b).grade === '5th Grade', 'grade labels normalized ("5th", "5th grade" -> "5th Grade")');
+ok(tl.find((t) => t.id === G5a).grade === '5th-6th Grade' && tl.find((t) => t.id === G5b).grade === '5th-6th Grade', 'grade labels normalized ("5th", "5th grade" -> "5th-6th Grade")');
 const ord = tl.filter((t) => [G5a, G5b, G2].includes(t.id)).map((t) => t.id);
 ok(ord[0] === G2 && ord[1] === G5a && ord[2] === G5b, 'teams list sorted by grade, then name');
 const gm = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: C2.id, home_team_id: G5a, away_team_id: G2 }) });
-ok(gm.status === 400 && /within one grade: G5a-\w+ is 5th Grade, G2-\w+ is 2nd Grade/.test(gm.body.error), `admin: cross-grade game -> 400 "${gm.body.error}"`);
+ok(gm.status === 400 && /within one grade: G5a-\w+ is 5th-6th Grade, G2-\w+ is 1st-2nd Grade/.test(gm.body.error), `admin: cross-grade game -> 400 "${gm.body.error}"`);
 const gi = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away\n,,,,G5a-${RUN},G2-${RUN}\n,,,4th Grade,G5a-${RUN},G5b-${RUN}\n,,,5th Grade,G5a-${RUN},G5b-${RUN}\n` });
-ok(gi.body.created === 1 && /row 2: a game must be within one grade/.test(gi.body.errors[0]) && /row 3: grade "4th Grade" doesn't match the teams \(5th Grade\)/.test(gi.body.errors[1]), `CSV: grade mismatch rows rejected, matching row imported: ${JSON.stringify(gi.body.errors)}`);
+ok(gi.body.created === 1 && /row 2: a game must be within one grade/.test(gi.body.errors[0]) && /row 3: grade "3rd-4th Grade" doesn't match the teams \(5th-6th Grade\)/.test(gi.body.errors[1]), `CSV: grade mismatch rows rejected, matching row imported: ${JSON.stringify(gi.body.errors)}`);
 const gg = (await api('/api/games')).body.find((g) => g.home_team_id === G5a && g.away_team_id === G5b);
-ok(gg?.grade === '5th Grade', 'games list carries the grade');
+ok(gg?.grade === '5th-6th Grade', 'games list carries the grade');
 const tcsv2 = await fetch(BASE + '/api/export/teams.csv', { headers: auth }).then((r) => r.text());
-ok(new RegExp(`G5a-${RUN},G5A,5th Grade,`).test(tcsv2), 'teams.csv export includes grade');
+ok(new RegExp(`G5a-${RUN},G5A,5th-6th Grade,`).test(tcsv2), 'teams.csv export includes grade');
 const oldT = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,logo_url\nG5a-${RUN},G5A,\n` });
-ok(oldT.body.errors.length === 0 && (await api('/api/teams')).body.find((t) => t.id === G5a).grade === '5th Grade', 'old teams.csv without a grade column keeps the grade');
+ok(oldT.body.errors.length === 0 && (await api('/api/teams')).body.find((t) => t.id === G5a).grade === '5th-6th Grade', 'old teams.csv without a grade column keeps the grade');
 await api(`/api/games/${gg.id}`, { method: 'DELETE' });
 
 console.log('16. Scorekeeping flow: weekly QR, pick a game, one active game, complete locks, resume, TV routes, status export');
@@ -477,7 +477,7 @@ const mkToday = async (h, a, plus) => (await api('/api/games', { method: 'POST',
 const GA = await mkToday(G5a, G5b, 0), GB = await mkToday(G5b, G5a, 60);
 const tvF = client(fc.slug, 'tv'); await tvF.open;
 const st0 = await fk.wait((m) => m.type === 'state' && m.today?.length >= 2);
-ok(!st0.game && st0.today.map((t) => t.id).join() === `${GA},${GB}` && st0.today[0].grade === '5th Grade', "picker: today's games on this court that aren't complete");
+ok(!st0.game && st0.today.map((t) => t.id).join() === `${GA},${GB}` && st0.today[0].grade === '5th-6th Grade', "picker: today's games on this court that aren't complete");
 fk.send({ type: 'load', id: 'L1', gameId: GA });
 const l1 = await fk.wait((m) => m.id === 'L1');
 const tvA2 = await tvF.wait((m) => m.type === 'state' && m.game?.id === GA);
@@ -531,7 +531,7 @@ ok(/data-role="tv"/.test(tvHtml) && /data-role="overlay"/.test(ovHtml) && /data-
 console.log('17. team names unique per grade; cheer logo export');
 const mkT = async (name, grade) => api('/api/teams', { method: 'POST', body: JSON.stringify({ name, grade }) });
 const D2 = await mkT(`Dup-${RUN}`, '2nd Grade'), D5 = await mkT(`Dup-${RUN}`, '5th Grade'), D5x = await mkT(`dup-${RUN}`, '5th Grade');
-ok(D2.status === 201 && D5.status === 201 && D5x.status === 409 && /already exists in 5th Grade/.test(D5x.body.error), `2nd Grade and 5th Grade "Dup" can both exist; a same-grade twin is refused (${D5x.body.error})`);
+ok(D2.status === 201 && D5.status === 201 && D5x.status === 409 && /already exists in 5th-6th Grade/.test(D5x.body.error), `2nd Grade and 5th Grade "Dup" can both exist; a same-grade twin is refused (${D5x.body.error})`);
 const W2 = await mkT(`Twin-${RUN}`, '2nd Grade'), W5 = await mkT(`Twin-${RUN}`, '5th Grade'), M5 = await mkT(`Mate-${RUN}`, '5th Grade');
 const ti = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,grade\nDup-${RUN},DPX,5th\nDup-${RUN},DUP,2nd Grade\n` });
 const tl17 = (await api("/api/teams")).body;
@@ -544,7 +544,7 @@ let g17 = (await all17()).filter((g) => [D2, D5, W2, W5, M5].some((t) => t.body.
 ok(sch.body.created === 1 && g17[0]?.home_team_id === D5.body.id && /fill the grade \(and gender\) column/.test(sch.body.errors[0] || ''), `schedule CSV infers the grade from the unambiguous team; two ambiguous names are a row error (${sch.body.errors[0]})`);
 const sch2 = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,home,away\n,,,2nd Grade,Dup-${RUN},Twin-${RUN}\n,,,3rd Grade,Dup-${RUN},Twin-${RUN}\n` });
 g17 = (await all17()).filter((g) => g.home_team_id === D2.body.id);
-ok(sch2.body.created === 1 && g17[0]?.away_team_id === W2.body.id && /unknown home team .* in 3rd Grade|within one grade/.test(sch2.body.errors[0] || ''), `schedule CSV grade column picks 2nd Grade Dup vs Twin (${sch2.body.errors[0]})`);
+ok(sch2.body.created === 1 && g17[0]?.away_team_id === W2.body.id && /unknown home team .* in 3rd-4th Grade|within one grade/.test(sch2.body.errors[0] || ''), `schedule CSV grade column picks 2nd Grade Dup vs Twin (${sch2.body.errors[0]})`);
 const [dL, tL2] = local(nowMin + 5 * 86400_000);
 const cg = await api('/api/games', { method: 'POST', body: JSON.stringify({ court_id: fc.id, home_team_id: D5.body.id, away_team_id: M5.body.id, scheduled_at: iso(D + 3 * 3_600_000), cheer: 'Dup Cheer', cheer_logo_data_url: tiny }) });
 const CG = cg.body.id;
@@ -598,7 +598,7 @@ console.log('19. Gender / division, schedule warnings, lobby feed (live) + retir
   const ti = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,grade,gender\nIx-${RUN},IX,3rd Grade,Girls\nGx-${RUN},GXG,3rd Grade,Girls\n` });
   ok(ti.body.created === 1 && ti.body.updated === 1 && !ti.body.errors.length, `teams CSV gender column: creates + matches by grade + gender + name (${JSON.stringify(ti.body)})`);
   const exT = await fetch(BASE + '/api/export/teams.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-  ok(/^name,short_name,grade,gender,coach,logo_url/.test(exT) && exT.includes(`Gx-${RUN},GXG,3rd Grade,Girls`), 'teams export has the gender column');
+  ok(/^name,short_name,grade,gender,coach,logo_url/.test(exT) && exT.includes(`Gx-${RUN},GXG,3rd-4th Grade,Girls`), 'teams export has the gender column');
   // Schedule CSV: gender column picks the right Gx team; warnings for team twice in a weekend, split hours, cheer rules.
   const FRI = '2031-01-03', SAT = '2031-01-04';
   const si = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away,home_cheer\n${SAT},09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN},Sx Cheer\n${SAT},09:00,east,3rd Grade,Girls,Gx-${RUN},Ix-${RUN},\n${FRI},18:00,east,3rd Grade,Boys,Hx-${RUN},Gx-${RUN},Fri Cheer\n${SAT},10:00,west,3rd Grade,Girls,Gx-${RUN},Hx-${RUN},\n` });
@@ -610,7 +610,7 @@ console.log('19. Gender / division, schedule warnings, lobby feed (live) + retir
   ok(si.body.errors.some((e) => /row 5: .*(one gender|doesn't match|unknown away)/.test(e)), `schedule CSV gender column rejects a mixed / wrong-gender row (${si.body.errors[0]})`);
   const games19 = (await api('/api/games')).body.filter((g) => [gb.body.id, gg.body.id, b2.body.id].includes(g.home_team_id));
   const satW = games19.find((g) => g.court === 'West');
-  ok(satW && satW.label === '3rd Grade Boys' && satW.gender === 'Boys' && satW.warnings.some((w) => /plays 2 times/.test(w)), `games API: label "${satW?.label}" + per-game warnings`);
+  ok(satW && satW.label === '3rd-4th Grade Boys' && satW.gender === 'Boys' && satW.warnings.some((w) => /plays 2 times/.test(w)), `games API: label "${satW?.label}" + per-game warnings`);
   ok((await api('/api/warnings')).body.some((w) => w.gameId === satW.id), '/api/warnings lists them');
   const exS = await fetch(BASE + '/api/export/schedule.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
   const hS = exS.split(/\r?\n/)[0].split(',');

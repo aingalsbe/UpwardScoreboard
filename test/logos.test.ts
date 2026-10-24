@@ -57,7 +57,7 @@ test('loader: demo seed covers 44/44 teams + 4/4 squads; fills only empty; idemp
   const sq = (await pool.query(`SELECT id FROM cheer_squads ORDER BY id LIMIT 1`)).rows[0].id;
   await pool.query(`UPDATE cheer_squads SET logo_data=$2, logo_mime='image/png' WHERE id=$1`, [sq, PNG]);
   // case/space variants still match
-  await pool.query(`UPDATE teams SET name='  STARS ', grade='5TH  grade' WHERE id=(SELECT id FROM teams WHERE name='Stars' AND grade='5th Grade' AND gender='Girls')`);
+  await pool.query(`UPDATE teams SET name='  STARS ', grade='5TH  grade' WHERE id=(SELECT id FROM teams WHERE name='Lady Stars' AND grade='5th-6th Grade' AND gender='Girls')`);
 
   const dry = await lf.loadLogos(pool, { dryRun: true });
   assert.deepEqual([dry.teams.matched, dry.teams.filled, dry.teams.skipped, dry.teams.unmatched.length, dry.teams.withoutLogo.length], [44, 43, 1, 0, 0]);

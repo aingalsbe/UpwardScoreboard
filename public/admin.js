@@ -148,7 +148,8 @@ function render() {
   renderLive();
   const tf = $('#team-grade-filter').value;
   // Grade filters + datalist (teams come sorted by grade, then name, from the server).
-  const grades = [...new Set(teams.map((t) => t.grade).filter(Boolean))];
+  const CANON_GRADES = ['Kindergarten', '1st-2nd Grade', '3rd-4th Grade', '5th-6th Grade'];
+  const grades = [...new Set([...CANON_GRADES, ...teams.map((t) => t.grade).filter(Boolean)])];
   for (const sel of document.querySelectorAll('[data-grade-filter]')) { const v = sel.value; sel.innerHTML = '<option value="">All grades</option>' + grades.map((g) => `<option>${esc(g)}</option>`).join(''); sel.value = grades.includes(v) ? v : ''; }
   $('#grade-list').innerHTML = grades.map((g) => `<option value="${esc(g)}">`).join('');
   renderTeams(tf);

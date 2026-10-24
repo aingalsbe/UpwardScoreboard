@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { toHexLoose } from './color.js';
 import { PRACTICE_SCHEMA, seedPracticeDemo } from './practice.js';
-import { demoWeekend, demoSeedPlan, gradeOrder, LEAGUE_TZ, hourSlot, DEMO_COACHES, slotRooms, slotSeed } from './schedule.js';
+import { BOYS, GIRLS, demoWeekend, demoSeedPlan, divisionLabel, gradeOrder, LEAGUE_TZ, hourSlot, DEMO_COACHES, normalizeDivision, normalizeGrade, slotRooms, slotSeed } from './schedule.js';
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -153,6 +153,7 @@ export async function migrate(): Promise<void> {
   await migrateSixMinPeriods();
   await migrateColors();
   await migrateCheerColors(); // after colors are canonical #RRGGBB, so the copy is uppercase
+  await migrateCombinedGrades();
 }
 
 /**
@@ -183,6 +184,58 @@ export async function migrateCheerColors(): Promise<number> {
   const primary = await pool.query(`INSERT INTO settings(key, value) SELECT 'season_cheer_primary', value FROM settings WHERE key='season_light' ON CONFLICT (key) DO NOTHING`);
   const secondary = await pool.query(`INSERT INTO settings(key, value) SELECT 'season_cheer_secondary', value FROM settings WHERE key='season_dark' ON CONFLICT (key) DO NOTHING`);
   return (primary.rowCount ?? 0) + (secondary.rowCount ?? 0);
+}
+
+
+/**
+ * Normalize legacy single grades (1st..6th) to combined grade bands (Kindergarten, 1st-2nd Grade, 3rd-4th Grade, 5th-6th Grade),
+ * keep Kindergarten mixed (gender NULL), ensure Girls teams carry the "Lady " prefix (with 3-letter short_name from mascot),
+ * resolve any duplicate (grade, gender, lower(name)) collisions from merging 3rd+4th or 5th+6th, and normalize games.division.
+ */
+export async function migrateCombinedGrades(): Promise<number> {
+  let changed = 0;
+  const { rows: trows } = await pool.query(`SELECT id, name, short_name, grade, grade_order, gender FROM teams ORDER BY id`);
+  const targets = trows.map((r) => {
+    let gr = r.grade;
+    try { gr = r.grade ? (normalizeGrade(r.grade) ?? r.grade) : null; } catch {}
+    const ge = gr === 'Kindergarten' ? null : r.gender;
+    let nm = String(r.name ?? '').trim();
+    if (ge === 'Girls' && nm && !/^lady\s+/i.test(nm)) nm = `Lady ${nm}`;
+    return { r, gr, ge, nm };
+  });
+  const allTargetKeys = new Set(targets.map((t) => `${t.gr ?? ''}|${t.ge ?? ''}|${t.nm.toLowerCase()}`));
+  const used = new Set<string>();
+  for (const t of targets) {
+    const { r, gr, ge } = t;
+    let nm = t.nm;
+    let key = `${gr ?? ''}|${ge ?? ''}|${nm.toLowerCase()}`;
+    if (used.has(key)) {
+      const poolNames = ge === 'Girls' ? GIRLS : BOYS;
+      const pick = poolNames.find((c) => {
+        const ck = `${gr ?? ''}|${ge ?? ''}|${c.toLowerCase()}`;
+        return !used.has(ck) && !allTargetKeys.has(ck);
+      }) ?? `${nm} (${r.id})`;
+      nm = pick;
+      key = `${gr ?? ''}|${ge ?? ''}|${nm.toLowerCase()}`;
+    }
+    used.add(key);
+    const go = gradeOrder(gr);
+    const mascotShort = nm.replace(/^lady\s+/i, '').slice(0, 3).toUpperCase();
+    const sh = (nm !== r.name || (ge === 'Girls' && /^lad$/i.test(String(r.short_name ?? '')))) ? mascotShort : r.short_name;
+    if (nm !== r.name || sh !== r.short_name || gr !== r.grade || go !== r.grade_order || ge !== r.gender) {
+      await pool.query(`UPDATE teams SET name=$2, short_name=$3, grade=$4, grade_order=$5, gender=$6 WHERE id=$1`, [r.id, nm, sh, gr, go, ge]);
+      changed++;
+    }
+  }
+  const { rows: grows } = await pool.query(`SELECT id, division FROM games WHERE division IS NOT NULL`);
+  for (const g of grows) {
+    const nd = normalizeDivision(g.division);
+    if (nd && nd !== g.division) {
+      await pool.query(`UPDATE games SET division=$2 WHERE id=$1`, [g.id, nd]);
+      changed++;
+    }
+  }
+  return changed;
 }
 
 export const SIX_MIN_MS = 6 * 60_000;
@@ -369,10 +422,10 @@ async function migrateFloorCourts(): Promise<void> {
 }
 
 const SEED_TEAMS: [string, string, string, number][] = [ // name, short, grade, grade order
-  ['Bears', 'BEA', '2nd Grade', 2], ['Dolphins', 'DOL', '2nd Grade', 2],
-  ['Hawks', 'HAW', '3rd Grade', 3], ['Tigers', 'TIG', '3rd Grade', 3],
-  ['Rams', 'RAM', '4th Grade', 4], ['Knights', 'KNI', '4th Grade', 4], ['Saints', 'SAI', '4th Grade', 4], ['Warriors', 'WAR', '4th Grade', 4],
-  ['Eagles', 'EAG', '5th Grade', 5], ['Lions', 'LIO', '5th Grade', 5],
+  ['Bears', 'BEA', '1st-2nd Grade', 2], ['Dolphins', 'DOL', '1st-2nd Grade', 2],
+  ['Hawks', 'HAW', '3rd-4th Grade', 3], ['Tigers', 'TIG', '3rd-4th Grade', 3],
+  ['Rams', 'RAM', '3rd-4th Grade', 3], ['Knights', 'KNI', '3rd-4th Grade', 3], ['Saints', 'SAI', '3rd-4th Grade', 3], ['Warriors', 'WAR', '3rd-4th Grade', 3],
+  ['Eagles', 'EAG', '5th-6th Grade', 5], ['Lions', 'LIO', '5th-6th Grade', 5],
 ];
 
 export async function seedIfEmpty(): Promise<boolean> {
@@ -390,13 +443,13 @@ export async function seedIfEmpty(): Promise<boolean> {
   const at = (h: number, m = 0) => new Date(day.getTime() + (h * 60 + m) * 60_000);
   const games: [string, string, string, Date, string][] = [
     // A realistic Saturday: West + East block (younger grades side by side), then a Full block. No overlaps.
-    ['west', 'Bears', 'Dolphins', at(9), '2nd Grade'],
-    ['east', 'Hawks', 'Tigers', at(9), '3rd Grade'],
-    ['west', 'Rams', 'Knights', at(10), '4th Grade'],
-    ['east', 'Saints', 'Warriors', at(10), '4th Grade'],
-    ['full', 'Eagles', 'Lions', at(11), '5th Grade'],
-    ['full', 'Knights', 'Saints', at(12), '4th Grade'],
-    ['full', 'Lions', 'Eagles', at(13), '5th Grade'],
+    ['west', 'Bears', 'Dolphins', at(9), '1st-2nd Grade'],
+    ['east', 'Hawks', 'Tigers', at(9), '3rd-4th Grade'],
+    ['west', 'Rams', 'Knights', at(10), '3rd-4th Grade'],
+    ['east', 'Saints', 'Warriors', at(10), '3rd-4th Grade'],
+    ['full', 'Eagles', 'Lions', at(11), '5th-6th Grade'],
+    ['full', 'Knights', 'Saints', at(12), '3rd-4th Grade'],
+    ['full', 'Lions', 'Eagles', at(13), '5th-6th Grade'],
   ];
   for (const [court, h, a, when, div] of games) {
     await pool.query(
@@ -446,14 +499,14 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
     }
     await client.query(`INSERT INTO courts(slug, name, location, conflicts_with) VALUES
       ('full','Full','Main gym (full court)','{west,east}'),('west','West','Main gym (half court)','{}'),('east','East','Main gym (half court)','{}')`);
-    const team = async (name: string, grade: string, gender: string, coach: string) => (await client.query(
+    const team = async (name: string, grade: string, gender: string | null, coach: string) => (await client.query(
       'INSERT INTO teams(name, short_name, grade, grade_order, gender, coach) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-      [name, name.slice(0, 3).toUpperCase(), grade, gradeOrder(grade), gender, coach])).rows[0].id;
+      [name, name.replace(/^lady\s+/i, '').slice(0, 3).toUpperCase(), grade, gradeOrder(grade), gender, coach])).rows[0].id;
     for (const g of plan) {
       const h = await team(g.home, g.grade, g.gender, g.homeCoach), a = await team(g.away, g.grade, g.gender, g.awayCoach);
       await client.query(`INSERT INTO games(court_id, home_team_id, away_team_id, scheduled_at, division, home_locker, away_locker)
         VALUES ((SELECT id FROM courts WHERE slug=$1), $2, $3, ($4 || ' ' || $5)::timestamp AT TIME ZONE 'America/Chicago', $6, $7, $8)`,
-      [g.court, h, a, g.date, g.time, `${g.grade} ${g.gender}`, g.homeLocker, g.awayLocker]);
+      [g.court, h, a, g.date, g.time, divisionLabel(g.grade, g.gender), g.homeLocker, g.awayLocker]);
       if (g.cheer) { // one squad per hour, shared by every court
         const sid = await squadId(client, g.cheer);
         await client.query('UPDATE cheer_squads SET coach=$2 WHERE id=$1', [sid, g.cheerCoach ?? null]);
