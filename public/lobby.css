@@ -63,7 +63,7 @@ main:not(.full):not(.split) .court { display: grid; grid-row: span 4; grid-templ
 main:not(.full):not(.split) .game[data-slot="next"] { align-self: start; }
 main:not(.full):not(.split) .game[data-slot="now"] { align-self: start; }
 .who { min-width: 0; text-align: center; }
-.who .name { font: 800 4.4rem "Montserrat", "Archivo", Arial, sans-serif; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who .name { font: 800 3.7rem "Montserrat", "Archivo", Arial, sans-serif; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .who .coach { margin-top: .3rem; font: 600 2.2rem "Montserrat", "Archivo", Arial, sans-serif; opacity: 1; }
 .home .coach { color: #2b2000; } .away .coach { color: #e6e6e6; } .cheer .coach { color: #1a0012; }
 .score { font: 400 7.6rem "Anton", "Oswald", "Arial Narrow", sans-serif; letter-spacing: .2rem; min-width: 9rem; text-align: center; font-variant-numeric: tabular-nums; }
@@ -75,7 +75,7 @@ main:not(.full):not(.split) .game[data-slot="now"] { align-self: start; }
 /* UP NEXT block: same rows, compact */
 .game.next .row { min-height: 8rem; padding: .6rem 1.2rem; }
 .game.next .locker { min-height: 6.6rem; } .game.next .locker b { font-size: 3.6rem; }
-.game.next .who .name { font-size: 3.6rem; } .game.next .who .coach { font-size: 1.9rem; }
+.game.next .who .name { font-size: 3.1rem; } .game.next .who .coach { font-size: 1.9rem; }
 .game.next .side { font-size: 2.8rem; min-width: 15rem; padding: .5rem 1.8rem; }
 .divider { align-self: center; height: .4rem; background: rgba(255,255,255,.35); border-radius: .2rem; margin: .4rem 4rem; }
 /* Full Court: live and next side by side inside one spanning panel */
@@ -99,7 +99,7 @@ main.split { gap: .9rem; }
 body:has(main.split) header h1 { font-size: 9.2rem; }
 body:has(main.split) header .sub { font-size: 1.9rem; margin-top: .2rem; }
 main.split .band.now .row { min-height: 9.4rem; }
-main.split .band.now .who .name { font-size: 3.5rem; }
+main.split .band.now .who .name { font-size: 2.8rem; }
 .cheer-band.next { flex-direction: row; align-items: center; justify-content: center; gap: 2rem; }
 .cheer-band.next .status { flex: none; }
 .cheer-band.next .row.cheer { width: 62%; margin: 0; min-height: 6.6rem; }
@@ -122,7 +122,7 @@ main.split .next-bar { margin-top: 1.6rem; }
 .game.next .row { filter: brightness(.82); }
 main.split .band.next .row { min-height: 6.8rem; padding: .4rem 1.2rem; }
 main.split .band.next .locker { min-height: 5.8rem; } main.split .band.next .locker b { font-size: 3.2rem; }
-main.split .band.next .who .name { font-size: 3.2rem; }
+main.split .band.next .who .name { font-size: 2.8rem; }
 main.split .band.next .side { font-size: 2.5rem; min-width: 13rem; padding: .4rem 1.4rem; }
 /* Next cheer is the smaller type above, not a brightness filter. A filter would darken the row
    after --season-cheer-primary-fg was chosen and drop mid-tone Cheer Primary under 4.5:1 (Avery R22). */

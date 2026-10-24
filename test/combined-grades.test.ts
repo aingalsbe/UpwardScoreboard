@@ -51,7 +51,7 @@ test('K-2nd score-hiding rule: Kindergarten and 1st-2nd Grade hide scores; 3rd-4
   }
 });
 
-test('Girls teams carry the "Lady " prefix across GIRLS pool, demoSeedPlan, generated CSVs, and manifest.json', () => {
+test('Girls teams carry the "Lady " prefix across GIRLS pool, demoSeedPlan, generated CSVs, and manifest.json', async () => {
   assert.equal(GIRLS.length, 12);
   assert.equal(BOYS.length, 12);
   for (const g of GIRLS) assert.match(g, /^Lady [A-Z]/, g);
@@ -77,11 +77,31 @@ test('Girls teams carry the "Lady " prefix across GIRLS pool, demoSeedPlan, gene
       }
     }
   }
-  // Every entry in manifest.json points to a PNG whose filename ends with -<mascot>.png
-  const man = readManifest();
-  for (const e of man.teams) {
-    const mascot = (e as any).mascot ? String((e as any).mascot).toLowerCase() : e.name.replace(/^Lady\s+/i, '').toLowerCase();
-    assert.ok(e.file.endsWith(`-${mascot}.png`), `${e.division} | ${e.name} should point to *-${mascot}.png, got ${e.file}`);
+  // Every entry in manifest.json points to a PNG whose filename ends with -<mascot>.png, and all 8 3rd-4th-grade-* PNGs have unique SHA-256 hashes distinct from every other PNG in deliverables/logos/teams/
+  const crypto = await import("node:crypto");
+  const path = await import("node:path");
+  const { LOGO_DIR, LOGO_MAX_BYTES } = await import("../src/logo-files.js");
+  if (fs.existsSync(path.join(LOGO_DIR, "manifest.json"))) {
+    const man = readManifest();
+    for (const e of man.teams) {
+      const mascot = (e as any).mascot ? String((e as any).mascot).toLowerCase() : e.name.replace(/^Lady\s+/i, '').toLowerCase();
+      assert.ok(e.file.endsWith(`-${mascot}.png`), `${e.division} | ${e.name} should point to *-${mascot}.png, got ${e.file}`);
+    }
+    const teamsDir = path.join(LOGO_DIR, "teams");
+    const allPngs = fs.readdirSync(teamsDir).filter((f) => f.endsWith(".png")).sort();
+    const shaByFile = new Map<string, string>();
+    for (const f of allPngs) {
+      const buf = fs.readFileSync(path.join(teamsDir, f));
+      assert.ok(buf.length <= LOGO_MAX_BYTES, `${f} size ${buf.length} exceeds ${LOGO_MAX_BYTES}`);
+      shaByFile.set(f, crypto.createHash("sha256").update(buf).digest("hex"));
+    }
+    const new8 = allPngs.filter((f) => f.startsWith("3rd-4th-grade-"));
+    assert.equal(new8.length, 8);
+    for (const f of new8) {
+      const h = shaByFile.get(f)!;
+      const dupes = allPngs.filter((other) => other !== f && shaByFile.get(other) === h);
+      assert.deepEqual(dupes, [], `${f} must have a genuine unique mascot illustration, not share SHA-256 with ${dupes.join(", ")}`);
+    }
   }
 });
 
@@ -185,6 +205,7 @@ test('DB: migrateCombinedGrades normalizes legacy grades, resolves merged-grade 
   await db.migrateCombinedGrades();
   const rep = await lf.loadLogos(db.pool);
   assert.equal(rep.teams.matched, 44);
+  assert.deepEqual(rep.teams.unmatched, []);
   assert.deepEqual(rep.teams.withoutLogo, []);
   const { rows: migTeams } = await db.pool.query(`SELECT name, grade, gender, logo_url FROM teams ORDER BY id`);
   for (const t of migTeams) {
@@ -202,6 +223,7 @@ test('API: POST /api/teams, PUT /api/teams/:id, and POST /api/import/teams.csv a
   const admin = new pg.Client({ connectionString: BASE_URL }); await admin.connect();
   if (!(await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount) await admin.query(`CREATE DATABASE "${name}"`);
   await admin.end();
+  const clean = new pg.Client({ connectionString: u.toString() }); await clean.connect(); await clean.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;'); await clean.end();
   const started = await startServer({ DATABASE_URL: u.toString(), ADMIN_PASSWORD: 'test-password', TZ: 'America/Chicago', SEED: '' });
   const BASE = `http://127.0.0.1:${started.port}`;
   try {

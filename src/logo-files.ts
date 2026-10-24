@@ -54,8 +54,14 @@ export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: bo
   ) => {
     const r = rep[kind], byKey = new Map(entries.map((e) => [e.k, e]));
     const seen = new Set<string>();
-    for (const row of rows) {
-      let e: { k: string; label: string; file: string } | undefined = byKey.get(key(row));
+    const resolved: ({ k: string; label: string; file: string } | undefined)[] = new Array(rows.length);
+    for (let i = 0; i < rows.length; i++) {
+      const e = byKey.get(key(rows[i]));
+      if (e) { resolved[i] = e; seen.add(e.k); }
+    }
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      let e = resolved[i];
       if (!e && fallback) e = fallback(row, entries, seen);
       if (!e) { r.withoutLogo.push(row.label); continue; }
       seen.add(e.k); r.matched++;
@@ -78,8 +84,10 @@ export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: bo
       const hit = entries.find((e) => e.mascot === m && !seen.has(e.k)) ?? entries.find((e) => e.mascot === m);
       if (hit) {
         const div = normTeamDiv(row.grade, row.gender);
-        const unclaimedInDiv = entries.find((e) => e.div === div && !seen.has(e.k));
-        if (unclaimedInDiv) seen.add(unclaimedInDiv.k);
+        const unclaimed = entries.find((e) => e.div === div && !seen.has(e.k))
+          ?? entries.find((e) => e.div === 'kindergarten' && !seen.has(e.k))
+          ?? entries.find((e) => !seen.has(e.k));
+        if (unclaimed) seen.add(unclaimed.k);
       }
       return hit;
     }
