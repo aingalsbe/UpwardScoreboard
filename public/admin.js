@@ -235,6 +235,7 @@ document.addEventListener('click', guard(async (e) => {
   if (b.dataset.editTeam) {
     const t = teams.find((x) => x.id === Number(b.dataset.editTeam)); const f = $('#team-form');
     for (const k of ['id', 'name', 'short_name', 'grade', 'gender', 'coach', 'logo_url']) f.elements[k].value = t[k] ?? '';
+    syncTeamGender();
     $('#team-save').textContent = 'Save team'; f.scrollIntoView({ behavior: 'smooth' });
   }
 }));
@@ -251,7 +252,16 @@ $('#team-form').addEventListener('submit', guard(async (e) => {
   else await api('/api/teams', { method: 'POST', body: JSON.stringify(body) });
   f.reset(); f.elements.id.value = ''; $('#team-save').textContent = 'Add team'; msg('Team saved'); await load();
 }));
-$('#team-form').addEventListener('reset', () => { $('#team-form').elements.id.value = ''; $('#team-save').textContent = 'Add team'; });
+function syncTeamGender() {
+  const f = $('#team-form'); if (!f) return;
+  const isK = /^(k|kg|kinder|kindergarten)$/i.test(String(f.elements.grade.value || '').trim());
+  if (isK) f.elements.gender.value = '';
+  f.elements.gender.disabled = isK;
+}
+$('#team-form').elements.grade.addEventListener('input', syncTeamGender);
+$('#team-form').elements.grade.addEventListener('change', syncTeamGender);
+syncTeamGender();
+$('#team-form').addEventListener('reset', () => { $('#team-form').elements.id.value = ''; $('#team-save').textContent = 'Add team'; setTimeout(syncTeamGender, 0); });
 
 $('#court-form').addEventListener('submit', guard(async (e) => {
   e.preventDefault(); const f = e.target;

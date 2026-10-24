@@ -8,3 +8,11 @@
 .pa-grid td.bad, .pa-cheer .bad { outline: 3px solid #c0392b; }
 .pa-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
 .errors { color: #b00020; } .msg.ok { color: #1b5e20; } .msg.bad { color: #b00020; }
+
+@media (max-width: 640px) {
+  .practice-admin { max-width: 100%; overflow-x: hidden; padding: 10px; box-sizing: border-box; }
+  .pa-head { flex-direction: column; gap: 4px; }
+  .tabs { flex-wrap: wrap; }
+  .pa-grid { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .pa-grid select { min-width: 120px; }
+}

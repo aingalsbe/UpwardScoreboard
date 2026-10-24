@@ -509,10 +509,11 @@ const genderOf = (v: unknown, grade?: string | null) => {
 };
 const gradeOf = (v: unknown) => { try { return normalizeGrade(v); } catch (e: any) { throw new HttpError(400, e.message); } };
 function teamValues(b: any) {
-  const name = String(b.name || '').trim();
+  let name = String(b.name || '').trim();
   if (!name) throw new HttpError(400, 'name required');
-  if (name.length > 30) throw new HttpError(400, 'name longer than 30 characters');
   const gr = gradeOf(b.grade), ge = genderOf(b.gender, gr);
+  if (ge === 'Girls' && !/^lady\s+/i.test(name)) name = `Lady ${name}`;
+  if (name.length > 30) throw new HttpError(400, 'name longer than 30 characters');
   const autoShort = name.replace(/^lady\s+/i, '').slice(0, 3);
   // Aaron 2026-10-23: season colors only, no individual team colors. primary_color/secondary_color are ignored on
   // input (API and teams.csv) and never exported or read by any display; the DB columns and their data are kept as is.
@@ -525,10 +526,10 @@ async function findTeam(name: string, grade: string | null, gender: string | nul
     "SELECT id, name, grade, gender FROM teams WHERE lower(name)=lower($1) OR lower(regexp_replace(name, '^lady\\s+', '', 'i'))=lower($2) ORDER BY (lower(name)=lower($1)) DESC, grade_order, grade, gender",
     [name, bare]
   );
-  const exact = rows.filter((t) => t.name.toLowerCase() === name.toLowerCase());
-  if (exact.length) rows = exact;
   const all = rows;
   if (gender) { const g = rows.filter((t) => t.gender === gender || t.gender == null); rows = g.length ? g : rows; }
+  const exact = rows.filter((t) => t.name.toLowerCase() === name.toLowerCase());
+  if (exact.length) rows = exact;
   if (grade) {
     const inGrade = rows.filter((t) => (t.grade ? gradeOf(t.grade) : null) === grade);
     if (inGrade.length > 1) return { error: `"${name}" exists in ${grade} ${inGrade.map((t) => t.gender || 'no gender').join(' and ')}; fill the gender column` };
@@ -881,7 +882,7 @@ async function importTeams(text: string): Promise<ImportResult> {
       seen.set(key, line);
       // Match on grade + name. Old files without a grade column match by name (must be unambiguous).
       // A team that has no grade yet is adopted by a row naming it with a grade (instead of creating a twin).
-      let sameName = (await pool.query('SELECT id, name, short_name, logo_url, grade, gender, coach FROM teams WHERE lower(name)=lower($1)', [v[0]])).rows;
+      const bare = v[0].replace(/^lady\s+/i, ''); let sameName = (await pool.query("SELECT id, name, short_name, logo_url, grade, gender, coach FROM teams WHERE lower(name)=lower($1) OR lower(regexp_replace(name, '^lady\\s+', '', 'i'))=lower($2)", [v[0], bare])).rows;
       // With a gender column: match grade + gender + name; a team without a gender yet is adopted (no twin).
       if (hasGender) { const exact = sameName.filter((t) => t.gender === v[6]); sameName = exact.length ? exact : sameName.filter((t) => t.gender == null); }
       else delete (r as any).gender;

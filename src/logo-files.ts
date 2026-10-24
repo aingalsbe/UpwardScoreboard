@@ -38,16 +38,25 @@ export interface LoadReport { dryRun: boolean; overwrite: boolean;
   teams: { matched: number; filled: number; skipped: number; unmatched: string[]; withoutLogo: string[] };
   squads: { matched: number; filled: number; skipped: number; unmatched: string[]; withoutLogo: string[] } }
 
-/** Fill teams/cheer_squads logos from the manifest. Teams match on name + division ("<grade> <gender>"), squads on
- *  name. Default fills only rows with no logo_url and no uploaded logo_data; overwrite replaces both. */
+/** Fill teams/cheer_squads logos from the manifest. Teams match on name + division ("<grade> <gender>"), with
+ *  fallback to matching by mascot name across divisions (e.g. after a merged-grade collision rename); squads match
+ *  on name. Default fills only rows with no logo_url and no uploaded logo_data; overwrite replaces both. */
 export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: boolean; overwrite?: boolean; dir?: string } = {}): Promise<LoadReport> {
   const man = readManifest(opts.dir), dryRun = !!opts.dryRun, overwrite = !!opts.overwrite;
   const rep: LoadReport = { dryRun, overwrite, teams: { matched: 0, filled: 0, skipped: 0, unmatched: [], withoutLogo: [] }, squads: { matched: 0, filled: 0, skipped: 0, unmatched: [], withoutLogo: [] } };
-  const run = async (kind: 'teams' | 'squads', rows: any[], key: (r: any) => string, entries: { k: string; label: string; file: string }[], table: string) => {
+  const run = async (
+    kind: 'teams' | 'squads',
+    rows: any[],
+    key: (r: any) => string,
+    entries: { k: string; mascot?: string; div?: string; label: string; file: string }[],
+    table: string,
+    fallback?: (r: any, entries: { k: string; mascot?: string; div?: string; label: string; file: string }[], seen: Set<string>) => { k: string; label: string; file: string } | undefined
+  ) => {
     const r = rep[kind], byKey = new Map(entries.map((e) => [e.k, e]));
     const seen = new Set<string>();
     for (const row of rows) {
-      const e = byKey.get(key(row));
+      let e: { k: string; label: string; file: string } | undefined = byKey.get(key(row));
+      if (!e && fallback) e = fallback(row, entries, seen);
       if (!e) { r.withoutLogo.push(row.label); continue; }
       seen.add(e.k); r.matched++;
       const empty = !row.logo_url && !row.has_data;
@@ -57,9 +66,24 @@ export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: bo
     }
     r.unmatched = entries.filter((e) => !seen.has(e.k)).map((e) => e.label);
   };
-  const teams = (await db.query(`SELECT id, name, grade, gender, logo_url, (logo_data IS NOT NULL) has_data, concat_ws(' · ', name, concat_ws(' ', grade, gender)) label FROM teams ORDER BY id`)).rows;
-  await run('teams', teams, (t) => normMascot(t.name) + '|' + normTeamDiv(t.grade, t.gender),
-    man.teams.map((t) => ({ k: normMascot(t.name) + '|' + normDiv(t.division), label: `${t.name} · ${t.division}`, file: t.file })), 'teams');
+  const teams = (await db.query(`SELECT id, name, grade, gender, logo_url, (logo_data IS NOT NULL) has_data, concat_ws(' · ', name, NULLIF(concat_ws(' ', grade, CASE WHEN grade = 'Kindergarten' THEN NULL ELSE gender END), '')) label FROM teams ORDER BY id`)).rows;
+  await run(
+    'teams',
+    teams,
+    (t) => normMascot(t.name) + '|' + normTeamDiv(t.grade, t.gender),
+    man.teams.map((t) => ({ k: normMascot(t.name) + '|' + normDiv(t.division), mascot: normMascot(t.name), div: normDiv(t.division), label: `${t.name} · ${t.division}`, file: t.file })),
+    'teams',
+    (row, entries, seen) => {
+      const m = normMascot(row.name);
+      const hit = entries.find((e) => e.mascot === m && !seen.has(e.k)) ?? entries.find((e) => e.mascot === m);
+      if (hit) {
+        const div = normTeamDiv(row.grade, row.gender);
+        const unclaimedInDiv = entries.find((e) => e.div === div && !seen.has(e.k));
+        if (unclaimedInDiv) seen.add(unclaimedInDiv.k);
+      }
+      return hit;
+    }
+  );
   const squads = (await db.query(`SELECT id, name, name label, logo_url, (logo_data IS NOT NULL) has_data FROM cheer_squads ORDER BY id`)).rows;
   await run('squads', squads, (s) => norm(s.name), man.cheer.map((c) => ({ k: norm(c.name), label: c.name, file: c.file })), 'cheer_squads');
   return rep;

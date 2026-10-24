@@ -598,7 +598,7 @@ console.log('19. Gender / division, schedule warnings, lobby feed (live) + retir
   const ti = await api('/api/import/teams.csv', { method: 'POST', body: `name,short_name,grade,gender\nIx-${RUN},IX,3rd Grade,Girls\nGx-${RUN},GXG,3rd Grade,Girls\n` });
   ok(ti.body.created === 1 && ti.body.updated === 1 && !ti.body.errors.length, `teams CSV gender column: creates + matches by grade + gender + name (${JSON.stringify(ti.body)})`);
   const exT = await fetch(BASE + '/api/export/teams.csv', { headers: { authorization: `Bearer ${token}` } }).then((r) => r.text());
-  ok(/^name,short_name,grade,gender,coach,logo_url/.test(exT) && exT.includes(`Gx-${RUN},GXG,3rd-4th Grade,Girls`), 'teams export has the gender column');
+  ok(/^name,short_name,grade,gender,coach,logo_url/.test(exT) && exT.includes(`Lady Gx-${RUN},GXG,3rd-4th Grade,Girls`), 'teams export has the gender column');
   // Schedule CSV: gender column picks the right Gx team; warnings for team twice in a weekend, split hours, cheer rules.
   const FRI = '2031-01-03', SAT = '2031-01-04';
   const si = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away,home_cheer\n${SAT},09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN},Sx Cheer\n${SAT},09:00,east,3rd Grade,Girls,Gx-${RUN},Ix-${RUN},\n${FRI},18:00,east,3rd Grade,Boys,Hx-${RUN},Gx-${RUN},Fri Cheer\n${SAT},10:00,west,3rd Grade,Girls,Gx-${RUN},Hx-${RUN},\n` });

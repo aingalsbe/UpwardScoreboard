@@ -52,8 +52,8 @@
     {
       "name": "Bears",
       "division": "5th-6th Grade Boys",
-      "slug": "6th-grade-boys-eagles",
-      "file": "teams/6th-grade-boys-eagles.png",
+      "slug": "6th-grade-boys-bears",
+      "file": "teams/6th-grade-boys-bears.png",
       "mascot": "Bears",
       "colors": {
         "primary": "#800000",
@@ -64,8 +64,8 @@
     {
       "name": "Hawks",
       "division": "5th-6th Grade Boys",
-      "slug": "6th-grade-boys-lions",
-      "file": "teams/6th-grade-boys-lions.png",
+      "slug": "6th-grade-boys-hawks",
+      "file": "teams/6th-grade-boys-hawks.png",
       "mascot": "Hawks",
       "colors": {
         "primary": "#800000",
@@ -100,8 +100,8 @@
     {
       "name": "Bears",
       "division": "Kindergarten",
-      "slug": "2nd-grade-girls-stars",
-      "file": "teams/2nd-grade-girls-stars.png",
+      "slug": "2nd-grade-boys-bears",
+      "file": "teams/2nd-grade-boys-bears.png",
       "mascot": "Bears",
       "colors": {
         "primary": "#800000",
@@ -112,8 +112,8 @@
     {
       "name": "Hawks",
       "division": "Kindergarten",
-      "slug": "2nd-grade-girls-comets",
-      "file": "teams/2nd-grade-girls-comets.png",
+      "slug": "2nd-grade-boys-hawks",
+      "file": "teams/2nd-grade-boys-hawks.png",
       "mascot": "Hawks",
       "colors": {
         "primary": "#800000",
@@ -124,8 +124,8 @@
     {
       "name": "Lady Stars",
       "division": "1st-2nd Grade Girls",
-      "slug": "2nd-grade-girls-lightning",
-      "file": "teams/2nd-grade-girls-lightning.png",
+      "slug": "2nd-grade-girls-stars",
+      "file": "teams/2nd-grade-girls-stars.png",
       "mascot": "Stars",
       "colors": {
         "primary": "#800000",
@@ -136,8 +136,8 @@
     {
       "name": "Lady Comets",
       "division": "1st-2nd Grade Girls",
-      "slug": "2nd-grade-girls-sparks",
-      "file": "teams/2nd-grade-girls-sparks.png",
+      "slug": "2nd-grade-girls-comets",
+      "file": "teams/2nd-grade-girls-comets.png",
       "mascot": "Comets",
       "colors": {
         "primary": "#800000",
@@ -148,8 +148,8 @@
     {
       "name": "Eagles",
       "division": "1st-2nd Grade Boys",
-      "slug": "2nd-grade-boys-bears",
-      "file": "teams/2nd-grade-boys-bears.png",
+      "slug": "3rd-grade-boys-eagles",
+      "file": "teams/3rd-grade-boys-eagles.png",
       "mascot": "Eagles",
       "colors": {
         "primary": "#800000",
@@ -160,8 +160,8 @@
     {
       "name": "Lions",
       "division": "1st-2nd Grade Boys",
-      "slug": "2nd-grade-boys-hawks",
-      "file": "teams/2nd-grade-boys-hawks.png",
+      "slug": "3rd-grade-boys-lions",
+      "file": "teams/3rd-grade-boys-lions.png",
       "mascot": "Lions",
       "colors": {
         "primary": "#800000",
@@ -172,8 +172,8 @@
     {
       "name": "Bears",
       "division": "1st-2nd Grade Boys",
-      "slug": "2nd-grade-boys-tigers",
-      "file": "teams/2nd-grade-boys-tigers.png",
+      "slug": "3rd-grade-boys-bears",
+      "file": "teams/3rd-grade-boys-bears.png",
       "mascot": "Bears",
       "colors": {
         "primary": "#800000",
@@ -184,8 +184,8 @@
     {
       "name": "Hawks",
       "division": "1st-2nd Grade Boys",
-      "slug": "2nd-grade-boys-rams",
-      "file": "teams/2nd-grade-boys-rams.png",
+      "slug": "3rd-grade-boys-hawks",
+      "file": "teams/3rd-grade-boys-hawks.png",
       "mascot": "Hawks",
       "colors": {
         "primary": "#800000",
@@ -196,8 +196,8 @@
     {
       "name": "Lady Lightning",
       "division": "1st-2nd Grade Girls",
-      "slug": "2nd-grade-girls-hornets",
-      "file": "teams/2nd-grade-girls-hornets.png",
+      "slug": "2nd-grade-girls-lightning",
+      "file": "teams/2nd-grade-girls-lightning.png",
       "mascot": "Lightning",
       "colors": {
         "primary": "#800000",
@@ -208,8 +208,8 @@
     {
       "name": "Lady Sparks",
       "division": "1st-2nd Grade Girls",
-      "slug": "2nd-grade-girls-cardinals",
-      "file": "teams/2nd-grade-girls-cardinals.png",
+      "slug": "2nd-grade-girls-sparks",
+      "file": "teams/2nd-grade-girls-sparks.png",
       "mascot": "Sparks",
       "colors": {
         "primary": "#800000",
@@ -244,8 +244,8 @@
     {
       "name": "Eagles",
       "division": "3rd-4th Grade Boys",
-      "slug": "3rd-grade-boys-eagles",
-      "file": "teams/3rd-grade-boys-eagles.png",
+      "slug": "4th-grade-boys-eagles",
+      "file": "teams/4th-grade-boys-eagles.png",
       "mascot": "Eagles",
       "colors": {
         "primary": "#800000",
@@ -256,8 +256,8 @@
     {
       "name": "Lions",
       "division": "3rd-4th Grade Boys",
-      "slug": "3rd-grade-boys-lions",
-      "file": "teams/3rd-grade-boys-lions.png",
+      "slug": "4th-grade-boys-lions",
+      "file": "teams/4th-grade-boys-lions.png",
       "mascot": "Lions",
       "colors": {
         "primary": "#800000",
@@ -268,8 +268,8 @@
     {
       "name": "Bears",
       "division": "3rd-4th Grade Boys",
-      "slug": "3rd-grade-boys-bears",
-      "file": "teams/3rd-grade-boys-bears.png",
+      "slug": "4th-grade-boys-bears",
+      "file": "teams/4th-grade-boys-bears.png",
       "mascot": "Bears",
       "colors": {
         "primary": "#800000",
@@ -280,8 +280,8 @@
     {
       "name": "Hawks",
       "division": "3rd-4th Grade Boys",
-      "slug": "3rd-grade-boys-hawks",
-      "file": "teams/3rd-grade-boys-hawks.png",
+      "slug": "4th-grade-boys-hawks",
+      "file": "teams/4th-grade-boys-hawks.png",
       "mascot": "Hawks",
       "colors": {
         "primary": "#800000",
@@ -364,8 +364,8 @@
     {
       "name": "Knights",
       "division": "3rd-4th Grade Boys",
-      "slug": "4th-grade-boys-eagles",
-      "file": "teams/4th-grade-boys-eagles.png",
+      "slug": "3rd-4th-grade-boys-knights",
+      "file": "teams/3rd-4th-grade-boys-knights.png",
       "mascot": "Knights",
       "colors": {
         "primary": "#800000",
@@ -376,8 +376,8 @@
     {
       "name": "Warriors",
       "division": "3rd-4th Grade Boys",
-      "slug": "4th-grade-boys-lions",
-      "file": "teams/4th-grade-boys-lions.png",
+      "slug": "3rd-4th-grade-boys-warriors",
+      "file": "teams/3rd-4th-grade-boys-warriors.png",
       "mascot": "Warriors",
       "colors": {
         "primary": "#800000",
@@ -388,8 +388,8 @@
     {
       "name": "Lady Blaze",
       "division": "3rd-4th Grade Girls",
-      "slug": "4th-grade-girls-stars",
-      "file": "teams/4th-grade-girls-stars.png",
+      "slug": "3rd-4th-grade-girls-blaze",
+      "file": "teams/3rd-4th-grade-girls-blaze.png",
       "mascot": "Blaze",
       "colors": {
         "primary": "#800000",
@@ -400,8 +400,8 @@
     {
       "name": "Lady Jaguars",
       "division": "3rd-4th Grade Girls",
-      "slug": "4th-grade-girls-comets",
-      "file": "teams/4th-grade-girls-comets.png",
+      "slug": "3rd-4th-grade-girls-jaguars",
+      "file": "teams/3rd-4th-grade-girls-jaguars.png",
       "mascot": "Jaguars",
       "colors": {
         "primary": "#800000",
@@ -412,8 +412,8 @@
     {
       "name": "Lady Storm",
       "division": "3rd-4th Grade Girls",
-      "slug": "4th-grade-girls-lightning",
-      "file": "teams/4th-grade-girls-lightning.png",
+      "slug": "3rd-4th-grade-girls-storm",
+      "file": "teams/3rd-4th-grade-girls-storm.png",
       "mascot": "Storm",
       "colors": {
         "primary": "#800000",
@@ -424,8 +424,8 @@
     {
       "name": "Lady Thunder",
       "division": "3rd-4th Grade Girls",
-      "slug": "4th-grade-girls-sparks",
-      "file": "teams/4th-grade-girls-sparks.png",
+      "slug": "3rd-4th-grade-girls-thunder",
+      "file": "teams/3rd-4th-grade-girls-thunder.png",
       "mascot": "Thunder",
       "colors": {
         "primary": "#800000",
@@ -436,8 +436,8 @@
     {
       "name": "Panthers",
       "division": "3rd-4th Grade Boys",
-      "slug": "4th-grade-boys-bears",
-      "file": "teams/4th-grade-boys-bears.png",
+      "slug": "3rd-4th-grade-boys-panthers",
+      "file": "teams/3rd-4th-grade-boys-panthers.png",
       "mascot": "Panthers",
       "colors": {
         "primary": "#800000",
@@ -448,8 +448,8 @@
     {
       "name": "Falcons",
       "division": "3rd-4th Grade Boys",
-      "slug": "4th-grade-boys-hawks",
-      "file": "teams/4th-grade-boys-hawks.png",
+      "slug": "3rd-4th-grade-boys-falcons",
+      "file": "teams/3rd-4th-grade-boys-falcons.png",
       "mascot": "Falcons",
       "colors": {
         "primary": "#800000",
@@ -460,8 +460,8 @@
     {
       "name": "Lady Lightning",
       "division": "5th-6th Grade Girls",
-      "slug": "6th-grade-girls-stars",
-      "file": "teams/6th-grade-girls-stars.png",
+      "slug": "5th-grade-girls-lightning",
+      "file": "teams/5th-grade-girls-lightning.png",
       "mascot": "Lightning",
       "colors": {
         "primary": "#800000",
@@ -472,8 +472,8 @@
     {
       "name": "Lady Sparks",
       "division": "5th-6th Grade Girls",
-      "slug": "6th-grade-girls-comets",
-      "file": "teams/6th-grade-girls-comets.png",
+      "slug": "5th-grade-girls-sparks",
+      "file": "teams/5th-grade-girls-sparks.png",
       "mascot": "Sparks",
       "colors": {
         "primary": "#800000",
@@ -484,8 +484,8 @@
     {
       "name": "Tigers",
       "division": "5th-6th Grade Boys",
-      "slug": "6th-grade-boys-bears",
-      "file": "teams/6th-grade-boys-bears.png",
+      "slug": "2nd-grade-boys-tigers",
+      "file": "teams/2nd-grade-boys-tigers.png",
       "mascot": "Tigers",
       "colors": {
         "primary": "#800000",
@@ -496,8 +496,8 @@
     {
       "name": "Rams",
       "division": "5th-6th Grade Boys",
-      "slug": "6th-grade-boys-hawks",
-      "file": "teams/6th-grade-boys-hawks.png",
+      "slug": "2nd-grade-boys-rams",
+      "file": "teams/2nd-grade-boys-rams.png",
       "mascot": "Rams",
       "colors": {
         "primary": "#800000",
@@ -508,8 +508,8 @@
     {
       "name": "Lady Hornets",
       "division": "5th-6th Grade Girls",
-      "slug": "5th-grade-girls-lightning",
-      "file": "teams/5th-grade-girls-lightning.png",
+      "slug": "2nd-grade-girls-hornets",
+      "file": "teams/2nd-grade-girls-hornets.png",
       "mascot": "Hornets",
       "colors": {
         "primary": "#800000",
@@ -520,8 +520,8 @@
     {
       "name": "Lady Cardinals",
       "division": "5th-6th Grade Girls",
-      "slug": "5th-grade-girls-sparks",
-      "file": "teams/5th-grade-girls-sparks.png",
+      "slug": "2nd-grade-girls-cardinals",
+      "file": "teams/2nd-grade-girls-cardinals.png",
       "mascot": "Cardinals",
       "colors": {
         "primary": "#800000",

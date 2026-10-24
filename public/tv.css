@@ -43,7 +43,7 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 .home .logo { background: var(--home-fg, #111); color: var(--home-color); }
 .away .logo { background: var(--away-fg, #fff); color: var(--away-color); }
 .logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
-.name { font-size: 4.6rem; font-weight: 900; letter-spacing: .15rem; text-transform: uppercase; line-height: 1.05; text-align: center;
+.name { font-size: clamp(2.4rem, 2.8vw, 3.2rem); font-weight: 900; letter-spacing: .04rem; text-transform: uppercase; line-height: 1.05; text-align: center;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score { font-size: 17rem; font-weight: 900; line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.3rem; }
 
@@ -147,7 +147,7 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
   .clock { font-size: 9rem; margin-top: 0; }
   .period-lbl { margin-top: 0; }
   .score { font-size: 15rem; }
-  .name { font-size: 3.8rem; }
+  .name { font-size: 2.6rem; letter-spacing: .04rem; }
   .logo { width: 7rem; height: 7rem; font-size: 3.6rem; }
   .stats { gap: 2rem; }
   .ticker { height: 8vh; font-size: 2rem; }

@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { LOGO_DIR, loadLogos } from "./logo-files.js";
 import pg from 'pg';
 import { toHexLoose } from './color.js';
 import { PRACTICE_SCHEMA, seedPracticeDemo } from './practice.js';
@@ -193,47 +196,87 @@ export async function migrateCheerColors(): Promise<number> {
  * resolve any duplicate (grade, gender, lower(name)) collisions from merging 3rd+4th or 5th+6th, and normalize games.division.
  */
 export async function migrateCombinedGrades(): Promise<number> {
+  const client = await pool.connect();
   let changed = 0;
-  const { rows: trows } = await pool.query(`SELECT id, name, short_name, grade, grade_order, gender FROM teams ORDER BY id`);
-  const targets = trows.map((r) => {
-    let gr = r.grade;
-    try { gr = r.grade ? (normalizeGrade(r.grade) ?? r.grade) : null; } catch {}
-    const ge = gr === 'Kindergarten' ? null : r.gender;
-    let nm = String(r.name ?? '').trim();
-    if (ge === 'Girls' && nm && !/^lady\s+/i.test(nm)) nm = `Lady ${nm}`;
-    return { r, gr, ge, nm };
-  });
-  const allTargetKeys = new Set(targets.map((t) => `${t.gr ?? ''}|${t.ge ?? ''}|${t.nm.toLowerCase()}`));
-  const used = new Set<string>();
-  for (const t of targets) {
-    const { r, gr, ge } = t;
-    let nm = t.nm;
-    let key = `${gr ?? ''}|${ge ?? ''}|${nm.toLowerCase()}`;
-    if (used.has(key)) {
-      const poolNames = ge === 'Girls' ? GIRLS : BOYS;
-      const pick = poolNames.find((c) => {
-        const ck = `${gr ?? ''}|${ge ?? ''}|${c.toLowerCase()}`;
-        return !used.has(ck) && !allTargetKeys.has(ck);
-      }) ?? `${nm} (${r.id})`;
-      nm = pick;
-      key = `${gr ?? ''}|${ge ?? ''}|${nm.toLowerCase()}`;
+  let needsLogoRefresh = false;
+  try {
+    await client.query("BEGIN");
+    const { rows: trows } = await client.query(`SELECT id, name, short_name, grade, grade_order, gender, logo_url FROM teams ORDER BY id`);
+    const keyOf = (gr: string | null, ge: string | null, nm: string) => `${gr ?? ""}|${ge ?? ""}|${nm.toLowerCase()}`;
+    const targets = trows.map((r) => {
+      let gr = r.grade;
+      try { gr = r.grade ? (normalizeGrade(r.grade) ?? r.grade) : null; } catch {}
+      const ge = gr === "Kindergarten" ? null : r.gender;
+      let nm = String(r.name ?? "").trim();
+      if (ge === "Girls" && nm && !/^lady\s+/i.test(nm)) nm = `Lady ${nm}`;
+      const canonicalAlready = gr === r.grade && ge === r.gender && nm.toLowerCase() === String(r.name ?? "").trim().toLowerCase();
+      return { r, gr, ge, nm, canonicalAlready };
+    });
+    const allTargetKeys = new Set(targets.map((t) => keyOf(t.gr, t.ge, t.nm)));
+    const used = new Set<string>();
+    // Seed used with rows that are already at their exact canonical (grade, gender, lower(name)) so a lower-id row
+    // migrating into a division never steals the name of a team already at its canonical identity in that division.
+    // If multiple rows are somehow already at the same canonical key, only the first one keeps it.
+    const ordered = [...targets].sort((a, b) => (Number(b.canonicalAlready) - Number(a.canonicalAlready)) || ((a.r.grade_order ?? 99) - (b.r.grade_order ?? 99)) || (a.r.id - b.r.id));
+    const resolved = new Map<number, { nm: string; sh: string; gr: string | null; go: number | null; ge: string | null; clearLogo: boolean }>();
+    for (const t of ordered) {
+      const { r, gr, ge } = t;
+      let nm = t.nm;
+      let key = keyOf(gr, ge, nm);
+      let collided = false;
+      if (used.has(key)) {
+        collided = true;
+        const poolNames = ge === "Girls" ? GIRLS : BOYS;
+        const pick = poolNames.find((c) => {
+          const ck = keyOf(gr, ge, c);
+          return !used.has(ck) && !allTargetKeys.has(ck);
+        }) ?? `${nm} (${r.id})`;
+        nm = pick;
+        key = keyOf(gr, ge, nm);
+      }
+      used.add(key);
+      const go = gradeOrder(gr);
+      const mascotShort = nm.replace(/^lady\s+/i, "").slice(0, 3).toUpperCase();
+      const sh = (nm !== r.name || (ge === "Girls" && /^lad$/i.test(String(r.short_name ?? "")))) ? mascotShort : r.short_name;
+      const clearLogo = collided && typeof r.logo_url === "string" && r.logo_url.startsWith("/team-logos/teams/");
+      resolved.set(r.id, { nm, sh, gr, go, ge, clearLogo });
     }
-    used.add(key);
-    const go = gradeOrder(gr);
-    const mascotShort = nm.replace(/^lady\s+/i, '').slice(0, 3).toUpperCase();
-    const sh = (nm !== r.name || (ge === 'Girls' && /^lad$/i.test(String(r.short_name ?? '')))) ? mascotShort : r.short_name;
-    if (nm !== r.name || sh !== r.short_name || gr !== r.grade || go !== r.grade_order || ge !== r.gender) {
-      await pool.query(`UPDATE teams SET name=$2, short_name=$3, grade=$4, grade_order=$5, gender=$6 WHERE id=$1`, [r.id, nm, sh, gr, go, ge]);
+    const toUpdate = trows.filter((r) => {
+      const u = resolved.get(r.id)!;
+      return u.nm !== r.name || u.sh !== r.short_name || u.gr !== r.grade || u.go !== r.grade_order || u.ge !== r.gender || u.clearLogo;
+    });
+    // Phase 1: move any changing row to a unique temporary name so intermediate updates never hit teams_grade_gender_name_uk (23505)
+    for (const r of toUpdate) {
+      await client.query(`UPDATE teams SET name=$2 WHERE id=$1`, [r.id, `~mig~${r.id}~`]);
+    }
+    // Phase 2: apply final canonical values
+    for (const r of toUpdate) {
+      const u = resolved.get(r.id)!;
+      if (u.clearLogo) {
+        await client.query(`UPDATE teams SET name=$2, short_name=$3, grade=$4, grade_order=$5, gender=$6, logo_url=NULL, logo_data=NULL, logo_mime=NULL WHERE id=$1`, [r.id, u.nm, u.sh, u.gr, u.go, u.ge]);
+        needsLogoRefresh = true;
+      } else {
+        await client.query(`UPDATE teams SET name=$2, short_name=$3, grade=$4, grade_order=$5, gender=$6 WHERE id=$1`, [r.id, u.nm, u.sh, u.gr, u.go, u.ge]);
+      }
       changed++;
     }
+    const { rows: grows } = await client.query(`SELECT id, division FROM games WHERE division IS NOT NULL`);
+    for (const g of grows) {
+      const nd = normalizeDivision(g.division);
+      if (nd && nd !== g.division) {
+        await client.query(`UPDATE games SET division=$2 WHERE id=$1`, [g.id, nd]);
+        changed++;
+      }
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
   }
-  const { rows: grows } = await pool.query(`SELECT id, division FROM games WHERE division IS NOT NULL`);
-  for (const g of grows) {
-    const nd = normalizeDivision(g.division);
-    if (nd && nd !== g.division) {
-      await pool.query(`UPDATE games SET division=$2 WHERE id=$1`, [g.id, nd]);
-      changed++;
-    }
+  if (needsLogoRefresh && fs.existsSync( path.join(LOGO_DIR, "manifest.json"))) {
+    await loadLogos(pool).catch(() => {});
   }
   return changed;
 }
