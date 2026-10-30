@@ -94,10 +94,10 @@ git checkout feature/real-season-2027
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"
 New-Item -ItemType Directory -Force C:\Users\ainga\Backups\UpwardScoreboard | Out-Null
 docker compose exec -T db pg_dump -U scoreboard -Fc scoreboard > "C:\Users\ainga\Backups\UpwardScoreboard\pre-real-season-$ts.dump"
-# NOTE: PowerShell 5 '>' re-encodes binary; on PS5 prefer: docker compose exec -T db sh -c "pg_dump -U scoreboard -Fc scoreboard > /tmp/pre.dump"; docker compose cp db:/tmp/pre.dump "C:\Users\ainga\Backups\UpwardScoreboard\pre-real-season-$ts.dump"
+# Preferred (PS5 '>' corrupts binary): docker compose exec -T db sh -c "pg_dump -U scoreboard -Fc scoreboard > /tmp/pre.dump"; docker compose cp db:/tmp/pre.dump "C:\Users\ainga\Backups\UpwardScoreboard\pre-real-season-$ts.dump"
 grok --prompt-file docs/handoff/real-season-2027.md --permission-mode acceptEdits --max-turns 120 --output-format json `
-  --disallowedTools "Bash(git push*)" "Bash(git commit*)" "Bash(docker compose down*)" "Edit(.env*)" "Write(.env*)" "Edit(compose.yaml)" "Edit(docker-compose.yml)" `
-  --allowedTools "Edit(src/seed-season.ts)" "Write(src/seed-season.ts)" "Edit(src/season-config.ts)" "Write(src/season-config.ts)" "Edit(src/season-import.ts)" "Write(src/season-import.ts)" "Edit(test/seed-season.test.ts)" "Write(test/seed-season.test.ts)" "Edit(test/fixtures/season-2027/**)" "Write(test/fixtures/season-2027/**)" "Edit(package.json)" "Edit(src/server.ts)" "Edit(docs/**)" "Write(docs/**)" "Edit(README.md)" `
+  --deny "Bash(git push*)" --deny "Bash(git commit*)" --deny "Bash(docker compose down*)" --deny "Edit(.env*)" --deny "Write(.env*)" --deny "Edit(compose.yaml)" --deny "Edit(docker-compose.yml)" `
+  --allow "Edit(src/**)" --allow "Write(src/**)" --allow "Edit(test/**)" --allow "Write(test/**)" --allow "Edit(public/**)" --allow "Write(public/**)" --allow "Edit(docs/**)" --allow "Write(docs/**)" --allow "Edit(package.json)" --allow "Write(package.json)" --allow "Edit(README.md)" --allow "Write(README.md)" `
   *> "C:\Users\ainga\Backups\UpwardScoreboard\grok-real-season-$ts.log"
 ```
-(Verify the exact allow/deny flag names with `grok --help` before running; the rule strings above are the intended policy.)
+(Flags verified with `grok --help` on the laptop Oct 30: `--allow <RULE>` / `--deny <RULE>`, repeatable; never use `--always-approve` or `bypassPermissions`. Allow rules are scoped to src/test/public/docs/package.json/README; .env*/compose files are denied.)
