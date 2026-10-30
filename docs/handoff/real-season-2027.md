@@ -35,16 +35,17 @@ Acceptance criteria (each must be covered by a test or the proof report):
 5. Normalization: trailing/leading spaces trimmed (division names, "Room 22 "); `1st - 2nd Grade Girls` → `1st-2nd Grade Girls`; internal double spaces in coach names collapsed ("Erin  Friesen" → "Erin Friesen"); "Lady " prefix kept on girls team names.
 6. Blank coaches (Bobcats, Wolfpack, Raiders, Buckeyes) → `coach IS NULL`; empty GameReferees import as nothing/NULL (no errors).
 7. Courts: `Game Court - West`→`west`, `Game Court - East`→`east`, `Game Court - Full`→`full`; practice `WEST 1`→`west1`, `WEST 2`→`west2`, `EAST 1`→`east1`, `EAST 2`→`east2` (existing `practice_slots.court` sub-court values — no schema change needed).
-8. Constants (one exported config object in `src/season-config.ts` or top of `seed-season.ts`): `GAME_MINUTES = 60`, `LATEST_GAME_END = '21:00'` (Friday 8:15 PM games end 9:15 PM → reported as a **warning**, not an error, count 16), `CHEER_COURT = 'full'`, `CHEER_OVERLAP_POLICY = 'warn'` (cheer on Full overlapping Saturday basketball is reported, never fails).
-9. `loadLogos(pool)` runs after a real import and its `formatReport` output is printed; unmatched teams/squads are listed (expected: only 10 of 52 team names exist in the manifest by name; 0 of 10 cheer squads). No logo failure fails the import.
+8. Constants (one exported config object in `src/season-config.ts`): `GAME_MINUTES = 60`. Friday 8:15 PM games ending 9:15 PM are **correct** (Aaron, Oct 30): no late-game limit and no late-game warning. **Cheer has no court**: a cheer slot is only (date, hour) and cheers for whatever games start in that hour (East+West, or the Full game). No CHEER_COURT constant, no cheer/basketball overlap warnings. The existing schedule rule in `src/schedule.ts` (~line 234, 'cheer squads are only on Saturday split-court games (West/East, 08:00–16:00)') must be relaxed so the real data (cheer at 5 PM, cheer during 5th-6th Full games) produces no cheer warnings; update its tests accordingly. Also the 'cheer squads are for 2nd–4th grade' check (real cheer slots cover K–6th games) must not fire for real data, and `split-outside-hours` (SPLIT 08:00–16:00) would flag Friday-evening and Saturday 4–8 PM West/East games: move SPLIT_START/END into `src/season-config.ts` and set them to cover the real schedule (Fri 17:15–21:15, Sat 08:00–20:00). After import, `/api/warnings` must return **zero** warnings for the real season (state the count in proof).
+9. Blank logos are OK for now. `loadLogos(pool)` runs after a real import and its `formatReport` output is printed; unmatched teams/squads are listed (expected: only 10 of 52 team names exist in the manifest by name; 0 of 10 cheer squads). No logo failure fails the import.
 10. Never runs on server start: `src/server.ts` unchanged in behavior unless an explicit new flag (`SEED=season`) is set; default/`SEED=true`/`SEED=demo` paths untouched.
-11. `season_name`: not changed by default. Optional `--season-name "2027 Upward"` flag only (call out to Aaron; current value `2026–27 Upward` arguably still correct).
-12. Coaches stored as full names trimmed to ≤30 chars (current schema comment says "first name only" — see Decisions; implement a single `coachDisplay()` helper so the policy is one line to change).
-13. Cheer practice: since `practice_slots` cheer rows have no start_time and `practice_days` has one start per day, Spirit Squad's 6:30–7:30 PM is stored via practice_days Mon 18:00–19:00 for everyone and the 6:30 exception is reported as a warning (do not change schema). Basketball practice_days: Mon/Tue/Wed/Thu 17:00–21:00.
-14. All existing tests pass (`npm test`), plus new `test/seed-season.test.ts`.
+11. `season_name` stays `2026–27 Upward` (Aaron). The importer never writes settings; no flag.
+12. Coaches stored as **full names** (Aaron): update the 'first name only' schema comment/helper text in `src/db.ts`; the existing ≤30 CHECK fits every real name (longest 'Dennis Nighswonger', 18), widen to 60 via an idempotent ALTER in migrate only if you touch it. Ensure UI 'Coach <name>' renders full names fine.
+13. Cheer practice: since `practice_slots` cheer rows have no start_time and `practice_days` has one start per day, Spirit Squad's 6:30–7:30 PM is stored via practice_days Mon 18:00–19:00 for everyone and the 6:30 exception is reported as a **warning** (keep this warning; do not change schema). Basketball practice_days: Mon/Tue/Wed/Thu 17:00–21:00.
+14. Cheer UI by time slot: TV, lobby, admin and public screens show cheer per time slot without implying a court (no 'Full'/'West'/'East' label on cheer, no court-bound cheer rows). Audit `public/lobby.js` (cheerBand, `data-court="both"` ok), `public/admin.js`, TV/scoreboard and public schedule pages and `src/server.ts` payloads; fix any court wording. Add a test asserting the cheer payload/markup carries no court.
+15. All existing tests pass (`npm test`), plus new `test/seed-season.test.ts`.
 
 ## (c) Boundaries
-- Allowed to create/edit: `src/seed-season.ts`, `src/season-config.ts`, `src/season-import.ts` (optional pure parsing module), `test/seed-season.test.ts`, `test/fixtures/season-2027/**`, `package.json` (scripts only), `src/server.ts` (only to add an opt-in `SEED=season` branch, optional), `README.md`/`docs/**` (docs only).
+- Allowed to create/edit: `src/seed-season.ts`, `src/season-config.ts`, `src/season-import.ts` (optional pure parsing module), `test/seed-season.test.ts`, `test/fixtures/season-2027/**`, `package.json` (scripts only), `src/server.ts` (opt-in `SEED=season` branch, cheer-by-slot fixes), `src/schedule.ts` (relax cheer split-court rule), `src/db.ts` (coach comment / optional widen only), `public/**` (cheer court wording only), existing tests touching those rules, `README.md`/`docs/**` (docs only).
 - Read-only: `data/season-2027/**`, `deliverables/logos/**`, everything else.
 - Never touch: `.env*`, `compose.yaml`, `docker-compose.yml`, existing season color settings or their defaults, any uncommitted WIP files you did not create.
 - Never run: `git commit`, `git push`, any deploy, `docker compose down`, anything against a remote server. Do not run the real (non-dry) import against the laptop's main DB; use the test DB the existing tests use.
@@ -55,7 +56,7 @@ Acceptance criteria (each must be covered by a test or the proof report):
 3. Write `src/season-config.ts` constants (criterion 8) and the court maps.
 4. Write `src/seed-season.ts` CLI: `migrate()`, BEGIN; delete game_events, game_changes, cheer_slots, practice_slots, practice_days, games, teams, cheer_squads (clear `courts.current_game_id` first); insert teams (name, coach, division as the existing code stores it — follow `divisionLabel`/`gradeOrder` conventions), games (scheduled_at in America/Chicago local time, court by slug), cheer squads, cheer slots (`hourSlot`), practice_days and practice_slots; on `--dry-run` ROLLBACK, else COMMIT then `loadLogos`. `--reset` = required to delete existing non-demo data when the DB already contains games not created by this importer (refuse with a clear message otherwise). Print report.
 5. Add npm scripts `seed:season`, `seed:season:dry`.
-6. Tests `test/seed-season.test.ts`: parsing counts (criterion table), normalization cases, court mapping, warnings (16 late games, cheer/Full overlaps), dry-run writes nothing, double run identical, rollback on failure, settings colors unchanged, coach NULLs.
+6. Tests `test/seed-season.test.ts`: parsing counts (criterion table), normalization cases, court mapping, warnings (only the Spirit Squad 6:30 practice warning; zero late-game or cheer warnings), dry-run writes nothing, double run identical, rollback on failure, settings colors unchanged, coach NULLs.
 7. `npm test`; then `npm run smoke` if the app is up (skip with a note if not).
 8. `npm run build && node dist/src/seed-season.js --dry-run` against the local DB and include output.
 
@@ -70,18 +71,19 @@ Acceptance criteria (each must be covered by a test or the proof report):
 3. Double spaces in coach names: Heather  Mitchell, Kevin  Shell, Erin  Friesen, Brian  Kempin, Kathy  Wolfe, Hannah  Gorter, Suzie  Carson.
 4. Blank coaches: Bobcats, Wolfpack (1st-2nd B), Raiders, Buckeyes (3rd-4th B). GameReferees always empty. Cheer AwayTeamHeadCoachName always empty; cheer "Column1" always 1 (ignore).
 5. Coaches on two teams: Wyatt Morgan (Longhorns, Raptors), Jesse Kangas (Lady Razorbacks, Suns), Kevin Juhl (Eagles, Lady Monarchs).
-6. 16 Friday 8:15 PM games end 9:15 PM (past a 9 PM limit).
-7. Cheer "Game Court - Full" overlaps Saturday West/East games and 5th-6th Full games (2–5 PM).
+6. 16 Friday 8:15 PM games end 9:15 PM (confirmed correct).
+7. Cheer rows say "Game Court - Full" — ignored; cheer is slot-only (confirmed).
 8. Spirit Squad practices 6:30–7:30 PM vs everyone else 6:00–7:00 (schema has no per-slot cheer time).
 9. Practice courts (WEST/EAST 1/2) named differently from game courts.
 10. Only 10/52 team names and 0/10 cheer squads match the current logo manifest (manifest holds demo names).
 
-## Decisions for Morgan/Aaron (non-blocking, defaults chosen)
-- Friday 8:15 games past 9 PM → default warn.
-- Cheer on Full during basketball → default warn; assumed cheer performs at games.
-- season_name stays `2026–27 Upward` unless flagged.
-- Coach full names vs "first name only" convention.
-- New logos needed for 42 teams + 10 squads.
+## Decisions (answered by Aaron, Oct 30 2026)
+- Friday 8:15–9:15 PM games are correct; no limit/warning.
+- Cheer has no court; slot-only, cheers for whatever games are in that hour.
+- season_name stays '2026–27 Upward'.
+- Full coach names OK.
+- Blank logos OK for now (report unmatched).
+- Keep the Spirit Squad 6:30–7:30 warning.
 
 ## Run headlessly on the laptop (PowerShell)
 ```powershell
