@@ -53,11 +53,12 @@ const clockText = (g) => (g?.clock ? fmtClock(clockMs(g.clock, displayNow(conn))
 const locker = (v) => `<div class="locker" data-bind="locker"${v ? '' : ' data-empty'}><small>Locker Room</small><b>${esc(v || '')}</b></div>`;
 /** Name + "Coach X" line under it (first name from the server; the prefix is added here). */
 // Mascot logo (or initial badge) beside the name; the logo URL comes in the schedule payload.
-const who = (name, coach, logo) => `<div class="who">${mascotHtml(logo, name)}<div class="txt"><div class="name" data-bind="name">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div></div></div>`;
+// tip: "Tip-Off: 1:00 PM" under the coach (QA R28: in the score cell it squeezed long names), home row of a promoted game.
+const who = (name, coach, logo, tip = null) => `<div class="who">${mascotHtml(logo, name)}<div class="txt"><div class="name" data-bind="name">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div>${tip ? `<span class="score tipoff" data-bind="tipoff">${esc(tip)}</span>` : ''}</div></div>`;
 function teamRow(g, side, live, tip = null) {
   const t = g[side];
   if (tip && side === 'home') return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}
-      ${who(t.name, t.coach, t.logo)}<span class="score tipoff" data-bind="tipoff">${esc(tip)}</span><span class="side">${side.toUpperCase()}</span></div>`;
+      ${who(t.name, t.coach, t.logo, tip)}<span></span><span class="side">${side.toUpperCase()}</span></div>`;
   // 2nd Grade and below (g.hideScore): no score, the server sends none (empty span keeps the grid).
   const score = live && !g.hideScore ? `<span class="score" data-bind="${side}-score">${esc(t.score ?? 0)}</span>` : '<span></span>';
   return `<div class="row ${side}" data-row="${side}">${locker(t.locker)}

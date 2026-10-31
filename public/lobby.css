@@ -65,6 +65,7 @@ main:not(.full):not(.split) .game[data-slot="now"] { align-self: start; }
 .who { min-width: 0; text-align: center; }
 .who .name { font: 800 3.7rem "Montserrat", "Archivo", Arial, sans-serif; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .who .coach { margin-top: .3rem; font: 600 2.2rem "Montserrat", "Archivo", Arial, sans-serif; opacity: 1; }
+.row .who .coach { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* QA R28: one line, never wraps */
 .home .coach { color: #2b2000; } .away .coach { color: #e6e6e6; } .cheer .coach { color: #1a0012; }
 .score { font: 400 7.6rem "Anton", "Oswald", "Arial Narrow", sans-serif; letter-spacing: .2rem; min-width: 9rem; text-align: center; font-variant-numeric: tabular-nums; }
 .side { font: 900 3.6rem "Montserrat", "Archivo", Arial, sans-serif; letter-spacing: .1rem; padding: .7rem 2.4rem; border-radius: 3rem; min-width: 18rem; text-align: center; }
@@ -185,6 +186,8 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 
 /* SAGE: stopgap (round 2) — halftime roll-up: the promoted top game shows "Tip-Off: 12:00 PM" in the score cell until it starts. */
 .score.tipoff { font-size: 3.2rem; white-space: nowrap; }
+/* QA R28 (Sage): the tip-off sits under the coach in the name block, so long names keep the full column. */
+.who .score.tipoff { display: block; font-size: 2.2rem; margin-top: .2rem; min-width: 0; }
 
 /* SAGE: stopgap (practice branch) — mascot logo / initial badge beside team + cheer names on the lobby rows. */
 .who { display: flex; align-items: center; justify-content: center; gap: 1.4rem; }

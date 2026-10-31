@@ -185,6 +185,24 @@ test('DB: importer writes practice_start/end; /api/public/practice + lobby/pract
     assert.equal(await lockers(base + '/lobby?date=2027-01-16&at=08:10'), 'home:CH away:5 home:2 away:3 cheer:1 home:CH away:5 home:2 away:3 cheer:1');
     assert.equal(await lockers(base + '/lobby?date=2027-01-16&at=08:20'), 'home:CH away:5 home:2 away:3 cheer:1 home:CH away:5 home:2 away:3 cheer:1', 'tip-off band');
     assert.match(await lockers(base + '/lobby?date=2027-01-16&at=14:10'), /^home:CH away:5( cheer:1)? home:CH away:5/);
+    // QA R28: tip-off sits under the coach (not in the score cell); long names + coaches are never clipped/wrapped.
+    for (const vp of [{ width: 1920, height: 1080 }, { width: 1280, height: 1024 }, { width: 1080, height: 1920 }]) {
+      await page.setViewportSize(vp);
+      await page.goto(base + '/lobby?date=2027-01-16&at=12:50'); await page.waitForSelector('[data-bind="tipoff"]', { timeout: 15_000 }); await page.waitForTimeout(800);
+      const r: any[] = await page.$$eval('[data-bind="tipoff"]', (els: any[]) => els.map((e) => {
+        const row = e.closest('.row'); const nm = row.querySelector('.name'); const co = row.querySelector('.coach');
+        return { inWho: !!e.closest('.who .txt'), text: e.textContent, name: nm.textContent, clipped: nm.scrollWidth > nm.clientWidth + 1,
+          coachLines: Math.round(co.getBoundingClientRect().height / parseFloat(getComputedStyle(co).lineHeight || '0') || 1) };
+      }));
+      assert.ok(r.length >= 2, JSON.stringify(r));
+      for (const x of r) {
+        assert.ok(x.inWho, 'tip-off under the name block');
+        assert.equal(x.text, 'Tip-Off: 1:00 PM');
+        assert.equal(x.clipped, false, `${x.name} clipped at ${vp.width}x${vp.height}`);
+      }
+      assert.deepEqual(r.map((x) => x.name).sort(), ['Lady Bearcats', 'Lady Cardinals']);
+    }
+    await page.setViewportSize({ width: 1920, height: 1080 });
     // Mar 6 after the last game: no practice left, no game left -> no line.
     await page.goto(base + '/lobby?date=2027-03-06&at=20:05');
     await page.waitForSelector('[data-bind="idle-title"]', { timeout: 15_000 }); await page.waitForTimeout(1500);
