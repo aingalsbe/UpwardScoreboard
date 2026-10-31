@@ -11,7 +11,14 @@ export const hourOf = (hm) => `${String(hm || '').slice(0, 2)}:00`;
 export const ampm = (hm) => { const [h, m] = String(hm).split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
 const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 /** "2026-10-24", "11:00" -> "SATURDAY 11:00 AM" (the lobby header). */
-export const headerText = (date, hm) => `${DAYS[new Date(`${date}T12:00:00Z`).getUTCDay()]}${hm ? ' ' + ampm(hm) : ''}`;
+const DOW3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const MON3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+/** Lobby header. Today (or today unknown): "FRIDAY 5:15 PM". Another day (realToday given and != date): "FRI JAN 15 · 5:15 PM". */
+export const headerText = (date, hm, realToday = null) => {
+  const d = new Date(`${date}T12:00:00Z`);
+  if (realToday && date !== realToday) return `${DOW3[d.getUTCDay()]} ${MON3[d.getUTCMonth()]} ${d.getUTCDate()}${hm ? ' · ' + ampm(hm) : ''}`;
+  return `${DAYS[d.getUTCDay()]}${hm ? ' ' + ampm(hm) : ''}`;
+};
 /** Period label, same scheme as every screen (common.js periodLabel): "1st Half · P2", "2nd Half · P5", OT, OT2. */
 export const quarter = (p, periods = 6) => (!p ? '' : p > periods ? `OT${p - periods > 1 ? p - periods : ''}` : `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`);
 

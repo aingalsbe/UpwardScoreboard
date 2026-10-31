@@ -63,6 +63,10 @@ test('nothing left today = empty; header and time formatting', { skip }, async (
   const p = planLobby([G('west', '08:00', 'complete')], []);
   assert.equal(p.empty, true); assert.equal(p.now, null); assert.equal(p.next, null);
   assert.equal(headerText('2026-10-24', '11:00'), 'SATURDAY 11:00 AM'); assert.equal(headerText('2026-10-23', '17:15'), 'FRIDAY 5:15 PM');
+  assert.equal(headerText('2027-01-15', '17:15', '2026-10-30'), 'FRI JAN 15 \u00b7 5:15 PM');
+  assert.equal(headerText('2027-01-16', '08:00', '2026-10-30'), 'SAT JAN 16 \u00b7 8:00 AM');
+  assert.equal(headerText('2027-01-15', '17:15', '2027-01-15'), 'FRIDAY 5:15 PM', 'today keeps the old header');
+  assert.equal(headerText('2027-01-15', null, '2026-10-30'), 'FRI JAN 15');
   assert.equal(ampm('00:30'), '12:30 AM'); assert.equal(ampm('12:00'), '12:00 PM');
   assert.equal(quarter(2, 6), '1st Half · P2'); assert.equal(quarter(4, 6), '2nd Half · P4'); assert.equal(quarter(7, 6), 'OT'); assert.equal(quarter(8, 6), 'OT2'); assert.equal(quarter(3), '1st Half · P3'); assert.equal(hourOf('09:59'), '09:00');
 });
