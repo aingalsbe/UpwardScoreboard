@@ -22,6 +22,25 @@ function fit() { const s = Math.min(innerWidth / 1920, innerHeight / 1080); body
   body.style.setProperty('--x', `${Math.max(0, (innerWidth - 1920 * s) / 2)}px`); body.style.setProperty('--y', `${Math.max(0, (innerHeight - 1080 * s) / 2)}px`); }
 fit(); addEventListener('resize', fit);
 
+/** Cheer columns: up to 6 squads in Sage's 3-column grid; 7+ (max 9 per page) in 4 columns. */
+const cheerCols = (n) => (n >= 7 ? 4 : 3);
+/**
+ * QA R29 fit-to-stage (same approach as the lobby): every card must end above the footer (or the stage bottom).
+ * Step body[data-density] '' -> compact -> tight while <main> overflows; if tight still overflows, scale <main>
+ * (top-centred). Layout px are stage px (the body transform scales the whole 1920x1080 stage), so this is the same
+ * at every viewport. Runs synchronously after each render, so no flicker.
+ */
+function fitMain(m, foot) {
+  const limit = (foot && foot.textContent.trim() ? foot.offsetTop : 1080) - 12;
+  m.style.removeProperty('--fit-k'); delete body.dataset.fitScaled;
+  for (const d of ['', 'compact', 'tight']) {
+    if (d) body.dataset.density = d; else delete body.dataset.density;
+    if (m.offsetTop + m.scrollHeight <= limit) return;
+  }
+  const k = Math.max(0.5, (limit - m.offsetTop) / m.scrollHeight);
+  m.style.setProperty('--fit-k', k.toFixed(4)); body.dataset.fitScaled = 'true';
+}
+
 let gameDays = [];
 async function loadGames() { try { gameDays = (await (await fetch('/api/public/game-days')).json()).days || []; } catch {} }
 async function load() { try { const r = await fetch('/api/public/practice'); data = await r.json(); offset = data.serverNow - Date.now(); } catch {} render(); }
@@ -66,9 +85,11 @@ function render() {
     $('[data-bind="header"]').textContent = plan.header; page.hidden = false;
     setHtml(page, `ALL EVENING · <b>${i + 1} of ${plan.pages.length}</b>`);
     main.className = 'cheer-grid'; main.dataset.list = 'cheer'; main.dataset.page = String(i + 1);
+    main.dataset.cols = String(cheerCols(plan.pages[i].length)); // QA R29 (Sage): 7+ squads -> 4 columns
     // Even cards = Cheer Primary, odd = Cheer Secondary (the slides alternate; .pink/.teal stay as CSS aliases).
     setHtml(main, plan.pages[i].map((x, k) => `<div class="card ${k % 2 ? 'secondary' : 'primary'}"><span class="room" data-bind="room">${esc(x.room)}</span>${who(x.squad.name, x.squad.coach, x.squad.logo)}</div>`).join(''));
     setHtml(foot, plan.startsText ? `<b>${esc(plan.startsText)}</b> · find your squad's room` : `Cheer practice: <b>find your squad's room</b> · Basketball on West &amp; East Courts`);
+    fitMain(main, foot);
     return;
   }
   const r = rotation(plan, t), p = plan.pages[r.index];
@@ -80,5 +101,6 @@ function render() {
       : `<div class="court" data-court="${c}" data-empty><span class="label">${COURT_NAME[c]}</span><div class="team" data-bind="team">Open</div></div>`; }).join(''));
   const nxt = plan.pages[r.index + 1];
   setHtml(foot, [plan.startsText && `<b>${esc(plan.startsText)}</b>`, r.state === 'next' ? 'Up next' : nxt ? `Up next: <b>${ampm(nxt.time)}</b>` : 'Last practice slot tonight', 'Cheer squads: see the cheer screen'].filter(Boolean).join(' · '));
+  fitMain(main, foot);
 }
 loadGames().then(load); setInterval(load, 60000); setInterval(loadGames, 5 * 60000); setInterval(render, 1000);

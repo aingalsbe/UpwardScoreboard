@@ -70,3 +70,24 @@ main.idle { display: grid; place-items: center; height: 80rem; }
 .court .label { background: var(--season-light-fg); color: var(--season-light); }
 .court[data-empty] .team { color: color-mix(in srgb, var(--season-light-fg) 70%, var(--season-light)); }
 .demo { color: var(--season-dark-fg); }
+
+/* ---- QA R29 (Sage NO-GO: 7th cheer card under the footer). Devon, for Sage to restyle.
+   7+ squads -> 4 columns (practice.js cheerCols); practice.js fitMain() then steps body[data-density] compact -> tight
+   and, only if still too tall, scales <main> via --fit-k so every card ends above the footer at any viewport. */
+.cheer-grid[data-cols="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.4rem 2.8rem; padding: 3rem 5rem 0; }
+.cheer-grid[data-cols="4"] .card { padding: 1.2rem 1.4rem 1.6rem; }
+.cheer-grid[data-cols="4"] .card .room { font-size: 3.6rem; }
+.cheer-grid[data-cols="4"] .card .team { font-size: 3.8rem; }
+.cheer-grid[data-cols="4"] .card .coach { font-size: 2.8rem; }
+.cheer-grid[data-cols="4"] .mascot { width: 8rem; height: 8rem; }
+body[data-density] .cheer-grid { row-gap: 2rem; padding-top: 2.4rem; }
+body[data-density] .card { padding: 1rem 1.4rem 1.2rem; }
+body[data-density] .card .mascot { width: 7rem; height: 7rem; margin-top: .6rem; }
+body[data-density] .card .team { margin-top: .6rem; }
+body[data-density="tight"] .card .room { font-size: 3.2rem; }
+body[data-density="tight"] .card .team { font-size: 3.4rem; }
+body[data-density="tight"] .card .coach { font-size: 2.6rem; }
+body[data-density="tight"] .card .mascot { width: 5.6rem; height: 5.6rem; }
+body[data-density] .frame { margin-top: 2.4rem; padding: 2rem; gap: 2rem; }
+body[data-density] .court .mascot { width: 8rem; height: 8rem; }
+body[data-fit-scaled] main { transform: scale(var(--fit-k, 1)); transform-origin: 50% 0; }
