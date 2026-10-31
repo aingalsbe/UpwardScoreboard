@@ -153,6 +153,8 @@ export interface SeasonPlan {
   cheerPracticeSlots: WeeklyCheerPractice[];
   cheerPracticeByDay: Record<number, number>;
   cheerPracticeDatedRows: number;
+  /** First and last dated practice row (basketball + cheer CSVs), 'YYYY-MM-DD'. Stored as settings practice_start/practice_end. */
+  practiceRange: { start: string; end: string };
   warnings: string[];
 }
 
@@ -425,8 +427,16 @@ export function buildSeasonPlan(csvs: SeasonCsvs): SeasonPlan {
     practiceDays: seasonConfig.PRACTICE_DAYS.map((d) => ({ ...d })),
     basketballSlots, basketballByDay, basketballDatedRows: ballDated.length,
     cheerPracticeSlots, cheerPracticeByDay, cheerPracticeDatedRows: cheerDated.length,
+    practiceRange: practiceRangeOf([...ballDated, ...cheerDated].map((r) => r.date)),
     warnings,
   };
+}
+
+/** Min and max ISO date of the dated practice rows. */
+export function practiceRangeOf(dates: string[]): { start: string; end: string } {
+  if (!dates.length) throw new SeasonImportError('practice CSVs have no dated rows');
+  const sorted = [...dates].sort();
+  return { start: sorted[0], end: sorted[sorted.length - 1] };
 }
 
 const DAY_SHORT = ['', 'Mon', 'Tue', 'Wed', 'Thu'];
@@ -438,6 +448,7 @@ export function formatSeasonReport(plan: SeasonPlan): string {
   lines.push(`Games by court: west ${plan.gamesByCourt.west}, east ${plan.gamesByCourt.east}, full ${plan.gamesByCourt.full}`);
   lines.push(`Friday 8:15 PM games: ${plan.fridayLate}`);
   lines.push(`Practice slots by day: ${[1, 2, 3, 4].map((d) => `${DAY_SHORT[d]} ${plan.basketballByDay[d] || 0}`).join(', ')} (${plan.basketballSlots.length} weekly, ${plan.basketballDatedRows} dated rows)`);
+  lines.push(`Practice dates: ${plan.practiceRange.start} to ${plan.practiceRange.end}`);
   const squadByDiv = new Map<string, number>();
   for (const s of plan.cheerSquads) squadByDiv.set(s.division, (squadByDiv.get(s.division) || 0) + 1);
   const squadBits = [...squadByDiv.entries()].map(([d, n]) => `${d} ${n}`).join(', ');

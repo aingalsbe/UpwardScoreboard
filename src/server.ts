@@ -16,7 +16,8 @@ import { GAME_MINUTES, parseConflicts, normalizeGrade, normalizeDivision, gradeO
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
 import { seedSeason, SeasonRefusedError } from './seed-season.js';
-import { loadPractice, validatePractice, savePractice, droppedSlots, practiceDisplayOf } from './practice.js';
+import { teamLocker, cheerLocker } from './season-config.js';
+import { loadPractice, loadPracticeRange, validatePractice, savePractice, droppedSlots, practiceDisplayOf } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand,
@@ -193,7 +194,7 @@ async function loadSeason() {
 function cheerView(r: any) {
   if (!r.cheer_squad_id) return null;
   return { squadId: r.cheer_squad_id, name: r.cheer_squad, logo: r.cheer_squad_has_logo ? `/logos/squad/${r.cheer_squad_id}` : r.cheer_squad_logo_url || null,
-    coach: r.cheer_coach || null, locker: r.cheer_locker || null, slot: { date: r.cheer_slot_date, start: r.cheer_slot_start } };
+    coach: r.cheer_coach || null, locker: cheerLocker(r.cheer_locker), slot: { date: r.cheer_slot_date, start: r.cheer_slot_start } };
 }
 function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
   const id = r[`${prefix}_id`];
@@ -206,7 +207,7 @@ function teamView(r: any, prefix: string, theme: any, side: 'home' | 'away') {
     color: season[wear],
     accent: season[wear === 'light' ? 'dark' : 'light'],
     logo: theme[`${side}Logo`] || (r[`${prefix}_has_logo`] ? `/logos/${id}` : r[`${prefix}_logo_url`] || null),
-    locker: r[`${side}_locker`] || null, // per game (changes weekly)
+    locker: teamLocker(r.court_slug, side, r[`${side}_locker`]), // court rule (LOCKER_ROOMS); a stored per-game locker overrides
     coach: r[`${side}_coach`] || null, // first name; never sent to the scorekeeper (see scorekeeperView)
   };
 }
@@ -871,7 +872,7 @@ async function scheduleSnapshot(date: string) {
   // The day's cheer slots (one squad per hour; the slot has no court). The lobby shows one unlabeled cheer row.
   const cheerSlots = (await pool.query(`SELECT s.id, to_char(s.slot_start, 'HH24:MI') AS start, s.locker, q.id AS squad_id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo
     FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date = $1::date ORDER BY s.slot_start`, [date])).rows
-    .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: x.locker || null, logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
+    .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: cheerLocker(x.locker), logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
   return { type: 'state', kind: 'schedule', serverNow: Date.now(), today: localDate(Date.now()), date, cheerSlots, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season: { ...season }, games };
 }
 
@@ -1313,9 +1314,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   // display is the next day that has practice slots of either kind (the screen then picks its own kind).
   if (p === '/api/public/practice') {
     const now = (await pool.query(`SELECT extract(isodow FROM $2::timestamptz AT TIME ZONE $1)::int % 7 AS dow, to_char($2::timestamptz AT TIME ZONE $1, 'HH24:MI') AS hm, to_char($2::timestamptz AT TIME ZONE $1, 'YYYY-MM-DD') AS date`, [LEAGUE_TZ, new Date()])).rows[0];
-    const sched = await loadPractice(pool);
-    const display = practiceDisplayOf(sched, null, now.date, Number(now.dow));
-    return json(res, 200, { serverNow: Date.now(), now: { dow: Number(now.dow), hm: now.hm, date: now.date }, display, days: sched.days,
+    const sched = await loadPractice(pool), range = await loadPracticeRange(pool);
+    const display = practiceDisplayOf({ ...sched, range }, null, now.date, Number(now.dow));
+    return json(res, 200, { serverNow: Date.now(), now: { dow: Number(now.dow), hm: now.hm, date: now.date }, display, range, days: sched.days,
       basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, slotId, ...x }) => x) });
   }
   // ---- everything below needs the admin session

@@ -208,6 +208,10 @@ export async function seedSeason(opts: SeedSeasonOptions = {}): Promise<SeedSeas
     await assertCounts(client, plan);
     // Marker (not a color setting): startup SEED=demo/true must never replace a loaded real season.
     await client.query(`INSERT INTO settings(key, value) VALUES ('season_data', '2027') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`);
+    // Season practice date range (first/last dated practice row): screens show no practice outside it.
+    for (const [k, v] of [['practice_start', plan.practiceRange.start], ['practice_end', plan.practiceRange.end]]) {
+      await client.query(`INSERT INTO settings(key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [k, v]);
+    }
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});

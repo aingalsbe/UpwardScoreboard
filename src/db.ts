@@ -551,7 +551,7 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
   try {
     await client.query('BEGIN');
     await client.query('TRUNCATE game_events, cheer_slots, cheer_squads, games, teams, courts RESTART IDENTITY CASCADE');
-    await client.query(`DELETE FROM settings WHERE key = 'season_data'`); // demo reset clears the real-season marker
+    await client.query(`DELETE FROM settings WHERE key IN ('season_data', 'practice_start', 'practice_end')`); // demo reset clears the real-season marker + practice range
     for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
       await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
     }

@@ -35,6 +35,7 @@ function viewClock() {
   if (demo) return { dow: demo.dow ?? data.now.dow, hm: demo.hm || liveHm(), mode: undefined };
   const disp = practiceDisplayDay(data, kind, data.now.date, data.now.dow);
   // Future weekday: preview (the clock time is ignored). Today: hold the schedule all day, including after the window.
+  if (disp.over) return { dow: disp.dow, hm: liveHm(), mode: 'over' }; // past the season's last practice: idle
   if (!disp.today) return { dow: disp.dow, hm: liveHm(), mode: 'future' };
   return { dow: disp.dow, hm: liveHm(), mode: 'hold' };
 }
@@ -53,7 +54,7 @@ function render() {
     main.className = 'idle'; main.removeAttribute('data-list');
     // Next event: practice night (this screen's kind) or game day, whichever is first. Demo day shifts the date.
     const today = data.now.date ? addDays(data.now.date, (dow - data.now.dow + 7) % 7) : null;
-    const next = today ? nextEventText(nextEvent({ today, now: hm, gameDays, practice: data, kind }), today) : plan.next;
+    const next = today ? nextEventText(nextEvent({ today, now: hm, gameDays, practice: data, kind }), today, !!data.range) : plan.next;
     setHtml(main, `<div class="idle-card"><div class="idle-title">No practice right now</div>${next ? `<div class="idle-next" data-bind="next">${esc(next)}</div>` : ''}</div>`);
     foot.textContent = ''; return;
   }

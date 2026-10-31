@@ -34,14 +34,14 @@ async function loadGameDays() {
 let practice = null;
 /** League-local today from the game-day or practice payload (null until one of them has loaded). */
 const realToday = () => gameToday || practice?.now?.date || null;
-/** Idle line: next game day or practice night, whichever is first.
- *  A future shown day is anchored on the real today, so the line does not treat that day as already over. */
+/** Idle line: next game day or practice night, whichever is first, counted from the shown day (and the ?at= time in
+ *  demo). A future shown day counts from its start; today from the live clock; a past day from its end.
+ *  With a season practice range: no practice outside it, and no line at all once nothing is left (null). */
 function idleLine() {
   const real = realToday();
   const future = !!(real && snap.date > real);
-  const now = demo?.at || (future ? (practice?.now?.hm || '00:00') : (practice?.now?.date === snap.date ? practice.now.hm : '23:59'));
-  const anchor = future && real ? real : snap.date;
-  return nextEventText(nextEvent({ today: anchor, now, gameDays, practice }), anchor);
+  const now = demo?.at || (future ? '00:00' : (practice?.now?.date === snap.date ? practice.now.hm : '23:59'));
+  return nextEventText(nextEvent({ today: snap.date, now, gameDays, practice }), snap.date, !!practice?.range);
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const main = document.querySelector('main');
@@ -89,7 +89,7 @@ function renderIdle() {
   main.innerHTML = `<section class="idle" data-state="idle"><div class="idle-title" data-bind="idle-title">${esc(idleTitle(had, snap.date, realToday()))}</div>
 <div class="idle-next" data-bind="idle-next">${esc(gameDays ? idleLine() : '')}</div></section>`;
   if (!gameDays || Date.now() - gameDaysAt > 5 * 60000) loadGameDays().then(() => {
-    const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleLine();
+    const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleLine() || "";
     const t = main.querySelector('[data-bind="idle-title"]'); if (t) t.textContent = idleTitle(had, snap.date, realToday());
   });
 }

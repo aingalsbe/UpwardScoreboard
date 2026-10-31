@@ -26,6 +26,7 @@ export function parsePracticeDemo(qs) {
 /**
  * Next date with slots of `kind` ('basketball' | 'cheer'; omit/null = either). Today when today's weekday has them
  * (the screen keeps that day after the window ends); else the next date within 7 days; else today.
+ * data.range { start, end } (season practice dates): before it -> its first practice date; after it -> over: true.
  * A weekday counts only when `days` has its hours and that kind has a slot. Keep in step with practiceDisplayOf.
  * -> { date, dow, today }.
  */
@@ -35,11 +36,15 @@ export function practiceDisplayDay(data, kind, today, todayDow) {
   const has = (dow) => open.has(dow) && lists.some((l) => l.some((x) => Number(x.day) === dow));
   const n = Number(todayDow);
   const dow0 = Number.isInteger(n) ? ((n % 7) + 7) % 7 : 0;
-  for (let k = 0; k <= 7; k++) {
-    const dow = (dow0 + k) % 7;
-    if (has(dow)) return { date: addDays(today, k), dow, today: k === 0 };
+  const range = data?.range?.start && data?.range?.end ? data.range : null;
+  // Season range: before it, start on its first day; past its last practice, over (the screen idles, no next practice).
+  const skip = range && today < range.start ? Math.round((Date.parse(`${range.start}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 864e5) : 0;
+  for (let k = skip; k <= skip + 7; k++) {
+    const dow = (dow0 + k) % 7, date = addDays(today, k);
+    if (range && date > range.end) break;
+    if (has(dow)) return { date, dow, today: k === 0 };
   }
-  return { date: today, dow: dow0, today: true };
+  return range ? { date: today, dow: dow0, today: true, over: true } : { date: today, dow: dow0, today: true };
 }
 
 /** Next practice text for the idle screen: "Next practice: Mon 5:00 PM" (null if there are no practice days). */
@@ -65,7 +70,7 @@ export function planPractice(data, kind, dow, nowHm, mode) {
   const d = (data.days || []).find((x) => x.day === dow);
   const items = d ? (kind === 'cheer' ? data.cheer : data.basketball).filter((x) => x.day === dow) : [];
   const idle = { mode: 'idle', day: DAY[dow], header: kind === 'cheer' ? 'CHEER PRACTICE' : 'BASKETBALL PRACTICE', pages: [], next: nextPracticeText(data, kind, dow, nowHm) };
-  if (!d || !items.length) return idle;
+  if (!d || !items.length || mode === 'over') return idle; // 'over': past the season's last practice
   const n = toMin(nowHm), s = toMin(d.start), e = toMin(d.end);
   const before = n < s - PRE_MIN, after = n >= e + POST_MIN;
   const future = mode === 'future', hold = mode === 'hold';

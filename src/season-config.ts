@@ -38,3 +38,23 @@ export const seasonConfig = {
     'east 2': 'east2',
   } as Record<string, 'west1' | 'west2' | 'east1' | 'east2'>,
 };
+
+/**
+ * Game-day locker rooms (Aaron, 2026-10-30): fixed by court + side, no per-game entry. Derived at read time (server
+ * payloads), so changing this needs no re-import. A stored games.home_locker / away_locker or cheer_slots.locker
+ * (admin edit, CSV, demo seed) is an override and wins. The display adds the "Locker Room" label.
+ */
+export const LOCKER_ROOMS = {
+  cheer: '1',
+  west: { home: 'CH', away: '5' },
+  east: { home: '2', away: '3' },
+  full: { home: 'CH', away: '5' },
+} as const;
+/** Locker for a team: stored override, else the court rule (null for an unknown/missing court). */
+export function teamLocker(court: string | null | undefined, side: 'home' | 'away', stored?: string | null): string | null {
+  if (stored && String(stored).trim()) return String(stored);
+  const c = court && (LOCKER_ROOMS as any)[court];
+  return c && typeof c === 'object' ? c[side] : null;
+}
+/** Cheer squad locker on game days: stored override, else LOCKER_ROOMS.cheer. */
+export const cheerLocker = (stored?: string | null): string => (stored && String(stored).trim() ? String(stored) : LOCKER_ROOMS.cheer);

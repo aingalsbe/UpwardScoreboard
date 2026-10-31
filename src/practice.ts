@@ -138,24 +138,38 @@ const addDaysIso = (d: string, n: number) => new Date(Date.parse(d + 'T12:00:00Z
  * Next day the practice screens open on. Today when today's weekday has slots (of `kind`, or of either kind when
  * null) and a hours row in `days`; else the next date within 7 days whose weekday does; else today.
  * Today stays selected after the window ends — this helper does not look at the clock.
+ * With a season range: before it, the first practice date inside it; past its last practice, over: true (idle).
  * Keep in step with practiceDisplayDay in public/practice-view.js.
  */
 export function practiceDisplayOf(
-  data: { days?: { day: number }[]; basketball?: { day: number }[]; cheer?: { day: number }[] } | null,
+  data: { days?: { day: number }[]; basketball?: { day: number }[]; cheer?: { day: number }[]; range?: PRange | null } | null,
   kind: 'basketball' | 'cheer' | null,
   today: string,
   todayDow: number,
-): { date: string; dow: number; today: boolean } {
+): { date: string; dow: number; today: boolean; over?: boolean } {
   const lists = kind ? [data?.[kind] || []] : [data?.basketball || [], data?.cheer || []];
   const open = new Set((data?.days || []).map((d) => Number(d.day)));
   const has = (dow: number) => open.has(dow) && lists.some((l) => l.some((x) => Number(x.day) === dow));
   const n = Number(todayDow);
   const dow0 = Number.isInteger(n) ? ((n % 7) + 7) % 7 : 0;
-  for (let k = 0; k <= 7; k++) {
-    const dow = (dow0 + k) % 7;
-    if (has(dow)) return { date: addDaysIso(today, k), dow, today: k === 0 };
+  const range = data?.range && data.range.start && data.range.end ? data.range : null;
+  // Season range: before it, start the search on its first day; after it (or nothing left inside it), no practice.
+  const skip = range && today < range.start ? Math.round((Date.parse(range.start + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 86400_000) : 0;
+  for (let k = skip; k <= skip + 7; k++) {
+    const dow = (dow0 + k) % 7, date = addDaysIso(today, k);
+    if (range && date > range.end) break;
+    if (has(dow)) return { date, dow, today: k === 0 };
   }
-  return { date: today, dow: dow0, today: true };
+  return range ? { date: today, dow: dow0, today: true, over: true } : { date: today, dow: dow0, today: true };
+}
+
+export type PRange = { start: string; end: string };
+/** Season practice dates (settings practice_start/practice_end, written by the season importer); null = weekly, no range (demo). */
+export async function loadPracticeRange(q: Q): Promise<PRange | null> {
+  const r = (await q.query(`SELECT key, value FROM settings WHERE key IN ('practice_start', 'practice_end')`)).rows;
+  const get = (k: string) => String(r.find((x) => x.key === k)?.value || '').trim();
+  const start = get('practice_start'), end = get('practice_end');
+  return /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end) ? { start, end } : null;
 }
 
 const DAY3 = ['', 'Mon', 'Tue', 'Wed', 'Thu'];

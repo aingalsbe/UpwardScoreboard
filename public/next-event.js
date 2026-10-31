@@ -12,7 +12,7 @@ export const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 864
  * nextEvent({ today 'YYYY-MM-DD', now 'HH:MM', gameDays [{date, first}], practice { days [{day, start, end}], basketball, cheer }, kind? })
  * -> { type: 'game'|'practice', date, time } | null. A game day counts while its first tip-off is still ahead; a
  * practice night counts until it ends (today) and only if it has slots (of `kind` when given: 'basketball'|'cheer').
- * Ties (same date + time) go to the game.
+ * Ties (same date + time) go to the game. practice.range { start, end } limits practice nights to the season dates.
  */
 export function nextEvent({ today, now = '00:00', gameDays = [], practice = null, kind = null }) {
   const n = toMin(now);
@@ -22,8 +22,13 @@ export function nextEvent({ today, now = '00:00', gameDays = [], practice = null
   if (practice) {
     const lists = kind ? [practice[kind] || []] : [practice.basketball || [], practice.cheer || []];
     const has = (day) => lists.some((l) => l.some((x) => x.day === day));
-    for (let k = 0; k < 8 && !prac; k++) {
-      const date = addDays(today, k), d = (practice.days || []).find((x) => x.day === dowOf(date));
+    const range = practice.range?.start && practice.range?.end ? practice.range : null;
+    // Season range: no practice before its first or after its last date (no range = weekly forever, demo data).
+    const skip = range && today < range.start ? Math.round((Date.parse(`${range.start}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 864e5) : 0;
+    for (let k = skip; k < skip + 8 && !prac; k++) {
+      const date = addDays(today, k);
+      if (range && date > range.end) break;
+      const d = (practice.days || []).find((x) => x.day === dowOf(date));
       if (d && has(d.day) && (k > 0 || n < toMin(d.end))) prac = { type: 'practice', date, time: d.start, ...(k === 0 && n >= toMin(d.start) ? { now: true } : {}) };
     }
   }
@@ -32,9 +37,10 @@ export function nextEvent({ today, now = '00:00', gameDays = [], practice = null
   return prac.date + prac.time < game.date + game.time ? prac : game;
 }
 
-/** "Next: Games Saturday, Oct 24 · First tip-off 9:00 AM" / "Next: Practice Monday, Oct 26 · 5:00 PM" / "No games or practices scheduled". */
-export function nextEventText(ev, today) {
-  if (!ev) return 'No games or practices scheduled';
+/** seasonOver (a practice range is set): nothing left -> null (no line).
+ *  "Next: Games Saturday, Oct 24 · First tip-off 9:00 AM" / "Next: Practice Monday, Oct 26 · 5:00 PM" / "No games or practices scheduled". */
+export function nextEventText(ev, today, seasonOver = false) {
+  if (!ev) return seasonOver ? null : 'No games or practices scheduled'; // past the season's last practice and game: no line
   if (ev.now) return 'Practice tonight · now'; // QA: practice already under way
   const [, mo, dd] = ev.date.split('-').map(Number);
   const when = ev.date === today ? 'Today' : `${LONG[dowOf(ev.date)]}, ${MON[mo - 1]} ${dd}`;
