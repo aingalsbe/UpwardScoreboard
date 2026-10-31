@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { normHex, COLOR_HELP, lumHex, seasonCss } from './color.js';
-import { pool, migrate, migrateColors, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
+import { pool, demoBlockedReason, migrate, migrateColors, seedIfEmpty, seedDemo, legacyCheerConflicts, squadId, setSlotSquad, gameSlot, slotDateSql, slotStartSql } from './db.js';
 import { scorekeeperView, publicView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
@@ -189,7 +189,7 @@ async function loadSeason() {
   if (!HEX6.test(season.cheerPrimary)) season.cheerPrimary = season.light;
   if (!HEX6.test(season.cheerSecondary)) season.cheerSecondary = season.dark;
 }
-/** The cheer squad of the game's time slot (one per hour, not a court), or null. Coach = first name only. */
+/** The cheer squad of the game's time slot (one per hour, not a court), or null. Coach = full name. */
 function cheerView(r: any) {
   if (!r.cheer_squad_id) return null;
   return { squadId: r.cheer_squad_id, name: r.cheer_squad, logo: r.cheer_squad_has_logo ? `/logos/squad/${r.cheer_squad_id}` : r.cheer_squad_logo_url || null,
@@ -1651,8 +1651,8 @@ async function main() {
     }
   }
   // A loaded real season (settings.season_data, written by seed-season) blocks the demo seeds: .env/.env.demo ship SEED=demo.
-  const realSeason = (await pool.query(`SELECT value FROM settings WHERE key = 'season_data'`)).rows[0]?.value;
-  if (realSeason && (process.env.SEED === 'true' || process.env.SEED === 'demo')) console.log(`SEED=${process.env.SEED} ignored: real ${realSeason} season is loaded (npm run seed:demo:reset to go back to demo data).`);
+  const demoBlocked = process.env.SEED === 'true' || process.env.SEED === 'demo' ? await demoBlockedReason(pool) : null;
+  if (demoBlocked) console.log(`SEED=${process.env.SEED} ignored: ${demoBlocked} (npm run seed:demo:reset to go back to demo data).`);
   else {
   if (process.env.SEED === 'true' && (await seedIfEmpty())) console.log('Seeded demo teams, courts and games.');
   if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.\n' + formatReport(await loadLogos(pool)));

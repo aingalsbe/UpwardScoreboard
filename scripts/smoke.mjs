@@ -192,15 +192,16 @@ const exp = await fetch(BASE + '/api/export/schedule.csv', { headers: auth }).th
 const n0 = await countGames();
 const re1 = await api('/api/import/schedule.csv', { method: 'POST', body: exp });
 ok(re1.body.created === 0 && re1.body.updated === 0 && re1.body.skipped === n0 && (await countGames()) === n0, `re-importing the export changes nothing (${n0} games, skipped ${re1.body.skipped}${re1.body.errors.length ? " " + JSON.stringify(re1.body.errors) : ""})`);
-const dupFile = `date,time,court,division,home,away\n2026-11-07,09:00,west,Dup test,${T.A.name},${T.B.name}\n2026-11-07,09:00,west,Dup test,${T.A.name},${T.B.name}\n`;
+// Fixed 2026-11-07 collided with the demo weekend on a Nov 6 test clock: use the free Saturday found above.
+const dupFile = `date,time,court,division,home,away\n${IMP_DATE},12:00,west,Dup test,${T.A.name},${T.B.name}\n${IMP_DATE},12:00,west,Dup test,${T.A.name},${T.B.name}\n`;
 const d1i = await api('/api/import/schedule.csv', { method: 'POST', body: dupFile });
 ok(d1i.body.created === 1 && d1i.body.skipped === 1, `duplicate rows within one file: created ${d1i.body.created}, skipped ${d1i.body.skipped}`);
 const d2i = await api('/api/import/schedule.csv', { method: 'POST', body: dupFile });
 ok(d2i.body.created === 0 && d2i.body.skipped === 2 && (await countGames()) === n0 + 1, 'importing the same file twice does not duplicate');
-const upd = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n2026-11-07,09:00,west,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
+const upd = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n${IMP_DATE},12:00,west,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
 ok(upd.body.updated === 1 && upd.body.created === 0, 'natural-key match updates the division instead of adding a game');
 const gid = (await api('/api/games')).body.find((g) => g.division === `Renamed ${RUN}`).id;
-const byId = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,division,home,away\n${gid},2026-11-07,10:00,east,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
+const byId = await api('/api/import/schedule.csv', { method: 'POST', body: `id,date,time,court,division,home,away\n${gid},${IMP_DATE},13:00,east,Renamed ${RUN},${T.A.name},${T.B.name}\n` });
 ok(byId.body.updated === 1 && (await countGames()) === n0 + 1, 'exported id column moves the game (time/court change) without duplicating');
 const nd = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,division,home,away\n,,,TBD ${RUN},${T.C.name},${T.D.name}\n` });
 ok(nd.body.created === 1 && nd.body.errors.length === 0, 'r2-B: a game with no date/time/court imports (not scheduled yet)');
@@ -605,8 +606,8 @@ console.log('19. Gender / division, schedule warnings, lobby feed (live) + retir
   const w19 = si.body.warnings || [];
   const leg = await api('/api/import/schedule.csv', { method: 'POST', body: `date,time,court,grade,gender,home,away,home_cheer,away_cheer\n${SAT},09:00,west,3rd Grade,Boys,Gx-${RUN},Hx-${RUN},Sx Cheer,Other Cheer\n` });
   ok(leg.body.skipped === 1 && (leg.body.warnings || []).some((w) => /two cheer squads .* kept "Sx Cheer"/.test(w)), `legacy home_cheer + away_cheer: one squad kept (home) with a warning (${(leg.body.warnings || [])[0]})`);
-  ok(si.body.created === 3 && w19.some((w) => /Gx-\w+ plays 2 times this weekend/.test(w)) && w19.some((w) => /outside the split-court hours/.test(w)) && w19.some((w) => /only on Saturday split-court/.test(w)),
-    `schedule import: 3 games + warnings (twice in a weekend, split hours, cheer) (${w19.length} warnings)`);
+  ok(si.body.created === 3 && w19.some((w) => /Gx-\w+ plays 2 times this weekend/.test(w)) && !w19.some((w) => /split-court/.test(w)) && w19.some((w) => /Fri Cheer\): cheer squads are only on Saturday games/.test(w)),
+    `schedule import: 3 games + warnings (twice in a weekend, Friday cheer; no split-court warnings per AC8) (${w19.length} warnings)`);
   ok(si.body.errors.some((e) => /row 5: .*(one gender|doesn't match|unknown away)/.test(e)), `schedule CSV gender column rejects a mixed / wrong-gender row (${si.body.errors[0]})`);
   const games19 = (await api('/api/games')).body.filter((g) => [gb.body.id, gg.body.id, b2.body.id].includes(g.home_team_id));
   const satW = games19.find((g) => g.court === 'West');

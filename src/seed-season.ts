@@ -7,7 +7,6 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type pg from 'pg';
 import { migrate, pool } from './db.js';
-import { formatReport, loadLogos } from './logo-files.js';
 import { savePractice, validatePractice } from './practice.js';
 import { seasonConfig } from './season-config.js';
 import {
@@ -185,7 +184,20 @@ export async function seedSeason(opts: SeedSeasonOptions = {}): Promise<SeedSeas
       await client.query('ROLLBACK');
       return { report: `${formatSeasonReport(plan)}\nSKIPPED: 2027 season already loaded. Nothing changed.`, committed: false, skipped: true, plan };
     }
-    if (!opts.dryRun && !opts.reset && !decision.ok) {
+    // Played/live data: games with events or a status other than scheduled are never replaced without --reset.
+    const played = (await client.query(`SELECT count(*)::int AS n FROM games g WHERE g.status <> 'scheduled' OR EXISTS (SELECT 1 FROM game_events e WHERE e.game_id = g.id)`)).rows[0].n as number;
+    const playedReason = played > 0 ? `Refusing: ${played} game(s) have score events or a status other than scheduled (live/complete results would be erased). Re-run with --reset to replace them anyway.` : null;
+    if (opts.dryRun) {
+      // No writes at all (not even a rolled-back insert), so sequences are untouched; the plan was already validated.
+      await client.query('ROLLBACK');
+      const would = playedReason || (!opts.reset && !decision.ok ? decision.reason || 'Refusing to replace existing games. Re-run with --reset.' : null);
+      return { report: `${formatSeasonReport(plan)}\n${would ? `A real run would refuse: ${would}\n` : ''}DRY RUN: nothing written.`, committed: false, skipped: false, plan };
+    }
+    if (!opts.reset && playedReason) {
+      await client.query('ROLLBACK');
+      throw new SeasonRefusedError(playedReason);
+    }
+    if (!opts.reset && !decision.ok) {
       await client.query('ROLLBACK');
       throw new SeasonRefusedError(decision.reason || 'Refusing to replace existing games. Re-run with --reset.');
     }
@@ -196,10 +208,6 @@ export async function seedSeason(opts: SeedSeasonOptions = {}): Promise<SeedSeas
     await assertCounts(client, plan);
     // Marker (not a color setting): startup SEED=demo/true must never replace a loaded real season.
     await client.query(`INSERT INTO settings(key, value) VALUES ('season_data', '2027') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`);
-    if (opts.dryRun) {
-      await client.query('ROLLBACK');
-      return { report: `${formatSeasonReport(plan)}\nDRY RUN: rolled back, nothing written.`, committed: false, skipped: false, plan };
-    }
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
@@ -207,10 +215,9 @@ export async function seedSeason(opts: SeedSeasonOptions = {}): Promise<SeedSeas
   } finally {
     client.release();
   }
-  let logos = '';
-  try { logos = formatReport(await loadLogos(pool)); }
-  catch (e) { logos = `logo load failed (${e instanceof Error ? e.message : e}); import kept`; }
-  return { report: `${formatSeasonReport(plan)}\nIMPORTED\n${logos}`, committed: true, skipped: false, plan, logos };
+  // No automatic logo load: the manifest holds demo mascot art, so all real teams and squads start blank.
+  // Load real logos later with the manual logo loader (loadLogos / src/load-logos.ts).
+  return { report: `${formatSeasonReport(plan)}\nIMPORTED (logos left blank; load real logos manually)`, committed: true, skipped: false, plan };
 }
 
 export { gameNaturalKey };

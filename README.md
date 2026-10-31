@@ -90,7 +90,7 @@ No wipe needed: on start, `court-1`/`court-2` are renamed to `west`/`east` (game
 
 ## Real 2027 season
 
-`npm run seed:season:dry` parses `data/season-2027/` and prints the counts, then rolls the transaction back (nothing is written). `npm run seed:season` replaces demo data, or a previous 2027 import, with the real season. If the database already has other games, it refuses until you pass `--reset` (`node dist/src/seed-season.js --reset`). The importer does not change season colors or `season_name` (stays `2026–27 Upward`). The server does not import this season unless `SEED=season`.
+`npm run seed:season:dry` parses `data/season-2027/` and prints the counts and whether a real run would refuse; it writes nothing. `npm run seed:season` replaces demo data, or a previous 2027 import, with the real season. If the database already has other games, it refuses until you pass `--reset` (`node dist/src/seed-season.js --reset`). The importer writes only the `season_data` marker setting (colors and `season_name` untouched), leaves all logos blank, and refuses without `--reset` if any game has score events or a non-scheduled status. With real data loaded, `SEED=demo` and `npm run seed:demo` print SKIPPED; use `npm run seed:demo:reset` to go back to the demo. The server does not import this season unless `SEED=season`.
 
 ## Laptop demo (Windows)
 

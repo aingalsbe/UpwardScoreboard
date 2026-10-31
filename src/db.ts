@@ -518,9 +518,31 @@ export async function seedIfEmpty(): Promise<boolean> {
  * mode 'if-needed': seeds only when no game is scheduled in the demo weekend (wipes stale demo data).
  * mode 'reset': always wipes teams, courts, games and events, then seeds.
  */
+/**
+ * Why the demo seed (if-needed, SEED=demo/true at startup, seed-demo.js without --reset) must NOT run, or null.
+ * Real data is detected from the data itself, not only from the marker: the settings.season_data marker; any team
+ * whose name is not a demo team; or any game outside this demo weekend that is not a plain demo game (a demo-team
+ * game still scheduled with no events, i.e. a stale demo weekend, which if-needed is allowed to roll forward).
+ */
+export async function demoBlockedReason(q: { query: pg.Pool['query'] } = pool, nowMs = Date.now()): Promise<string | null> {
+  const w = demoWeekend(nowMs, 'America/Chicago');
+  const names = [...new Set(demoSeedPlan(w).flatMap((g) => [g.home, g.away]))];
+  const marker = (await q.query(`SELECT value FROM settings WHERE key = 'season_data'`)).rows[0]?.value;
+  if (marker && String(marker).trim()) return `real ${marker} season is loaded (settings.season_data)`;
+  const foreign = (await q.query(`SELECT count(*)::int AS n FROM teams WHERE NOT (name = ANY($1::text[]))`, [names])).rows[0].n;
+  if (foreign > 0) return `${foreign} non-demo team(s) exist`;
+  const outside = (await q.query(`SELECT count(*)::int AS n FROM games g JOIN teams h ON h.id = g.home_team_id JOIN teams a ON a.id = g.away_team_id
+      WHERE (g.scheduled_at IS NULL OR (g.scheduled_at AT TIME ZONE 'America/Chicago')::date NOT BETWEEN $1::date AND $2::date)
+        AND (g.status <> 'scheduled' OR EXISTS (SELECT 1 FROM game_events e WHERE e.game_id = g.id) OR NOT (h.name = ANY($3::text[]) AND a.name = ANY($3::text[])))`,
+    [w.fri, w.sat, names])).rows[0].n;
+  if (outside > 0) return `${outside} non-demo game(s) exist outside the demo weekend ${w.fri}/${w.sat}`;
+  return null;
+}
+
 export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()): Promise<boolean> {
   const w = demoWeekend(nowMs, 'America/Chicago');
   if (mode === 'if-needed') {
+    if (await demoBlockedReason(pool, nowMs)) return false;
     const n = (await pool.query(`SELECT count(*)::int AS n FROM games WHERE (scheduled_at AT TIME ZONE 'America/Chicago')::date BETWEEN $1::date AND $2::date`, [w.fri, w.sat])).rows[0].n;
     if (n > 0) return false;
   }

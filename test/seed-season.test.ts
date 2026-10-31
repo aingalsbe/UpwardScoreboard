@@ -231,12 +231,16 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   assert.equal(await sentinel(), 2);
   assert.equal(await gameCount(), 1);
 
+  const seqs = async () => (await db.pool.query(`SELECT (SELECT last_value FROM courts_id_seq) AS c, (SELECT last_value FROM teams_id_seq) AS t,
+    (SELECT last_value FROM games_id_seq) AS g, (SELECT last_value FROM cheer_squads_id_seq) AS q, (SELECT last_value FROM practice_slots_id_seq) AS p`)).rows[0];
+  const seqBefore = await seqs();
   const dry = await season.seedSeason({ dryRun: true });
-  assert.match(dry.report, /DRY RUN: rolled back, nothing written/);
+  assert.match(dry.report, /DRY RUN: nothing written/);
+  assert.match(dry.report, /A real run would refuse/); // the sentinel game is foreign
+  assert.deepEqual(await seqs(), seqBefore, 'dry run consumes no sequence values');
   assert.match(dry.report, /Kindergarten: 6 teams, 24 games/);
   assert.match(dry.report, /Total: 52 teams, 208 games/);
   assert.equal(dry.committed, false);
-  assert.equal(dry.logos, undefined);
   assert.equal(await sentinel(), 2);
   assert.equal(await gameCount(), 1);
   assert.equal(await colors(), beforeColors);
@@ -257,8 +261,10 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   const first = await season.seedSeason({ reset: true });
   assert.equal(first.committed, true);
   assert.match(first.report, /IMPORTED/);
-  assert.match(first.logos || '', /teams: matched/);
-  console.log('SEASON_LOGOS\n' + first.logos);
+  assert.match(first.report, /logos left blank/);
+  const withLogo = async () => Number((await db.pool.query(`SELECT (SELECT count(*) FROM teams WHERE logo_url IS NOT NULL OR logo_data IS NOT NULL)
+    + (SELECT count(*) FROM cheer_squads WHERE logo_url IS NOT NULL OR logo_data IS NOT NULL) AS n`)).rows[0].n);
+  assert.equal(await withLogo(), 0, 'no demo mascot art on real teams or squads');
   console.log('SEASON_WARNINGS\n' + plan.warnings.join('\n'));
   assert.equal(await sentinel(), 0);
   assert.equal(await gameCount(), 208);
@@ -277,6 +283,29 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   assert.deepEqual(shotB, shotA);
   assert.equal(await colors(), beforeColors);
   assert.equal(await gameCount(), 208);
+  assert.equal(await withLogo(), 0);
+
+  // B5: played data is never replaced without --reset (status or events); --reset overrides.
+  const g1 = (await db.pool.query('SELECT id FROM games ORDER BY id LIMIT 1')).rows[0].id;
+  await db.pool.query(`UPDATE games SET status = 'complete', final_home = 10, final_away = 8 WHERE id = $1`, [g1]);
+  await assert.rejects(() => season.seedSeason({}), (e: Error) => e instanceof season.SeasonRefusedError && /status other than scheduled/.test(e.message) && /--reset/.test(e.message));
+  assert.equal(Number((await db.pool.query(`SELECT count(*)::int AS n FROM games WHERE status = 'complete'`)).rows[0].n), 1, 'refusal keeps the result');
+  await db.pool.query(`UPDATE games SET status = 'scheduled', final_home = NULL, final_away = NULL WHERE id = $1`, [g1]);
+  await db.pool.query(`INSERT INTO game_events(game_id, seq, command) VALUES ($1, 1, '{"type":"SCORE"}')`, [g1]);
+  await assert.rejects(() => season.seedSeason({}), /score events/);
+  assert.match((await season.seedSeason({ dryRun: true })).report, /A real run would refuse: Refusing: 1 game/);
+  assert.equal((await season.seedSeason({ reset: true })).committed, true);
+  assert.deepEqual(await season.seasonSnapshot(db.pool), shotA);
+
+  // B1/B2: the demo seed (startup SEED=demo/true, seed-demo.js without --reset) refuses real data, marker or not.
+  assert.match(String(await db.demoBlockedReason(db.pool)), /season_data/);
+  await db.pool.query(`DELETE FROM settings WHERE key = 'season_data'`);
+  assert.match(String(await db.demoBlockedReason(db.pool)), /non-demo team/);
+  assert.equal(await db.seedDemo('if-needed'), false);
+  await db.pool.query(`INSERT INTO settings(key, value) VALUES ('season_data', '') `);
+  assert.equal(await db.seedDemo('if-needed', Date.parse('2027-01-15T18:00:00-06:00')), false, 'inside a season game weekend too');
+  assert.equal(await gameCount(), 208);
+  await db.pool.query(`UPDATE settings SET value = '2027' WHERE key = 'season_data'`);
 
   const started = await startServer({ DATABASE_URL: URL_, ADMIN_PASSWORD: ADMIN, TZ: 'America/Chicago', SEED: '' });
   srv = started.srv;
@@ -337,6 +366,23 @@ test('startup SEED=demo never replaces a loaded real season (season_data marker)
   const server = fs.readFileSync(path.join(root, 'src/server.ts'), 'utf8');
   const seed = fs.readFileSync(path.join(root, 'src/seed-season.ts'), 'utf8');
   assert.match(seed, /'season_data', '2027'/);
-  assert.match(server, /key = 'season_data'/);
-  assert.ok(server.indexOf("key = 'season_data'") < server.indexOf("seedDemo('if-needed')"));
+  assert.ok(server.indexOf('demoBlockedReason(pool)') > 0 && server.indexOf('demoBlockedReason(pool)') < server.indexOf("seedDemo('if-needed')"));
+  const demoCli = fs.readFileSync(path.join(root, 'src/seed-demo.ts'), 'utf8');
+  assert.ok(demoCli.indexOf('demoBlockedReason(pool)') < demoCli.indexOf("seedDemo(reset ? 'reset' : 'if-needed')"));
+});
+
+test('demo seed: a pure demo DB re-seeds; a foreign team or a played old game blocks it', { skip, timeout: 60_000 }, async () => {
+  assert.equal(await db.seedDemo('reset'), true);
+  assert.equal(await db.demoBlockedReason(db.pool), null);
+  assert.equal(await db.seedDemo('if-needed'), false, 'this weekend already seeded');
+  const later = Date.now() + 14 * 86_400_000; // two weeks on: the old demo weekend is stale, still demo-only
+  assert.equal(await db.demoBlockedReason(db.pool, later), null);
+  const g = (await db.pool.query('SELECT id FROM games ORDER BY id LIMIT 1')).rows[0].id;
+  await db.pool.query(`UPDATE games SET status = 'complete' WHERE id = $1`, [g]);
+  assert.match(String(await db.demoBlockedReason(db.pool, later)), /non-demo game/);
+  await db.pool.query(`UPDATE games SET status = 'scheduled' WHERE id = $1`, [g]);
+  await db.pool.query(`INSERT INTO teams(name, short_name, grade, grade_order, gender) VALUES ('Real Owls','OWL','5th-6th Grade',5,'Boys')`);
+  assert.match(String(await db.demoBlockedReason(db.pool)), /1 non-demo team/);
+  await db.pool.query(`DELETE FROM teams WHERE name = 'Real Owls'`);
+  assert.equal(await db.demoBlockedReason(db.pool), null);
 });
