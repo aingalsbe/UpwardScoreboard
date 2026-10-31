@@ -1,6 +1,6 @@
 // Practice TV (Mon–Thu): /upwardbasketballscores/practice/{cheer,basketball}. Polls /api/public/practice each minute,
 // renders Sage's mockup markup (deliverables/mockups/practice) with its hooks, rotates pages per practice-view.js.
-import { planPractice, rotation, parsePracticeDemo, ampm, COURTS, COURT_NAME, DAY, toMin } from './practice-view.js';
+import { planPractice, rotation, parsePracticeDemo, practiceDisplayDay, ampm, COURTS, COURT_NAME, DAY, toMin } from './practice-view.js';
 import { mascotHtml, installLogoFallback } from './logo-badge.js';
 installLogoFallback(); // broken logo URL -> initial badge
 import { nextEvent, nextEventText, addDays } from './next-event.js';
@@ -25,21 +25,25 @@ fit(); addEventListener('resize', fit);
 let gameDays = [];
 async function loadGames() { try { gameDays = (await (await fetch('/api/public/game-days')).json()).days || []; } catch {} }
 async function load() { try { const r = await fetch('/api/public/practice'); data = await r.json(); offset = data.serverNow - Date.now(); } catch {} render(); }
-function nowParts() {
-  if (demo) {
-    const dow = demo.dow ?? data.now.dow;
-    if (demo.hm) return { dow, hm: demo.hm };
-  }
-  // league-local time from the server's last answer, advanced by local elapsed time
+function liveHm() {
+  // league-local time from the server's last answer, advanced by local elapsed time (the date rolls on the next poll)
   const base = toMin(data.now.hm) + Math.floor((Date.now() + offset - data.serverNow) / 60000);
-  return { dow: demo?.dow ?? data.now.dow, hm: `${String(Math.floor(base / 60) % 24).padStart(2, '0')}:${String(base % 60).padStart(2, '0')}` };
+  return `${String(Math.floor(base / 60) % 24).padStart(2, '0')}:${String(base % 60).padStart(2, '0')}`;
+}
+/** Explicit ?day= wins. ?at= alone keeps today and the old window. Otherwise the next day that has this kind's slots. */
+function viewClock() {
+  if (demo) return { dow: demo.dow ?? data.now.dow, hm: demo.hm || liveHm(), mode: undefined };
+  const disp = practiceDisplayDay(data, kind, data.now.date, data.now.dow);
+  // Future weekday: preview (the clock time is ignored). Today: hold the schedule all day, including after the window.
+  if (!disp.today) return { dow: disp.dow, hm: liveHm(), mode: 'future' };
+  return { dow: disp.dow, hm: liveHm(), mode: 'hold' };
 }
 const who = (name, coach, logo) => `${mascotHtml(logo, name)}<div class="team" data-bind="team">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div>`;
 
 function render() {
   if (!data) return;
-  const { dow, hm } = nowParts();
-  const plan = planPractice(data, kind, dow, hm);
+  const { dow, hm, mode } = viewClock();
+  const plan = planPractice(data, kind, dow, hm, mode);
   body.dataset.mode = plan.mode; body.dataset.day = plan.day;
   const setup = qs.get('setup'); $('[data-bind="route"]').hidden = setup === '0' || (setup !== '1' && Date.now() - loadedAt > 60000);
   const demoEl = $('[data-bind="demo"]'); demoEl.hidden = !demo; if (demo) demoEl.textContent = `DEMO · ${DAY[dow].toUpperCase()} ${ampm(hm)}`;

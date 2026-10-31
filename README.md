@@ -5,7 +5,8 @@ Live youth-basketball scoreboard for the church league: a scorekeeper on the ben
 * **Score**: `/score/<court>` mobile-first bench controller (PIN per court)
 * **Display**: `/tv/<court>` full-screen TV board, `/overlay/<court>` transparent OBS scorebug (public, read-only)
 * **Admin**: `/admin` teams (grade + gender), colors, logos, courts, schedule (with warnings), start a game, CSV import/export
-* **Lobby TV**: `/upwardbasketballscores/lobby` (alias `/lobby`): per court the live game + exactly one next game, cheer per time slot, locker rooms, coaches; `?day=fri|sat` (demo weekend) or `?date=YYYY-MM-DD`. (The old full-day schedule screen was retired 2026-10-20; `/schedule` now 404s.)
+* **Lobby TV**: `/upwardbasketballscores/lobby` (alias `/lobby`): per court the live game + exactly one next game, cheer per time slot, locker rooms, coaches. With no `?date=` or `?day=`, it opens on the next game day (today if today has games). `?day=fri|sat` (demo weekend) or `?date=YYYY-MM-DD` still pick that day. (The old full-day schedule screen was retired 2026-10-20; `/schedule` now 404s.)
+* **Practice TVs**: `/upwardbasketballscores/practice/basketball` and `.../practice/cheer` (aliases `/practice/basketball`, `/practice/cheer`). With no `?day=`, each screen opens on the next day that has slots of its kind. `?day=mon`..`thu` wins; `?at=HH:MM` alone keeps today.
 
 One Node/TypeScript container + Postgres. See [docs/POC.md](docs/POC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PLAN.md](docs/PLAN.md).
 
@@ -27,6 +28,7 @@ The first start seeds 10 teams in 4 grades, 3 courts (`full`, `west`, `east`; Fu
 | East scorekeeper / TV / overlay | http://localhost:3000/score/east · /upwardbasketballscores/eastcourt · /upwardbasketballscores/eastcourt/overlay |
 | West + East on one TV | http://localhost:3000/tv/split |
 | Lobby TV (live + next per court) | http://localhost:3000/upwardbasketballscores/lobby · /lobby · ?day=fri · ?day=sat · ?date=YYYY-MM-DD |
+| Practice TVs (basketball / cheer) | http://localhost:3000/upwardbasketballscores/practice/basketball · /practice/cheer · ?day=mon · ?at=17:00 |
 | Weekly court QR sheet | Admin > Courts > Print QR codes (valid until Sunday 23:59 America/Chicago) |
 
 Dev defaults from `.env.example`: admin password `change-me-admin`, PINs `full:1111`, `west:2222`, `east:3333`, `GAME_MINUTES=60` (default game length for the shared-floor rule). **Change them in any shared or hosted deployment.**
@@ -95,3 +97,19 @@ No wipe needed: on start, `court-1`/`court-2` are renamed to `west`/`east` (game
 ## Laptop demo (Windows)
 
 See DEMO.md: `Start-Demo.ps1` / `Stop-Demo.ps1`, demo data via `SEED=demo` (in the committed dev-only `.env.demo`) or `docker compose exec app npm run seed:demo[:reset]`.
+
+## Lobby
+
+With no `?date=` and no `?day=`, the lobby (and `GET /api/public/schedule`, and a `role=schedule` socket with no day or date) opens on the next game day in America/Chicago: **today** if today has any games, otherwise the earliest later date that has games. If nothing is scheduled from today on, it stays on **today** and shows the existing "No games today" screen with the next-event line. It does not open on a past day's finals.
+
+A lobby left on that automatic day keeps it for the whole league-local day, including after the last game goes final, and moves to the next game day at midnight Central. If an admin adds a game on an earlier upcoming day, the lobby moves to that day on the next schedule refresh. `?date=`, `?day=fri|sat`, and `?at=` demo mode do not move on their own. The header is that day's weekday and tip-off (for example `FRIDAY 6:00 PM` on Fri Jan 15). A future day shows its games as upcoming; the idle screen does not say "No more games today" for a day that has not arrived.
+
+## Practice TVs
+
+With no `?day=`, each practice screen opens on the next day that has slots of **its** kind (basketball or cheer): today if today's weekday has those slots, otherwise the next date within a week whose weekday does. `GET /api/public/practice` also sends `display` for the next day that has slots of either kind. Today stays up for the whole league-local day: before the window it previews the night (`Starts 5:00 PM`), and after the window it keeps the schedule up (`Last practice slot tonight`) instead of going idle. It moves on at midnight Central, when the 60-second poll sees the new date.
+
+A future practice day (Friday looking at Monday) previews that weekday: header `MONDAY` or `MONDAY CHEER`, every slot paging at 12 seconds, `Starts Monday 5:00 PM`, and no current slot. If that screen's kind has no slots at all, it stays on today and shows "No practice right now". `?day=mon` through `thu` wins over the default. `?at=HH:MM` alone keeps today and the previous window (idle outside 60 minutes before through 15 minutes after).
+
+## Known limitations
+
+Practice is a weekly Monday–Thursday template. No season start or end is stored, so the practice screens keep rolling to the next weekday that has slots even outside the basketball season. That is intentional: nothing was added to the database to bound it.

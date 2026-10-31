@@ -3,7 +3,7 @@
 import { connect, displayNow, clockMs, fmtClock } from './common.js';
 import { mascotHtml, installLogoFallback } from './logo-badge.js';
 installLogoFallback(); // broken logo URL -> initial badge
-import { planLobby, headerText, ampm, quarter, emptyNote, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, idleText, tipOffText, movedText } from './lobby-view.js';
+import { planLobby, headerText, ampm, quarter, emptyNote, idleTitle, COURT_LABEL, parseDemo, pickGameDay, demoGames, demoTag, tipOffText, movedText } from './lobby-view.js';
 import { nextEvent, nextEventText } from './next-event.js';
 
 // Alias (data-needs.md): /lobby?practice=cheer|basketball opens that practice TV (other query params kept).
@@ -32,10 +32,16 @@ async function loadGameDays() {
   return gameDays;
 }
 let practice = null;
-/** Idle line: next game day or practice night, whichever is first (from the lobby's day + demo/league time). */
+/** League-local today from the game-day or practice payload (null until one of them has loaded). */
+const realToday = () => gameToday || practice?.now?.date || null;
+/** Idle line: next game day or practice night, whichever is first.
+ *  A future shown day is anchored on the real today, so the line does not treat that day as already over. */
 function idleLine() {
-  const now = demo?.at || (practice?.now?.date === snap.date ? practice.now.hm : '23:59');
-  return nextEventText(nextEvent({ today: snap.date, now, gameDays, practice }), snap.date);
+  const real = realToday();
+  const future = !!(real && snap.date > real);
+  const now = demo?.at || (future ? (practice?.now?.hm || '00:00') : (practice?.now?.date === snap.date ? practice.now.hm : '23:59'));
+  const anchor = future && real ? real : snap.date;
+  return nextEventText(nextEvent({ today: anchor, now, gameDays, practice }), anchor);
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const main = document.querySelector('main');
@@ -80,9 +86,12 @@ function renderIdle() {
   const had = (snap.games || []).length > 0;
   document.querySelector('[data-bind="header"]').textContent = 'UPWARD BASKETBALL';
   main.className = 'idle';
-  main.innerHTML = `<section class="idle" data-state="idle"><div class="idle-title" data-bind="idle-title">${had ? 'No more games today' : 'No games today'}</div>
+  main.innerHTML = `<section class="idle" data-state="idle"><div class="idle-title" data-bind="idle-title">${esc(idleTitle(had, snap.date, realToday()))}</div>
 <div class="idle-next" data-bind="idle-next">${esc(gameDays ? idleLine() : '')}</div></section>`;
-  if (!gameDays || Date.now() - gameDaysAt > 5 * 60000) loadGameDays().then(() => { const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleLine(); });
+  if (!gameDays || Date.now() - gameDaysAt > 5 * 60000) loadGameDays().then(() => {
+    const el = main.querySelector('[data-bind="idle-next"]'); if (el) el.textContent = idleLine();
+    const t = main.querySelector('[data-bind="idle-title"]'); if (t) t.textContent = idleTitle(had, snap.date, realToday());
+  });
 }
 
 function render() {

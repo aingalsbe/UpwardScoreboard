@@ -133,6 +133,31 @@ export async function seedPracticeDemo(q: Q): Promise<boolean> {
   return true;
 }
 
+const addDaysIso = (d: string, n: number) => new Date(Date.parse(d + 'T12:00:00Z') + n * 86400_000).toISOString().slice(0, 10);
+/**
+ * Next day the practice screens open on. Today when today's weekday has slots (of `kind`, or of either kind when
+ * null) and a hours row in `days`; else the next date within 7 days whose weekday does; else today.
+ * Today stays selected after the window ends — this helper does not look at the clock.
+ * Keep in step with practiceDisplayDay in public/practice-view.js.
+ */
+export function practiceDisplayOf(
+  data: { days?: { day: number }[]; basketball?: { day: number }[]; cheer?: { day: number }[] } | null,
+  kind: 'basketball' | 'cheer' | null,
+  today: string,
+  todayDow: number,
+): { date: string; dow: number; today: boolean } {
+  const lists = kind ? [data?.[kind] || []] : [data?.basketball || [], data?.cheer || []];
+  const open = new Set((data?.days || []).map((d) => Number(d.day)));
+  const has = (dow: number) => open.has(dow) && lists.some((l) => l.some((x) => Number(x.day) === dow));
+  const n = Number(todayDow);
+  const dow0 = Number.isInteger(n) ? ((n % 7) + 7) % 7 : 0;
+  for (let k = 0; k <= 7; k++) {
+    const dow = (dow0 + k) % 7;
+    if (has(dow)) return { date: addDaysIso(today, k), dow, today: k === 0 };
+  }
+  return { date: today, dow: dow0, today: true };
+}
+
 const DAY3 = ['', 'Mon', 'Tue', 'Wed', 'Thu'];
 /** QA r17: what a save would remove versus the saved week (a team's slot or a squad's room that is no longer there).
  *  The PUT refuses these with 409 unless the body says confirmRemove: true. */

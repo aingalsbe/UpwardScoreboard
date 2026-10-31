@@ -7,7 +7,9 @@ export const COURTS = ['west1', 'east1', 'west2', 'east2']; // mockup order: Wes
 export const COURT_NAME = { west1: 'West 1', west2: 'West 2', east1: 'East 1', east2: 'East 2' };
 export const DAY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const LONG = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+const TITLE = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 export const toMin = (hm) => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
 const hm = (n) => `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
 export const ampm = (t) => { const [h, m] = String(t).split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
@@ -19,6 +21,25 @@ export function parsePracticeDemo(qs) {
   const okAt = /^([01]?\d|2[0-3]):[0-5]\d$/.test(at);
   if (!okAt && !DAY.includes(day)) return null;
   return { dow: DAY.includes(day) ? DAY.indexOf(day) : null, hm: okAt ? at.padStart(5, '0') : null };
+}
+
+/**
+ * Next date with slots of `kind` ('basketball' | 'cheer'; omit/null = either). Today when today's weekday has them
+ * (the screen keeps that day after the window ends); else the next date within 7 days; else today.
+ * A weekday counts only when `days` has its hours and that kind has a slot. Keep in step with practiceDisplayOf.
+ * -> { date, dow, today }.
+ */
+export function practiceDisplayDay(data, kind, today, todayDow) {
+  const lists = kind ? [data?.[kind] || []] : [data?.basketball || [], data?.cheer || []];
+  const open = new Set((data?.days || []).map((d) => Number(d.day)));
+  const has = (dow) => open.has(dow) && lists.some((l) => l.some((x) => Number(x.day) === dow));
+  const n = Number(todayDow);
+  const dow0 = Number.isInteger(n) ? ((n % 7) + 7) % 7 : 0;
+  for (let k = 0; k <= 7; k++) {
+    const dow = (dow0 + k) % 7;
+    if (has(dow)) return { date: addDays(today, k), dow, today: k === 0 };
+  }
+  return { date: today, dow: dow0, today: true };
 }
 
 /** Next practice text for the idle screen: "Next practice: Mon 5:00 PM" (null if there are no practice days). */
@@ -33,25 +54,42 @@ export function nextPracticeText(data, kind, dow, nowHm) {
 }
 
 /**
- * plan(data, kind, dow, nowHm) -> { mode: 'practice'|'idle', day, header, pages, current, startsText, idle }
+ * plan(data, kind, dow, nowHm, mode?) -> { mode: 'practice'|'idle', day, header, pages, current, startsText }
  *   basketball pages: [{ time, courts: { west1: entry|null, ... } }]; cheer pages: [[entry, ...] up to 9].
+ *   mode omitted: idle outside 60 min before .. 15 min after (demo ?day= / ?at=).
+ *   'hold': today stays up all day — before the window is the preview ("Starts 5:00 PM"); after it, the last slot
+ *   stays up so the footer reads "Last practice slot tonight".
+ *   'future': that weekday's preview at any clock time ("Starts Monday 5:00 PM"), no current slot.
  */
-export function planPractice(data, kind, dow, nowHm) {
+export function planPractice(data, kind, dow, nowHm, mode) {
   const d = (data.days || []).find((x) => x.day === dow);
   const items = d ? (kind === 'cheer' ? data.cheer : data.basketball).filter((x) => x.day === dow) : [];
   const idle = { mode: 'idle', day: DAY[dow], header: kind === 'cheer' ? 'CHEER PRACTICE' : 'BASKETBALL PRACTICE', pages: [], next: nextPracticeText(data, kind, dow, nowHm) };
   if (!d || !items.length) return idle;
   const n = toMin(nowHm), s = toMin(d.start), e = toMin(d.end);
-  if (n < s - PRE_MIN || n >= e + POST_MIN) return idle;
-  const startsText = n < s ? `Starts ${ampm(d.start)}` : null;
-  if (kind === 'cheer') {
-    const pages = []; for (let i = 0; i < items.length; i += CHEER_PER_PAGE) pages.push(items.slice(i, i + CHEER_PER_PAGE));
-    return { mode: 'practice', day: DAY[dow], header: `${LONG[dow]} CHEER`, pages, current: null, startsText };
+  const before = n < s - PRE_MIN, after = n >= e + POST_MIN;
+  const future = mode === 'future', hold = mode === 'hold';
+  if ((before || after) && !future && !hold) return idle;
+  const cheerPages = () => { const pages = []; for (let i = 0; i < items.length; i += CHEER_PER_PAGE) pages.push(items.slice(i, i + CHEER_PER_PAGE)); return pages; };
+  const ballPages = () => slotStarts(d.start, d.end).map((time) => ({ time, courts: Object.fromEntries(COURTS.map((c) => [c, items.find((x) => x.start === time && x.court === c) || null])) }));
+  const built = kind === 'cheer'
+    ? { day: DAY[dow], header: `${LONG[dow]} CHEER`, pages: cheerPages() }
+    : { day: DAY[dow], header: LONG[dow], pages: ballPages() };
+  // Future day, or today still before the 60-minute window: page every slot, nothing is current.
+  if (future || (hold && before)) {
+    const startsText = future ? `Starts ${TITLE[dow]} ${ampm(d.start)}` : `Starts ${ampm(d.start)}`;
+    return { mode: 'practice', ...built, current: null, startsText };
   }
-  const pages = slotStarts(d.start, d.end).map((time) => ({ time, courts: Object.fromEntries(COURTS.map((c) => [c, items.find((x) => x.start === time && x.court === c) || null])) }));
-  let current = -1; pages.forEach((p, i) => { if (toMin(p.time) - EARLY_MIN <= n) current = i; });
-  if (current >= 0 && n >= e) current = pages.length - 1;
-  return { mode: 'practice', day: DAY[dow], header: LONG[dow], pages, current: current >= 0 ? current : null, startsText };
+  // Today, after the window: keep the day on screen. Basketball pins the last slot ("Last practice slot tonight").
+  if (hold && after) {
+    const current = kind === 'cheer' ? null : (built.pages.length ? built.pages.length - 1 : null);
+    return { mode: 'practice', ...built, current, startsText: null };
+  }
+  const startsText = n < s ? `Starts ${ampm(d.start)}` : null;
+  if (kind === 'cheer') return { mode: 'practice', ...built, current: null, startsText };
+  let current = -1; built.pages.forEach((p, i) => { if (toMin(p.time) - EARLY_MIN <= n) current = i; });
+  if (current >= 0 && n >= e) current = built.pages.length - 1;
+  return { mode: 'practice', ...built, current: current >= 0 ? current : null, startsText };
 }
 
 /** Which page shows at second `t` of the rotation: { index, state: 'current'|'next'|'all' }. */

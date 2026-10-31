@@ -162,13 +162,46 @@ export function demoWeekend(nowMs: number, tz = LEAGUE_TZ): { fri: string; sat: 
   const fri = dow === 5 ? today : dow === 6 ? addDays(today, -1) : addDays(today, (5 - dow + 7) % 7);
   return { fri, sat: addDays(fri, 1) };
 }
-/** Lobby TV day: ?date=YYYY-MM-DD wins, then ?day=fri|sat (demo weekend), else today. */
+/** Lobby TV day: ?date=YYYY-MM-DD wins, then ?day=fri|sat (demo weekend), else today.
+ *  A request with no day and no date does not use this fallback; see defaultScheduleDay. */
 export function resolveScheduleDay(q: { day?: string | null; date?: string | null }, nowMs: number, tz = LEAGUE_TZ): string {
   const d = String(q.date || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T12:00:00Z')) && addDays(d, 0) === d) return d;
   const day = String(q.day || '').trim().toLowerCase();
   if (day === 'fri' || day === 'sat') return demoWeekend(nowMs, tz)[day];
   return localDate(nowMs, tz);
+}
+/** True when the caller sent a day or a date (including an invalid one). Those stay on resolveScheduleDay. */
+export function scheduleQueryGiven(q: { day?: string | null; date?: string | null }): boolean {
+  return !!(String(q.date ?? '').trim() || String(q.day ?? '').trim());
+}
+/**
+ * Next lobby day. `today` when it is in `gameDates`; otherwise the smallest date strictly after `today`;
+ * otherwise `today` (no future games: the idle "No games today" screen, never a past day's finals).
+ * `gameDates` need not be sorted.
+ */
+export function nextEventDay(gameDates: string[], today: string): string {
+  if (gameDates.includes(today)) return today;
+  let best: string | null = null;
+  for (const d of gameDates) if (d > today && (best === null || d < best)) best = d;
+  return best ?? today;
+}
+type DateQuery = { query: (sql: string, params?: unknown[]) => Promise<{ rows: { date: string }[] }> };
+/**
+ * Lobby day when the request has no day and no date: league-local today, then the next date that has a game.
+ * One query. `scheduled_at >=` start-of-today (league time) so a game earlier today still counts after it ends,
+ * and so the comparison can use an index on scheduled_at. No per-game follow-up.
+ */
+export async function defaultScheduleDay(q: DateQuery, nowMs: number, tz = LEAGUE_TZ): Promise<string> {
+  const today = localDate(nowMs, tz);
+  const { rows } = await q.query(
+    `SELECT DISTINCT to_char((scheduled_at AT TIME ZONE $1)::date, 'YYYY-MM-DD') AS date
+       FROM games
+      WHERE scheduled_at IS NOT NULL
+        AND scheduled_at >= ($2::date::timestamp AT TIME ZONE $1)
+      ORDER BY 1`,
+    [tz, today]);
+  return nextEventDay(rows.map((r) => r.date), today);
 }
 
 // ---- Schedule validation warnings (import + Admin). Warnings, not errors.

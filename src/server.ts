@@ -12,11 +12,11 @@ import { pool, demoBlockedReason, migrate, migrateColors, seedIfEmpty, seedDemo,
 import { scorekeeperView, publicView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, normalizeDivision, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings, gameTimeErrors, isIsoDate } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, normalizeDivision, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, scheduleQueryGiven, defaultScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings, gameTimeErrors, isIsoDate } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
 import { seedSeason, SeasonRefusedError } from './seed-season.js';
-import { loadPractice, validatePractice, savePractice, droppedSlots } from './practice.js';
+import { loadPractice, validatePractice, savePractice, droppedSlots, practiceDisplayOf } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand,
@@ -291,7 +291,7 @@ async function gameViewNorm(gameId: number) {
 }
 
 // -------------------------------------------------------------- websockets
-interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule' | 'season'; authed: boolean; qrVer?: number | null; date?: string; }
+interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule' | 'season'; authed: boolean; qrVer?: number | null; date?: string; /** No day/date param: follow the next game day. */ auto?: boolean; /** League-local date `date` was last resolved against. */ autoToday?: string; }
 const clients = new Set<Client>();
 
 /**
@@ -305,16 +305,48 @@ function send(c: Client, msg: unknown) { if (c.ws.readyState === WebSocket.OPEN)
 
 // Schedule screens subscribe to every court: any court broadcast (score, status, load/complete) or schedule
 // change (import, edit, delete, season) refreshes them, coalesced to one snapshot per day every 150 ms.
+// An auto client (no day/date) re-resolves on that tick, so a game added on an earlier future day moves the
+// lobby then. It does not move just because the clock advanced inside the same league-local day.
 let scheduleTimer: NodeJS.Timeout | null = null;
+async function refreshAutoScheduleDays(): Promise<void> {
+  const autos = [...clients].filter((c) => c.role === 'schedule' && c.auto);
+  if (!autos.length) return;
+  const now = Date.now();
+  const date = await defaultScheduleDay(pool, now);
+  const today = localDate(now);
+  for (const c of autos) { c.autoToday = today; c.date = date; }
+}
 function scheduleChanged() {
   if (scheduleTimer || ![...clients].some((c) => c.role === 'schedule')) return;
   scheduleTimer = setTimeout(async () => {
     scheduleTimer = null;
+    try { await refreshAutoScheduleDays(); } catch (e) { console.error(e); }
     const byDate = new Map<string, Client[]>();
     for (const c of clients) if (c.role === 'schedule' && c.date) byDate.set(c.date, [...(byDate.get(c.date) || []), c]);
     for (const [date, list] of byDate) { try { const snap = await scheduleSnapshot(date); for (const c of list) send(c, snap); } catch (e) { console.error(e); } }
   }, 150);
 }
+// Midnight CT: nothing else pushes a schedule snapshot, so auto lobbies re-check the league date on the
+// same 2s cadence as the socket heartbeat. The day changes only when the resolved date changes.
+let rollingAuto = false;
+async function rollAutoScheduleDays(): Promise<void> {
+  const today = localDate(Date.now());
+  const autos = [...clients].filter((c) => c.role === 'schedule' && c.auto && c.autoToday && c.autoToday !== today);
+  if (!autos.length) return;
+  const before = new Map(autos.map((c) => [c, c.date]));
+  await refreshAutoScheduleDays();
+  const moved = autos.filter((c) => c.date && c.date !== before.get(c));
+  if (!moved.length) return;
+  const snap = await scheduleSnapshot(moved[0].date!);
+  for (const c of moved) if (c.date === snap.date) send(c, snap);
+}
+setInterval(() => {
+  if (rollingAuto) return;
+  const today = localDate(Date.now());
+  if (![...clients].some((c) => c.role === 'schedule' && c.auto && c.autoToday && c.autoToday !== today)) return;
+  rollingAuto = true;
+  void rollAutoScheduleDays().catch((e) => console.error(e)).finally(() => { rollingAuto = false; });
+}, 2000).unref();
 // Every screen (lobby, practice TVs, court TV, overlay, scorekeeper, admin) follows the season colors live:
 // public/season.js holds a role=season socket and gets this on connect and after every season save.
 const seasonMsg = () => ({ type: 'state', kind: 'season', serverNow: Date.now(), season: { ...season } });
@@ -343,7 +375,12 @@ function attachWs(server: http.Server) {
     const court = u.searchParams.get('court') || '';
     const role = (['tv', 'overlay', 'score', 'schedule', 'season'].includes(u.searchParams.get('role') || '') ? u.searchParams.get('role') : 'viewer') as Client['role'];
     const client: Client = { ws, court, role, authed: false };
-    if (role === 'schedule') client.date = resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now());
+    const scheduleQuery = { day: u.searchParams.get('day'), date: u.searchParams.get('date') };
+    // A day or a date (even an invalid one) keeps resolveScheduleDay and never moves. No param follows the next game day.
+    if (role === 'schedule') {
+      client.auto = !scheduleQueryGiven(scheduleQuery);
+      if (!client.auto) client.date = resolveScheduleDay(scheduleQuery, Date.now());
+    }
     if (role === 'score' && validToken(tokenFrom(req))) client.authed = true; // admin may score any court
     clients.add(client);
     // Heartbeat: ping every 2s; if nothing (pong or message) for ~3.5s the peer is gone
@@ -368,7 +405,15 @@ function attachWs(server: http.Server) {
       try {
         if (msg.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
         if (role === 'season') return msg.type === 'resync' ? send(client, seasonMsg()) : undefined; // read-only
-        if (msg.type === 'resync') { const s = role === 'schedule' ? await scheduleSnapshot(client.date!) : await courtSnapshot(court); return s && send(client, s); }
+        if (msg.type === 'resync') {
+          if (role === 'schedule' && client.auto) {
+            const now = Date.now();
+            client.date = await defaultScheduleDay(pool, now);
+            client.autoToday = localDate(now);
+          }
+          const s = role === 'schedule' ? (client.date ? await scheduleSnapshot(client.date) : null) : await courtSnapshot(court);
+          return s && send(client, s);
+        }
         if (role === 'schedule') return send(client, { type: 'error', error: 'read-only schedule screen' });
         if (msg.type === 'auth') {
           // Displays are read-only: an auth attempt there is refused but never counted.
@@ -464,7 +509,19 @@ function attachWs(server: http.Server) {
     });
     void (async () => {
       if (role === 'season') return send(client, seasonMsg());
-      if (role === 'schedule') return send(client, await scheduleSnapshot(client.date!));
+      if (role === 'schedule') {
+        try {
+          if (client.auto) {
+            const now = Date.now();
+            const date = await defaultScheduleDay(pool, now);
+            // Leave date unset until the snapshot is ready so a schedule tick can't publish a stale day over this one.
+            const snap = await scheduleSnapshot(date);
+            if (!client.date) { client.date = date; client.autoToday = localDate(now); }
+            if (client.date === date) send(client, snap);
+          } else send(client, await scheduleSnapshot(client.date!));
+        } catch (e) { console.error(e); }
+        return;
+      }
       const s = await courtSnapshot(court);
       if (!s) { send(client, { type: 'error', error: `unknown court "${court}"` }); return; }
       await broadcastCourt(court); // full snapshot on (re)connect = resync
@@ -1241,13 +1298,18 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
     return json(res, 200, { today, days: rows });
   }
   if (p === '/api/public/schedule') {
-    return json(res, 200, publicView(await scheduleSnapshot(resolveScheduleDay({ day: u.searchParams.get('day'), date: u.searchParams.get('date') }, Date.now()))));
+    const q = { day: u.searchParams.get('day'), date: u.searchParams.get('date') };
+    const now = Date.now();
+    const date = scheduleQueryGiven(q) ? resolveScheduleDay(q, now) : await defaultScheduleDay(pool, now);
+    return json(res, 200, publicView(await scheduleSnapshot(date)));
   }
   // Mon–Thu practice displays: the fixed weekly schedule + league-local "now" (day of week 0–6, HH:MM).
+  // display is the next day that has practice slots of either kind (the screen then picks its own kind).
   if (p === '/api/public/practice') {
     const now = (await pool.query(`SELECT extract(isodow FROM $2::timestamptz AT TIME ZONE $1)::int % 7 AS dow, to_char($2::timestamptz AT TIME ZONE $1, 'HH24:MI') AS hm, to_char($2::timestamptz AT TIME ZONE $1, 'YYYY-MM-DD') AS date`, [LEAGUE_TZ, new Date()])).rows[0];
     const sched = await loadPractice(pool);
-    return json(res, 200, { serverNow: Date.now(), now: { dow: now.dow, hm: now.hm, date: now.date }, days: sched.days,
+    const display = practiceDisplayOf(sched, null, now.date, Number(now.dow));
+    return json(res, 200, { serverNow: Date.now(), now: { dow: Number(now.dow), hm: now.hm, date: now.date }, display, days: sched.days,
       basketball: sched.basketball.map(({ teamId, ...x }) => x), cheer: sched.cheer.map(({ squadId, slotId, ...x }) => x) });
   }
   // ---- everything below needs the admin session

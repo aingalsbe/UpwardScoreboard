@@ -100,6 +100,11 @@ export function planLobby(games, cheerSlots = []) {
 export const COURT_LABEL = { west: 'WEST COURT', east: 'EAST COURT', full: 'FULL COURT' };
 /** Text for an empty court: a later game exists -> "No game right now"; nothing left on that court today -> "No more games on this court". */
 export const emptyNote = (plan, court) => (plan.remaining?.[court] ? 'No game right now' : 'No more games on this court');
+/** Idle heading. A future shown day is a preview: never "No more games today" / "No games today". */
+export function idleTitle(hadGames, shownDate, realToday) {
+  if (realToday && shownDate > realToday) return hadGames ? 'No more games' : 'No games scheduled';
+  return hadGames ? 'No more games today' : 'No games today';
+}
 
 // ---- Demo mode (?at=YYYY-MM-DDTHH:MM or ?day=fri|sat&at=HH:MM) and the idle screen. Read-only, client-side. ----
 const dowOfDate = (d) => new Date(`${d}T12:00:00Z`).getUTCDay();
