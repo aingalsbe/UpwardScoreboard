@@ -97,7 +97,7 @@ function renderIdle() {
 function render() {
   const games = demo ? demoGames(snap.games || [], demo.at) : snap.games || [];
   const p = planLobby(games, snap.cheerSlots || []);
-  document.querySelector('[data-bind="header"]').textContent = headerText(snap.date, p.header, demo ? null : realToday()); // another day: dated header (demo ?at keeps the old one)
+  document.querySelector('[data-bind="header"]').textContent = headerText(snap.date, p.header, demo ? undefined : (snap.today || null)); // R26: league date from the same snapshot; unknown -> dated; demo ?at keeps the old one
   document.querySelector('[data-bind="sub"]').textContent = `${snap.church?.name || 'Lenexa Baptist Church'} · Upward Basketball`.toUpperCase();
   root.dataset.empty = String(p.empty);
   if (p.empty) return renderIdle();
@@ -127,7 +127,6 @@ async function start() {
     const tag = document.createElement('div'); tag.className = 'demo-tag'; tag.dataset.bind = 'demo';
     tag.textContent = demoTag(date || demo.date || new Date().toISOString().slice(0, 10), demo.at); document.body.append(tag);
   }
-  if (!demo) loadGameDays().then(() => { if (snap) render(); }); // real today for the dated header
   conn = connect({
     court: '*', role: 'schedule', query: query.toString(),
     onState: (m) => { if (m.kind === 'schedule') { snap = m; render(); } },

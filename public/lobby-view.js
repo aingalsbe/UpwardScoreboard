@@ -13,10 +13,11 @@ const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 
 /** "2026-10-24", "11:00" -> "SATURDAY 11:00 AM" (the lobby header). */
 const DOW3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MON3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-/** Lobby header. Today (or today unknown): "FRIDAY 5:15 PM". Another day (realToday given and != date): "FRI JAN 15 · 5:15 PM". */
-export const headerText = (date, hm, realToday = null) => {
+/** Lobby header. Shown day == realToday: "FRIDAY 5:15 PM". Another day: "FRI JAN 15 · 5:15 PM".
+ *  realToday = the server's league date from the same snapshot (R26). undefined = old style (demo); null/'' = unknown -> dated. */
+export const headerText = (date, hm, realToday) => {
   const d = new Date(`${date}T12:00:00Z`);
-  if (realToday && date !== realToday) return `${DOW3[d.getUTCDay()]} ${MON3[d.getUTCMonth()]} ${d.getUTCDate()}${hm ? ' · ' + ampm(hm) : ''}`;
+  if (realToday !== undefined && date !== realToday) return `${DOW3[d.getUTCDay()]} ${MON3[d.getUTCMonth()]} ${d.getUTCDate()}${hm ? ' · ' + ampm(hm) : ''}`;
   return `${DAYS[d.getUTCDay()]}${hm ? ' ' + ampm(hm) : ''}`;
 };
 /** Period label, same scheme as every screen (common.js periodLabel): "1st Half · P2", "2nd Half · P5", OT, OT2. */

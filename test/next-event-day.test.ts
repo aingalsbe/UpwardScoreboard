@@ -324,7 +324,12 @@ test('DB: no-param schedule is the next game day; practice display follows slots
   srv = night.srv; PORT = night.port; BASE = `http://127.0.0.1:${PORT}`;
   const auto2 = open('court=*&role=schedule');
   const stay = open('court=*&role=schedule&date=2027-01-15');
-  await Promise.all([auto2.ready, stay.ready]);
+  const satTv = open('court=*&role=schedule&date=2027-01-16'); // R26-1: a TV already on Saturday, open across midnight
+  await Promise.all([auto2.ready, stay.ready, satTv.ready]);
+  const { headerText } = await lobbyView();
+  const hdr = (st: any) => headerText(st.date, '08:00', st.today || null);
+  assert.equal((satTv.states[0] as any).today, '2027-01-15', 'snapshot carries the league date (test clock)');
+  assert.equal(hdr(satTv.states[0]), 'SAT JAN 16 \u00b7 8:00 AM', 'before midnight Saturday is another day');
   assert.equal(auto2.states[0].date, '2027-01-15');
   assert.ok(auto2.states[0].serverNow < MIDNIGHT, `test-clock lead too short (serverNow ${new Date(auto2.states[0].serverNow).toISOString()})`);
   auto2.ws.send(JSON.stringify({ type: 'resync' }));
@@ -336,6 +341,12 @@ test('DB: no-param schedule is the next game day; practice display follows slots
   stay.ws.send(JSON.stringify({ type: 'resync' }));
   await until(() => stay.states.length >= 2, 5000, 'explicit resync after midnight');
   assert.ok(stay.states.every((s) => s.date === '2027-01-15'), 'explicit date stays after midnight');
+  // R26-1: with no schedule change, every screen still gets a snapshot with the new league date after midnight.
+  await until(() => satTv.states.some((s: any) => s.today === '2027-01-16'), 10_000, 'Saturday TV hears the new league date');
+  const after = satTv.states.find((s: any) => s.today === '2027-01-16')!;
+  assert.equal(after.date, '2027-01-16');
+  assert.equal(hdr(after), 'SATURDAY 8:00 AM', 'own game day after midnight: undated header');
+  assert.ok(auto2.states.some((s: any) => s.date === '2027-01-22' && s.today === '2027-01-16'));
   for (const s of sockets) s.close();
   sockets.length = 0;
   assert.doesNotMatch(night.log(), /TypeError|UnhandledPromise|unhandled/i);

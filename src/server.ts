@@ -291,7 +291,7 @@ async function gameViewNorm(gameId: number) {
 }
 
 // -------------------------------------------------------------- websockets
-interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule' | 'season'; authed: boolean; qrVer?: number | null; date?: string; /** No day/date param: follow the next game day. */ auto?: boolean; /** League-local date `date` was last resolved against. */ autoToday?: string; }
+interface Client { ws: WebSocket; court: string; role: 'tv' | 'overlay' | 'score' | 'viewer' | 'schedule' | 'season'; authed: boolean; qrVer?: number | null; date?: string; /** No day/date param: follow the next game day. */ auto?: boolean; /** League-local date `date` was last resolved against. */ autoToday?: string; /** `today` of the last schedule snapshot sent. */ sentToday?: string; }
 const clients = new Set<Client>();
 
 /**
@@ -301,7 +301,12 @@ const clients = new Set<Client>();
 function forRole(c: Client, msg: any) {
   return c.role === 'score' ? scorekeeperView(msg) : publicView(msg);
 }
-function send(c: Client, msg: unknown) { if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(forRole(c, msg))); }
+function send(c: Client, msg: unknown) {
+  if (c.ws.readyState !== WebSocket.OPEN) return;
+  const m = msg as { kind?: string; today?: string };
+  if (m && m.kind === 'schedule' && m.today) c.sentToday = m.today; // the league date this screen last heard (R26-1)
+  c.ws.send(JSON.stringify(forRole(c, msg)));
+}
 
 // Schedule screens subscribe to every court: any court broadcast (score, status, load/complete) or schedule
 // change (import, edit, delete, season) refreshes them, coalesced to one snapshot per day every 150 ms.
@@ -328,22 +333,23 @@ function scheduleChanged() {
 }
 // Midnight CT: nothing else pushes a schedule snapshot, so auto lobbies re-check the league date on the
 // same 2s cadence as the socket heartbeat. The day changes only when the resolved date changes.
+// R26-1: every schedule screen (auto or explicit date) gets a fresh snapshot when the league date changes, so the
+// header's "today" (snapshot.today) is never yesterday's. Auto screens also re-resolve their day first.
 let rollingAuto = false;
+const staleToday = (c: Client, today: string) => c.role === 'schedule' && ((c.auto && c.autoToday && c.autoToday !== today) || (c.sentToday && c.sentToday !== today));
 async function rollAutoScheduleDays(): Promise<void> {
   const today = localDate(Date.now());
-  const autos = [...clients].filter((c) => c.role === 'schedule' && c.auto && c.autoToday && c.autoToday !== today);
-  if (!autos.length) return;
-  const before = new Map(autos.map((c) => [c, c.date]));
-  await refreshAutoScheduleDays();
-  const moved = autos.filter((c) => c.date && c.date !== before.get(c));
-  if (!moved.length) return;
-  const snap = await scheduleSnapshot(moved[0].date!);
-  for (const c of moved) if (c.date === snap.date) send(c, snap);
+  const stale = [...clients].filter((c) => staleToday(c, today));
+  if (!stale.length) return;
+  if (stale.some((c) => c.auto)) await refreshAutoScheduleDays();
+  const byDate = new Map<string, Client[]>();
+  for (const c of stale) if (c.date) byDate.set(c.date, [...(byDate.get(c.date) || []), c]);
+  for (const [date, list] of byDate) { const snap = await scheduleSnapshot(date); for (const c of list) send(c, snap); }
 }
 setInterval(() => {
   if (rollingAuto) return;
   const today = localDate(Date.now());
-  if (![...clients].some((c) => c.role === 'schedule' && c.auto && c.autoToday && c.autoToday !== today)) return;
+  if (![...clients].some((c) => staleToday(c, today))) return;
   rollingAuto = true;
   void rollAutoScheduleDays().catch((e) => console.error(e)).finally(() => { rollingAuto = false; });
 }, 2000).unref();
@@ -866,7 +872,7 @@ async function scheduleSnapshot(date: string) {
   const cheerSlots = (await pool.query(`SELECT s.id, to_char(s.slot_start, 'HH24:MI') AS start, s.locker, q.id AS squad_id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo
     FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date = $1::date ORDER BY s.slot_start`, [date])).rows
     .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: x.locker || null, logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
-  return { type: 'state', kind: 'schedule', serverNow: Date.now(), date, cheerSlots, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season: { ...season }, games };
+  return { type: 'state', kind: 'schedule', serverNow: Date.now(), today: localDate(Date.now()), date, cheerSlots, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season: { ...season }, games };
 }
 
 /**
