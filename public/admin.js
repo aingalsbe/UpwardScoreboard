@@ -450,7 +450,7 @@ async function reschedPreview() {
   if (seq !== rsSeq) return;
   const p = r.preview, cheer = (x) => (x ? esc(x) : 'no cheer');
   out.innerHTML = (p ? `<p>Cheer at the old hour (${esc(p.from?.label || '—')}): <b>${cheer(p.from?.cheer)}</b><br>Cheer at the new hour (${esc(p.to.label)}): <b>${cheer(p.to.cheer)}</b>
-    <br><small>Cheer is per hour and shared by both courts, so it does not move with the game.</small></p>` : '')
+    <br><small>Cheer is per hour, not a court, so it does not move with the game.</small></p>` : '')
     + ((r.errors || []).length ? `<ul class="errors" data-bind="conflicts">${r.errors.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="ok" data-bind="conflicts">No conflicts.</p>');
   save.disabled = !!(r.errors || []).length;
 }

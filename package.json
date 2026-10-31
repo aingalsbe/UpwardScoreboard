@@ -12,7 +12,9 @@
     "smoke": "node scripts/smoke.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "seed:demo": "node dist/src/seed-demo.js",
-    "seed:demo:reset": "node dist/src/seed-demo.js --reset"
+    "seed:demo:reset": "node dist/src/seed-demo.js --reset",
+    "seed:season": "node dist/src/seed-season.js",
+    "seed:season:dry": "node dist/src/seed-season.js --dry-run"
   },
   "engines": {
     "node": ">=20"

@@ -88,6 +88,10 @@ On the dev box Docker inter-container traffic was blocked by a leftover `iptable
 
 No wipe needed: on start, `court-1`/`court-2` are renamed to `west`/`east` (games kept), `full` is added with `conflicts_with = west east`, statuses live/final become active/complete, and new columns get defaults. Idempotent. For a fresh demo seed: `docker compose down -v`.
 
+## Real 2027 season
+
+`npm run seed:season:dry` parses `data/season-2027/` and prints the counts, then rolls the transaction back (nothing is written). `npm run seed:season` replaces demo data, or a previous 2027 import, with the real season. If the database already has other games, it refuses until you pass `--reset` (`node dist/src/seed-season.js --reset`). The importer does not change season colors or `season_name` (stays `2026–27 Upward`). The server does not import this season unless `SEED=season`.
+
 ## Laptop demo (Windows)
 
 See DEMO.md: `Start-Demo.ps1` / `Stop-Demo.ps1`, demo data via `SEED=demo` (in the committed dev-only `.env.demo`) or `docker compose exec app npm run seed:demo[:reset]`.

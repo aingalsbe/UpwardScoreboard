@@ -32,11 +32,16 @@ test('cheer-slot-conflict lists the candidate squads', () => {
 });
 
 test('cheer grade/day rule is checked for every game in a cheer slot', () => {
-  // Saturday 2026-10-24: a 2nd grade West game is fine; a 5th grade Full game in a cheer slot is not; Friday is not.
-  const w = scheduleWarnings([G(1, '2026-10-24', '09:00', 'west', '2nd Grade', 'Pep'), G(2, '2026-10-24', '09:00', 'full', '5th Grade', 'Pep'), G(3, '2026-10-23', '18:00', 'full', '3rd Grade', 'Pep')]);
+  // Saturday 2026-10-24: 2nd West and 5th Full (including 5 PM) are allowed. Friday is not.
+  const w = scheduleWarnings([
+    G(1, '2026-10-24', '09:00', 'west', '2nd Grade', 'Pep'),
+    G(2, '2026-10-24', '17:00', 'full', '5th Grade', 'Pep'),
+    G(3, '2026-10-23', '18:00', 'full', '3rd Grade', 'Pep'),
+  ]);
   const c = w.filter((x) => x.code === 'cheer-not-allowed');
-  assert.deepEqual(c.map((x) => x.gameId), [2, 3]);
-  assert.match(c[0].message, /cheer slot at 09:00 \(Pep\)/);
+  assert.deepEqual(c.map((x) => x.gameId), [3]);
+  assert.match(c[0].message, /Saturday/);
+  assert.match(c[0].message, /cheer slot at 18:00 \(Pep\)/);
 });
 
 const payload = () => ({

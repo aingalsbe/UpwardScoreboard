@@ -6,6 +6,8 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 COPY test ./test
+COPY public ./public
+COPY data/season-2027 ./data/season-2027
 RUN npx tsc -p . && node --test dist/test/
 
 FROM node:20-alpine
@@ -20,6 +22,7 @@ COPY public ./public
 COPY deliverables/logos/manifest.json ./deliverables/logos/
 COPY deliverables/logos/teams ./deliverables/logos/teams
 COPY deliverables/logos/cheer ./deliverables/logos/cheer
+COPY data/season-2027 ./data/season-2027
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1

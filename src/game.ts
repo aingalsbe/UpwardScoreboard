@@ -6,7 +6,7 @@ export type Side = 'home' | 'away';
 
 export interface Rules {
   periods: number;          // regulation periods; the game is split into two halves of ceil(periods/2)
-  periodLengthMs: number;   // e.g. 8 min
+  periodLengthMs: number;   // e.g. 6 min
   timeoutsPerGame: number;  // legacy per-game allotment (used when timeoutsPerHalf is not set)
   /** Timeouts per half, refilled at halftime (2026-10). Unset/0 = legacy per-game timeouts. */
   timeoutsPerHalf?: number;

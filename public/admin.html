@@ -118,7 +118,7 @@
       </form>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Name</th><th>Coach</th><th>Slots</th><th></th></tr></thead><tbody id="squad-rows"></tbody></table></div>
       <h2>Cheer by time slot</h2>
-      <p class="muted">One squad per hour, shared by West, East and Full. A game belongs to the hour it starts in (9:05 is in the 9:00 slot). "None" = no cheer that hour.</p>
+      <p class="muted">One squad per hour. Cheer is not on a court: the squad cheers for every game that starts in that hour. A game belongs to the hour it starts in (9:05 is in the 9:00 slot). "None" = no cheer that hour.</p>
       <label class="grade-filter">Date <input type="date" id="slot-date"></label>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Hour</th><th>Games</th><th>Squad</th><th>Locker room</th><th></th></tr></thead><tbody id="slot-rows"></tbody></table></div>
       <div class="schedule-warnings slot-warnings" data-slot-warnings role="status" aria-live="polite" hidden></div>
@@ -153,7 +153,7 @@
         </div>
         <div class="card">
           <h3>Cheer slots</h3>
-          <p class="muted">Columns: <code>date, time, squad, locker</code>. One squad per hour (all courts); matched by date + hour. A blank squad removes the cheer for that hour.</p>
+          <p class="muted">Columns: <code>date, time, squad, locker</code>. One squad per hour, matched by date + hour (not by court). A blank squad removes the cheer for that hour.</p>
           <p><a class="button" href="/api/export/cheer_slots.csv">Export cheer_slots.csv</a></p>
           <input type="file" id="import-cheer-slots" accept=".csv,text/csv">
         </div>

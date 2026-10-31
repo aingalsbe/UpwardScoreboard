@@ -81,13 +81,16 @@ test('the seeded schedule has no warnings; each rule warns', () => {
   const twice = scheduleWarnings([base, { ...base, id: 2, date: '2026-10-16', startMin: 18 * 60, court: 'full', awayId: 3, away: 'Lady Sparks' }]);
   assert.equal(twice.filter((x) => x.code === 'team-twice-weekend').length, 2); assert.match(twice[0].message, /Lady Stars plays 2 times this weekend/);
   assert.deepEqual(scheduleWarnings([base, { ...base, id: 2, date: '2026-10-24', homeId: 1, awayId: 9 }]), []); // next weekend: fine
-  assert.equal(scheduleWarnings([{ ...base, startMin: 15 * 60 + 30 }])[0].code, 'split-outside-hours'); // ends 16:30
+  assert.equal(scheduleWarnings([{ ...base, startMin: 21 * 60 }])[0].code, 'split-outside-hours'); // 21:00–22:00
+  assert.match(scheduleWarnings([{ ...base, startMin: 21 * 60 }])[0].message, /08:00–21:15/);
   assert.equal(scheduleWarnings([{ ...base, startMin: 7 * 60 }])[0].code, 'split-outside-hours');
   assert.deepEqual(scheduleWarnings([{ ...base, startMin: 15 * 60 }]), []); // 15:00–16:00 is fine
+  assert.deepEqual(scheduleWarnings([{ ...base, startMin: 20 * 60 + 15 }]), []); // 20:15–21:15 is inside
   assert.equal(scheduleWarnings([{ ...base, court: 'full', startMin: 9 * 60 }]).length, 0); // Full court: no hours rule
-  assert.match(scheduleWarnings([{ ...base, hasCheer: true, grade: '5th-6th Grade' }])[0].message, /2nd–4th grade/);
-  assert.match(scheduleWarnings([{ ...base, hasCheer: true, date: '2026-10-16' }])[0].message, /Saturday split-court/);
-  assert.match(scheduleWarnings([{ ...base, hasCheer: true, court: 'full' }])[0].message, /Saturday split-court/);
+  assert.deepEqual(scheduleWarnings([{ ...base, hasCheer: true, grade: '5th-6th Grade' }]), []); // K–6th, including 5th–6th and Full
+  assert.match(scheduleWarnings([{ ...base, hasCheer: true, grade: '7th Grade' }])[0].message, /6th grade/);
+  assert.match(scheduleWarnings([{ ...base, hasCheer: true, date: '2026-10-16' }])[0].message, /Saturday/);
+  assert.deepEqual(scheduleWarnings([{ ...base, hasCheer: true, court: 'full' }]), []); // Saturday Full is allowed
   assert.deepEqual(scheduleWarnings([{ ...base, hasCheer: true }]), []);
 });
 

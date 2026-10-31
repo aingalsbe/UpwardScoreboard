@@ -1,7 +1,7 @@
 // Pure selection for the lobby TV (no DOM), shared with the unit tests (test/lobby-view.test.ts).
 // Per court: the live game plus exactly ONE next game, or just the next game when nothing is live there.
 // Full Court shares the floor with West/East, so a band is either "full" (one panel spanning both) or "split".
-// Cheer is one squad per time slot (league date + hour), shared by every court; a slot without a squad has no row.
+// Cheer is one squad per time slot (league date + hour), not a court; a slot without a squad has no row.
 
 const SPLIT = ['west', 'east'];
 const byTime = (a, b) => (a.time || '').localeCompare(b.time || '') || a.id - b.id;

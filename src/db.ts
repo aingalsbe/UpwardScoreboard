@@ -105,9 +105,9 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- Locker rooms change every week: free text per game and side ('CH', '2'), no default.
 ALTER TABLE games ADD COLUMN IF NOT EXISTS home_locker TEXT CHECK (home_locker IS NULL OR length(home_locker) <= 8),
   ADD COLUMN IF NOT EXISTS away_locker TEXT CHECK (away_locker IS NULL OR length(away_locker) <= 8);
--- One coach per team for the whole season, first name only (pages render "Coach <name>"; never on the scorekeeper).
+-- One coach per team for the whole season, full name (pages render "Coach <name>"; never on the scorekeeper).
 ALTER TABLE teams ADD COLUMN IF NOT EXISTS coach TEXT CHECK (coach IS NULL OR length(coach) <= 30);
--- Cheer squads (season-long: name, coach first name, logo). The logo moved here from games.cheer_logo_*.
+-- Cheer squads (season-long: name, coach full name, logo). The logo moved here from games.cheer_logo_*.
 CREATE TABLE IF NOT EXISTS cheer_squads (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 40),
@@ -529,6 +529,7 @@ export async function seedDemo(mode: 'if-needed' | 'reset', nowMs = Date.now()):
   try {
     await client.query('BEGIN');
     await client.query('TRUNCATE game_events, cheer_slots, cheer_squads, games, teams, courts RESTART IDENTITY CASCADE');
+    await client.query(`DELETE FROM settings WHERE key = 'season_data'`); // demo reset clears the real-season marker
     for (const [k, v] of [['season_name', '2026–27 Upward'], ['season_dark', '#800000'], ['season_light', '#ffc72c']]) {
       await client.query('INSERT INTO settings(key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
     }

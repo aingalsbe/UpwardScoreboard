@@ -15,6 +15,7 @@ import { Limiter } from './limits.js';
 import { GAME_MINUTES, parseConflicts, normalizeGrade, normalizeDivision, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings, gameTimeErrors, isIsoDate } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
+import { seedSeason, SeasonRefusedError } from './seed-season.js';
 import { loadPractice, validatePractice, savePractice, droppedSlots } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
@@ -188,7 +189,7 @@ async function loadSeason() {
   if (!HEX6.test(season.cheerPrimary)) season.cheerPrimary = season.light;
   if (!HEX6.test(season.cheerSecondary)) season.cheerSecondary = season.dark;
 }
-/** The cheer squad of the game's time slot (one per hour, shared by every court), or null. Coach = first name only. */
+/** The cheer squad of the game's time slot (one per hour, not a court), or null. Coach = first name only. */
 function cheerView(r: any) {
   if (!r.cheer_squad_id) return null;
   return { squadId: r.cheer_squad_id, name: r.cheer_squad, logo: r.cheer_squad_has_logo ? `/logos/squad/${r.cheer_squad_id}` : r.cheer_squad_logo_url || null,
@@ -804,7 +805,7 @@ async function scheduleSnapshot(date: string) {
       ...(s ? { period: s.period, periods: s.rules.periods, clock: s.clock } : {}),
     });
   }
-  // The day's cheer slots (one squad per hour, all courts); the lobby shows one cheer row spanning the courts.
+  // The day's cheer slots (one squad per hour; the slot has no court). The lobby shows one unlabeled cheer row.
   const cheerSlots = (await pool.query(`SELECT s.id, to_char(s.slot_start, 'HH24:MI') AS start, s.locker, q.id AS squad_id, q.name, q.coach, q.logo_url, (q.logo_data IS NOT NULL) AS has_logo
     FROM cheer_slots s JOIN cheer_squads q ON q.id = s.squad_id WHERE s.date = $1::date ORDER BY s.slot_start`, [date])).rows
     .map((x) => ({ id: x.id, start: x.start, squadId: x.squad_id, name: x.name, coach: x.coach || null, locker: x.locker || null, logo: x.has_logo ? `/logos/squad/${x.squad_id}` : x.logo_url || null }));
@@ -1649,8 +1650,22 @@ async function main() {
       console.log('waiting for Postgres...'); await new Promise((r) => setTimeout(r, 1000));
     }
   }
+  // A loaded real season (settings.season_data, written by seed-season) blocks the demo seeds: .env/.env.demo ship SEED=demo.
+  const realSeason = (await pool.query(`SELECT value FROM settings WHERE key = 'season_data'`)).rows[0]?.value;
+  if (realSeason && (process.env.SEED === 'true' || process.env.SEED === 'demo')) console.log(`SEED=${process.env.SEED} ignored: real ${realSeason} season is loaded (npm run seed:demo:reset to go back to demo data).`);
+  else {
   if (process.env.SEED === 'true' && (await seedIfEmpty())) console.log('Seeded demo teams, courts and games.');
   if (process.env.SEED === 'demo' && (await seedDemo('if-needed'))) console.log('Seeded laptop demo data for today.\n' + formatReport(await loadLogos(pool)));
+  }
+  // Opt-in only. Default, SEED=true and SEED=demo never load the 2027 CSVs. Already loaded: leave live scores alone.
+  if (process.env.SEED === 'season') {
+    try {
+      console.log((await seedSeason({ ifNeeded: true })).report);
+    } catch (e) {
+      if (e instanceof SeasonRefusedError) console.error(e.message);
+      else throw e;
+    }
+  }
   await migrateColors(); // seeds write lowercase hex; normalize to #RRGGBB (idempotent)
   await loadSeason();
   attachWs(server);

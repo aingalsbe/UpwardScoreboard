@@ -1,6 +1,7 @@
 // Shared-floor scheduling rules. One gym floor: Full, or West + East at the same time.
 // A court lists the courts it can't run alongside (courts.conflicts_with, slugs); the rule is
 // symmetric, so Full -> [west, east] is enough. West and East don't list each other, so they may overlap.
+import { seasonConfig } from './season-config.js';
 
 /** Default game length in minutes (start time + this = end). Env GAME_MINUTES; per-game games.duration_min overrides. */
 export const GAME_MINUTES = (() => { const n = Number(process.env.GAME_MINUTES); return Number.isInteger(n) && n > 0 && n <= 600 ? n : 60; })();
@@ -172,7 +173,8 @@ export function resolveScheduleDay(q: { day?: string | null; date?: string | nul
 
 // ---- Schedule validation warnings (import + Admin). Warnings, not errors.
 export const SPLIT_COURTS = ['west', 'east'];
-export const SPLIT_START_MIN = 8 * 60, SPLIT_END_MIN = 16 * 60;
+/** West/East warning window (seasonConfig). Not the hard tip-off limit (GAME_TIP_WINDOW). */
+export const SPLIT_START_MIN = seasonConfig.SPLIT_START_MIN, SPLIT_END_MIN = seasonConfig.SPLIT_END_MIN;
 export type WarnGame = {
   id: number; date: string | null; startMin: number | null; durMin: number; court: string | null;
   grade: string | null; label: string | null; homeId: number; awayId: number; home: string; away: string;
@@ -227,11 +229,13 @@ export function scheduleWarnings(games: WarnGame[]): Warning[] {
   for (const g of games) {
     const split = !!g.court && SPLIT_COURTS.includes(g.court);
     const inHours = g.startMin != null && g.startMin >= SPLIT_START_MIN && g.startMin + g.durMin <= SPLIT_END_MIN;
-    if (split && g.startMin != null && !inHours) out.push({ gameId: g.id, code: 'split-outside-hours', message: `game #${g.id} on ${g.court} at ${hhmm(g.startMin)}–${hhmm(g.startMin + g.durMin)} is outside the split-court hours 08:00–16:00` });
+    if (split && g.startMin != null && !inHours) out.push({ gameId: g.id, code: 'split-outside-hours', message: `game #${g.id} on ${g.court} at ${hhmm(g.startMin)}–${hhmm(g.startMin + g.durMin)} is outside the split-court hours ${seasonConfig.SPLIT_START}–${seasonConfig.SPLIT_END}` });
     if (g.hasCheer) {
       const go = gradeOrder(g.grade);
-      const why = !(go >= 0 && go <= 4) ? `cheer squads are for 2nd–4th grade (this is ${g.grade || 'no grade'})`
-        : !(g.date && dowOf(g.date) === 6 && split && inHours) ? 'cheer squads are only on Saturday split-court games (West/East, 08:00–16:00)' : null;
+      // Cheer is a time slot, not a court: Saturday, kindergarten through 6th, West, East or Full, inside the split window.
+      const courtOk = g.court === 'full' || split;
+      const why = !(go >= 0 && go <= 6) ? `cheer squads cover kindergarten through 6th grade (this is ${g.grade || 'no grade'})`
+        : !(g.date && dowOf(g.date) === 6 && courtOk && inHours) ? `cheer squads are only on Saturday games (${seasonConfig.SPLIT_START}–${seasonConfig.SPLIT_END}, West/East/Full)` : null;
       const slot = g.startMin != null ? ` at ${hhmm(slotStartMin(g.startMin))}` : '';
       if (why) out.push({ gameId: g.id, code: 'cheer-not-allowed', message: `game #${g.id} (${g.home} vs ${g.away}) is in the cheer slot${slot}${g.cheer ? ' (' + g.cheer + ')' : ''}: ${why}` });
     }
@@ -314,8 +318,8 @@ export function demoSeedPlan(w: { fri: string; sat: string }): SeedGame[] {
 
 /**
  * Game-day tip-off window (league-local), used by reschedule and by a plain edit that changes the time.
- * No per-day game hours are configured anywhere else (split-court 08:00–16:00 is only a warning), so this is the
- * DEFAULT for Aaron to confirm: first tip 08:00, last tip 21:00 (inclusive), Friday and Saturday only.
+ * No per-day game hours are configured anywhere else (a West/East game outside the seasonConfig split window is
+ * only a warning), so this is the DEFAULT for Aaron to confirm: first tip 08:00, last tip 21:00 (inclusive), Friday and Saturday only.
  */
 export const GAME_DAYS = [5, 6] as const; // Fri, Sat
 export const GAME_TIP_WINDOW = { first: '08:00', last: '21:00' } as const;
