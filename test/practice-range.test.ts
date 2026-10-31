@@ -89,6 +89,15 @@ test('practiceDisplayDay == practiceDisplayOf with a range: before -> Mon Jan 4 
   assert.equal(planPractice(data, 'basketball', 1, '17:30', 'future').mode, 'practice');
 });
 
+test('previewDateLabel: dated header only for a preview 7+ days ahead (QA R28 N2)', async () => {
+  const { previewDateLabel } = await pv();
+  assert.equal(previewDateLabel('2027-01-04', '2026-10-30'), 'MON JAN 4');
+  assert.equal(previewDateLabel('2027-01-11', '2027-01-04'), 'MON JAN 11');
+  assert.equal(previewDateLabel('2027-01-04', '2027-01-01'), null, 'Fri -> Mon is this coming week');
+  assert.equal(previewDateLabel('2027-01-04', '2027-01-04'), null);
+  assert.equal(previewDateLabel(null, '2027-01-04'), null);
+});
+
 test('locker rooms: fixed court rule (Cheer 1; West/Full CH-5; East 2-3); a stored locker overrides', () => {
   assert.deepEqual(LOCKER_ROOMS, { cheer: '1', west: { home: 'CH', away: '5' }, east: { home: '2', away: '3' }, full: { home: 'CH', away: '5' } });
   assert.equal(teamLocker('west', 'home'), 'CH'); assert.equal(teamLocker('west', 'away'), '5');
@@ -97,6 +106,9 @@ test('locker rooms: fixed court rule (Cheer 1; West/Full CH-5; East 2-3); a stor
   assert.equal(teamLocker(null, 'home'), null); assert.equal(teamLocker('nope', 'away'), null);
   assert.equal(teamLocker('east', 'home', '7'), '7', 'override wins');
   assert.equal(cheerLocker(null), '1'); assert.equal(cheerLocker(' '), '1'); assert.equal(cheerLocker('4'), '4');
+  // QA R28 N3: a stored "0" (or blank) means none -> the rule; "10" is a real room.
+  assert.equal(teamLocker('west', 'away', '0'), '5'); assert.equal(teamLocker('east', 'home', ' 00 '), '2'); assert.equal(teamLocker('east', 'home', '\t'), '2');
+  assert.equal(teamLocker('east', 'home', '10'), '10'); assert.equal(cheerLocker('0'), '1'); assert.equal(cheerLocker('20'), '20');
 });
 
 // ---------------------------------------------------------------- DB + server + browser
@@ -177,14 +189,14 @@ test('DB: importer writes practice_start/end; /api/public/practice + lobby/pract
     // The bug: Jan 16 at 20:05 (real clock Oct 30) said "Next: Practice Monday, Nov 2".
     assert.equal(await text(base + '/lobby?date=2027-01-16&at=20:05', '[data-bind="idle-next"]', /Next:/), 'Next: Practice Monday, Jan 18 · 5:00 PM');
     assert.equal(await text(base + '/lobby?date=2027-01-16&at=20:05', '[data-bind="idle-title"]'), 'No more games');
-    // Lobby cards: Sat 8:10 split (West CH/5, East 2/3, cheer 1); Sat 16:40 Full (CH/5); tip-off band keeps lockers.
+    // Lobby cards: Sat 8:10 split (West CH/5, East 2/3, cheer 1); Full (CH/5); pill text = textContent; tip-off band keeps lockers.
     const lockers = async (url: string) => {
       await page.goto(url); await page.waitForSelector('[data-row="home"]', { timeout: 15_000 }); await page.waitForTimeout(800);
-      return page.$$eval('[data-row]', (rows: any[]) => rows.map((r) => `${r.dataset.row}:${r.querySelector('[data-bind="locker"] b')?.textContent || ''}`).join(' '));
+      return page.$$eval('[data-row]', (rows: any[]) => rows.map((r) => `${r.dataset.row}:${[...(r.querySelector('[data-bind="locker"]')?.children || [])].map((c: any) => c.textContent.trim()).join(' ')}`).join(' | '));
     };
-    assert.equal(await lockers(base + '/lobby?date=2027-01-16&at=08:10'), 'home:CH away:5 home:2 away:3 cheer:1 home:CH away:5 home:2 away:3 cheer:1');
-    assert.equal(await lockers(base + '/lobby?date=2027-01-16&at=08:20'), 'home:CH away:5 home:2 away:3 cheer:1 home:CH away:5 home:2 away:3 cheer:1', 'tip-off band');
-    assert.match(await lockers(base + '/lobby?date=2027-01-16&at=14:10'), /^home:CH away:5( cheer:1)? home:CH away:5/);
+    assert.equal(await lockers(base + '/lobby?date=2027-01-16&at=08:10'), 'home:Locker Room CH | away:Locker Room 5 | home:Locker Room 2 | away:Locker Room 3 | cheer:Locker Room 1 | home:Locker Room CH | away:Locker Room 5 | home:Locker Room 2 | away:Locker Room 3 | cheer:Locker Room 1');
+    assert.equal(await lockers(base + '/lobby?date=2027-01-16&at=08:20'), 'home:Locker Room CH | away:Locker Room 5 | home:Locker Room 2 | away:Locker Room 3 | cheer:Locker Room 1 | home:Locker Room CH | away:Locker Room 5 | home:Locker Room 2 | away:Locker Room 3 | cheer:Locker Room 1', 'tip-off band');
+    assert.match(await lockers(base + '/lobby?date=2027-01-16&at=14:10'), /^home:Locker Room CH \| away:Locker Room 5( \| cheer:Locker Room 1)? \| home:Locker Room CH \| away:Locker Room 5/);
     // QA R28: tip-off sits under the coach (not in the score cell); long names + coaches are never clipped/wrapped.
     for (const vp of [{ width: 1920, height: 1080 }, { width: 1280, height: 1024 }, { width: 1080, height: 1920 }]) {
       await page.setViewportSize(vp);
@@ -202,6 +214,50 @@ test('DB: importer writes practice_start/end; /api/public/practice + lobby/pract
       }
       assert.deepEqual(r.map((x) => x.name).sort(), ['Lady Bearcats', 'Lady Cardinals']);
     }
+    // QA R29 (B1) fit-to-height: every band fits the stage (no element below 1080 stage px) and no name is clipped.
+    const fit = async (date: string, at: string) => {
+      await page.goto(`${base}/lobby?date=${date}&at=${at}`);
+      await page.waitForFunction(() => document.documentElement.dataset.empty !== undefined && document.fonts.status === 'loaded', null, { timeout: 15_000 });
+      await page.waitForTimeout(400);
+      return page.evaluate(() => {
+        const br = document.body.getBoundingClientRect(); const k = br.height / 1080; let bottom = 0;
+        for (const el of document.querySelectorAll('main *')) { const r = el.getBoundingClientRect(); if (r.height) bottom = Math.max(bottom, (r.bottom - br.top) / k); }
+        return { slack: Math.round(1080 - bottom), empty: document.documentElement.dataset.empty === 'true', rows: document.querySelectorAll('main [data-row]').length,
+          density: document.documentElement.dataset.density || 'normal', k: document.documentElement.style.getPropertyValue('--fit-k') || '',
+          names: [...document.querySelectorAll('main [data-row]')].map((r: any) => r.querySelector('.name')?.textContent),
+          pills: [...document.querySelectorAll('main [data-bind="locker"]:not([data-empty])')].map((p: any) => [...p.children].map((c: any) => c.textContent.trim()).join(' ')),
+          pillClip: [...document.querySelectorAll('main [data-bind="locker"]:not([data-empty]) *')].filter((e: any) => e.scrollWidth > e.clientWidth + 1).map((e: any) => e.textContent),
+          clipped: [...document.querySelectorAll('main .who .name')].filter((n: any) => n.scrollWidth > n.clientWidth + 1).map((n: any) => n.textContent) };
+      });
+    };
+    const VPS = [[1920, 1080], [1366, 768], [3840, 2160], [1280, 1024], [1080, 1920]];
+    for (const [width, height] of VPS) {
+      await page.setViewportSize({ width, height });
+      for (const at of ['13:05', '14:05']) {
+        const m = await fit('2027-01-16', at);
+        assert.ok(m.slack >= 0, `${at} ${width}x${height} overflows by ${-m.slack}px (${m.density} ${m.k})`);
+        assert.deepEqual(m.clipped, [], `${at} ${width}x${height} clipped names`);
+        assert.ok(m.names.includes('Cheer Angels'), `${at} ${width}x${height} shows the up-next cheer row`);
+        if (at === '14:05') assert.ok(m.names.includes('Firecrackers'), `14:05 ${width}x${height} shows the 2nd cheer squad`);
+        assert.deepEqual(m.pillClip, [], `${at} ${width}x${height} pill text clipped`);
+        assert.ok(m.pills.includes('Locker Room CH') && m.pills.includes('Locker Room 5') && m.pills.includes('Locker Room 1'), `${at} pills: ${m.pills.join(',')}`);
+        assert.ok(m.pills.every((t: string) => /^Locker Room \w+$/.test(t)), m.pills.join(','));
+      }
+    }
+    // Slack scan: every Saturday hour 8:00-20:00 (:00 :05 :35 :50) + Friday 17:00-21:00, at 1920x1080 and 1366x768.
+    const scan: any[] = [];
+    const hrs = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i).flatMap((h) => ['00', '05', '35', '50'].map((mm) => `${String(h).padStart(2, '0')}:${mm}`));
+    for (const [width, height] of [[1920, 1080], [1366, 768]]) {
+      await page.setViewportSize({ width, height });
+      for (const [date, times] of [['2027-01-16', hrs(8, 20)], ['2027-01-15', hrs(17, 21)]] as [string, string[]][]) for (const at of times) {
+        const m = await fit(date, at); if (m.empty) continue;
+        scan.push({ vp: `${width}x${height}`, date, at, pills: m.pills, pillClip: m.pillClip, slack: m.slack, density: m.density, k: m.k, rows: m.rows, clipped: m.clipped });
+        assert.ok(m.slack >= 0, `${date} ${at} ${width}x${height} overflows by ${-m.slack}px`);
+        assert.deepEqual(m.clipped, [], `${date} ${at} ${width}x${height} clipped names`);
+        assert.deepEqual(m.pillClip, [], `${date} ${at} ${width}x${height} pill text clipped`);
+      }
+    }
+    if (process.env.FIT_SCAN_OUT) fs.writeFileSync(process.env.FIT_SCAN_OUT, JSON.stringify(scan, null, 1));
     await page.setViewportSize({ width: 1920, height: 1080 });
     // Mar 6 after the last game: no practice left, no game left -> no line.
     await page.goto(base + '/lobby?date=2027-03-06&at=20:05');
@@ -216,6 +272,10 @@ test('DB: importer writes practice_start/end; /api/public/practice + lobby/pract
     assert.match(await page.textContent('body'), /Starts Monday 5:00 PM/);
     assert.equal(await page.getAttribute('body', 'data-mode'), 'practice');
     assert.equal(await page.getAttribute('body', 'data-day'), 'mon');
+    // QA R28 N2: a preview in a later week carries the date (lobby style).
+    assert.match(((await page.textContent('[data-bind="header"]')) || '').trim(), /^MON JAN 4 · \d{1,2}:00 PM$/);
+    await page.goto(base + '/practice/cheer'); await page.waitForTimeout(2500);
+    assert.equal(((await page.textContent('[data-bind="header"]')) || '').trim(), 'MON JAN 4 CHEER');
 
     // Fri Mar 5, 2027 (after the last practice): idle, no next practice (next line is the Mar 6 games).
     base = await run('2027-03-05T18:00:00-06:00');

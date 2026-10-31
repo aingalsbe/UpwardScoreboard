@@ -5,7 +5,7 @@
 - Today the Lobby (`/lobby`, `/upwardbasketballscores/lobby`, served by `public/lobby.html` + `lobby.js`; data via WebSocket `role=schedule` and `GET /api/public/schedule`) shows **today** when no `?date=`/`?day=` is given: `resolveScheduleDay()` in `src/schedule.ts` falls back to `localDate(now)`. In the off-season that is an empty "No games today" screen.
 - The Practice TVs (`/practice/{cheer,basketball}`, `/upwardbasketballscores/practice/{cheer,basketball}`, `public/practice.html` + `practice.js` + `practice-view.js`; data `GET /api/public/practice`) show today's weekday and go idle outside 60 min before .. 15 min after the practice window.
 - Time is league time America/Chicago (`LEAGUE_TZ`, `localDate`). The test clock (`SCOREBOARD_TEST_CLOCK=1` + `SCOREBOARD_TEST_NOW`, `src/test-clock.ts`) moves server "now".
-- There is **no stored season date range** (no setting/table). Do not add one (no schema change).
+- Originally there was **no stored season date range**. Superseded Oct 30 (R27): the real-season importer stores `settings.practice_start` / `practice_end` (no schema change; see AC11).
 
 ## (b) Goal and acceptance criteria
 With no date/day parameter, Lobby and Practice screens open on the next scheduled day with events, in America/Chicago time.
@@ -23,7 +23,7 @@ Practice
 8. Rollover (decision): today stays selected for the whole league-local day (also after the window ends: show the day's schedule with "Last practice slot tonight", not idle); it moves on at midnight CT (the 60 s poll picks up the new `now.date`).
 9. Preview of a future practice day (e.g. Friday -> Monday) renders that weekday's schedule like the pre-window state: all slots page at 12 s, header "MONDAY" / "MONDAY CHEER", starts text "Monday 5:00 PM" (`Starts Monday 5:00 PM`); no "current" slot. On today before the window it shows the same preview (`Starts 5:00 PM`) instead of idle.
 10. `?day=mon..thu` and `?at=HH:MM` demo parameters behave exactly as before (explicit day wins; `at` alone keeps today).
-11. Season range: none is stored, so practice is unbounded weekly; documented under Known limitations (no schema change).
+11. Season range (updated R27/R29): the real-season importer (`seed:season`) writes `settings.practice_start` / `practice_end` from the practice CSVs' first/last dated rows (2027-01-04 / 2027-03-04); `seed-demo --reset` clears them. With a range, the next-event line and the Practice screens count only practices inside it (before it: preview the first Monday, header dated, e.g. `MON JAN 4 · 5:00 PM`; after it: idle / no practice line). With no range stored (demo data), practice stays unbounded weekly. No schema change (settings rows). Tested in test/practice-range.test.ts.
 
 Both
 12. No console errors and no 5xx for: empty DB, no future games, no practice slots, practice slots for only one kind.

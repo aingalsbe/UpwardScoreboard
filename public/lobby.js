@@ -84,6 +84,7 @@ const cheerBand = (c, slot) => (!c ? '' : `<section class="cheer-band ${slot}" d
 const courtsOf = (band) => (band.layout === 'full' ? ['full'] : ['west', 'east']);
 
 function renderIdle() {
+  delete root.dataset.density; delete root.dataset.fitScaled; root.style.removeProperty('--fit-k');
   const had = (snap.games || []).length > 0;
   document.querySelector('[data-bind="header"]').textContent = 'UPWARD BASKETBALL';
   main.className = 'idle';
@@ -108,6 +109,7 @@ function render() {
     main.innerHTML = `<div class="court" data-court="full">${tab('full')}
 <div class="pair">${p.now ? gameSection(p.now.courts.full, 'now') : ''}${p.next ? nextBar(p.nextTime) + '\n' + gameSection(p.next.courts.full, 'next') : ''}</div></div>`
       + cheerBand(p.cheer.now, 'now') + cheerBand(p.cheer.next, 'next');
+    fitStage();
     return;
   }
   // Split day: band.now (tabs + live per court), cheer for the live slot, UP NEXT bar, band.next, cheer for the next slot.
@@ -117,7 +119,29 @@ function render() {
   const band = (b, slot, withTabs) => `<div class="band ${slot}">\n${courtsOf(b).map((c) => `<div class="court" data-court="${c}">${withTabs ? tab(c) : ''}${slot === 'next' && p.mixed ? label(c) : ''}${gameSection(b.courts[c], slot, emptyNote(p, c))}</div>`).join('\n')}\n</div>`;
   main.innerHTML = (p.now ? band(p.now, 'now', true) + cheerBand(p.cheer.now, 'now') : '')
     + (p.next ? '\n' + nextBar(p.nextTime) + '\n' + band(p.next, 'next', !p.now) + cheerBand(p.cheer.next, 'next') : '');
+  fitStage();
 }
+
+/**
+ * QA R29 fit-to-height: every band (top, cheer rows, UP NEXT + its cheer rows) must fit the 1920x1080 stage.
+ * 3+ bands start at the compact density (smaller locker pills); then step compact -> tight while main overflows;
+ * if tight still overflows, scale <main> down (top-centred) by the missing ratio. Layout px are stage px (the body
+ * transform scales the whole stage uniformly), so the result is the same at every viewport.
+ */
+const STAGE_H = 1080, FIT_MARGIN = 12;
+function mainBottom() { return main.offsetTop + main.scrollHeight; }
+function fitStage() {
+  root.style.removeProperty('--fit-k'); delete root.dataset.fitScaled;
+  const bands = main.querySelectorAll('.band, .cheer-band, .full .pair > .game, .next-bar').length;
+  const steps = bands >= 3 ? ['compact', 'tight'] : ['', 'compact', 'tight'];
+  for (const d of steps) {
+    if (d) root.dataset.density = d; else delete root.dataset.density;
+    if (mainBottom() <= STAGE_H - FIT_MARGIN) return;
+  }
+  const k = Math.max(0.5, (STAGE_H - FIT_MARGIN - main.offsetTop) / main.scrollHeight);
+  root.style.setProperty('--fit-k', k.toFixed(4)); root.dataset.fitScaled = 'true';
+}
+if (document.fonts?.ready) document.fonts.ready.then(() => { if (snap && !root.dataset.empty?.startsWith('t')) fitStage(); });
 
 let conn = { isOpen: () => false, lastServerNow: () => Date.now() };
 async function start() {

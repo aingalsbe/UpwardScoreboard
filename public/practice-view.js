@@ -48,6 +48,18 @@ export function practiceDisplayDay(data, kind, today, todayDow) {
 }
 
 /** Next practice text for the idle screen: "Next practice: Mon 5:00 PM" (null if there are no practice days). */
+/**
+ * QA R28 N2: a preview of a day in a later week (7+ days ahead) gets a dated header in the Lobby's dated style:
+ * 'MON JAN 4' (+ ' · 5:00 PM' for basketball, ' CHEER' for cheer). Within the coming week the weekday alone is clear.
+ * Returns null when no date label is needed. Dates are 'YYYY-MM-DD' league dates.
+ */
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+export function previewDateLabel(display, today) {
+  if (!display || !today || display <= today) return null;
+  const d = new Date(display + 'T12:00:00Z'), t = new Date(today + 'T12:00:00Z');
+  if (Math.round((d.getTime() - t.getTime()) / 86400000) < 7) return null;
+  return `${LONG[d.getUTCDay()].slice(0, 3)} ${MON[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
 export function nextPracticeText(data, kind, dow, nowHm) {
   const has = (d) => (kind === 'cheer' ? data.cheer : data.basketball).some((x) => x.day === d.day);
   const days = (data.days || []).filter(has);

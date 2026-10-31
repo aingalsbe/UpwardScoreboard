@@ -1,6 +1,6 @@
 // Practice TV (Mon–Thu): /upwardbasketballscores/practice/{cheer,basketball}. Polls /api/public/practice each minute,
 // renders Sage's mockup markup (deliverables/mockups/practice) with its hooks, rotates pages per practice-view.js.
-import { planPractice, rotation, parsePracticeDemo, practiceDisplayDay, ampm, COURTS, COURT_NAME, DAY, toMin } from './practice-view.js';
+import { planPractice, rotation, parsePracticeDemo, practiceDisplayDay, previewDateLabel, ampm, COURTS, COURT_NAME, DAY, toMin } from './practice-view.js';
 import { mascotHtml, installLogoFallback } from './logo-badge.js';
 installLogoFallback(); // broken logo URL -> initial badge
 import { nextEvent, nextEventText, addDays } from './next-event.js';
@@ -36,15 +36,17 @@ function viewClock() {
   const disp = practiceDisplayDay(data, kind, data.now.date, data.now.dow);
   // Future weekday: preview (the clock time is ignored). Today: hold the schedule all day, including after the window.
   if (disp.over) return { dow: disp.dow, hm: liveHm(), mode: 'over' }; // past the season's last practice: idle
-  if (!disp.today) return { dow: disp.dow, hm: liveHm(), mode: 'future' };
+  if (!disp.today) return { dow: disp.dow, hm: liveHm(), mode: 'future', dated: previewDateLabel(disp.date, data.now.date) };
   return { dow: disp.dow, hm: liveHm(), mode: 'hold' };
 }
 const who = (name, coach, logo) => `${mascotHtml(logo, name)}<div class="team" data-bind="team">${esc(name)}</div><div class="coach" data-bind="coach">${coach ? `Coach ${esc(coach)}` : ''}</div>`;
 
 function render() {
   if (!data) return;
-  const { dow, hm, mode } = viewClock();
+  const { dow, hm, mode, dated } = viewClock();
   const plan = planPractice(data, kind, dow, hm, mode);
+  if (dated && plan.mode === 'practice') plan.header = kind === 'cheer' ? `${dated} CHEER` : `${dated} ·`; // N2: 'MON JAN 4 · 5:00 PM'
+  body.dataset.dated = dated && plan.mode === 'practice' ? 'true' : 'false';
   body.dataset.mode = plan.mode; body.dataset.day = plan.day;
   const setup = qs.get('setup'); $('[data-bind="route"]').hidden = setup === '0' || (setup !== '1' && Date.now() - loadedAt > 60000);
   const demoEl = $('[data-bind="demo"]'); demoEl.hidden = !demo; if (demo) demoEl.textContent = `DEMO · ${DAY[dow].toUpperCase()} ${ampm(hm)}`;

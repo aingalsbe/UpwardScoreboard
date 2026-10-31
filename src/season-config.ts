@@ -50,11 +50,19 @@ export const LOCKER_ROOMS = {
   east: { home: '2', away: '3' },
   full: { home: 'CH', away: '5' },
 } as const;
+/**
+ * A stored locker counts as an override only when it names a room: null, blank / whitespace-only and "0" (any number
+ * of zeros, e.g. a spreadsheet's "none") mean "no override" and fall back to the rule (QA R28 N3).
+ */
+export const isLockerOverride = (stored?: string | null): stored is string => {
+  const v = stored == null ? '' : String(stored).trim();
+  return v !== '' && !/^0+$/.test(v);
+};
 /** Locker for a team: stored override, else the court rule (null for an unknown/missing court). */
 export function teamLocker(court: string | null | undefined, side: 'home' | 'away', stored?: string | null): string | null {
-  if (stored && String(stored).trim()) return String(stored);
+  if (isLockerOverride(stored)) return String(stored).trim();
   const c = court && (LOCKER_ROOMS as any)[court];
   return c && typeof c === 'object' ? c[side] : null;
 }
 /** Cheer squad locker on game days: stored override, else LOCKER_ROOMS.cheer. */
-export const cheerLocker = (stored?: string | null): string => (stored && String(stored).trim() ? String(stored) : LOCKER_ROOMS.cheer);
+export const cheerLocker = (stored?: string | null): string => (isLockerOverride(stored) ? String(stored).trim() : LOCKER_ROOMS.cheer);

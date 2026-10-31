@@ -221,3 +221,28 @@ main.idle .idle-next { margin-top: 3rem; font: 700 3.6rem "Montserrat", Arial, s
 .row.cheer { background: var(--season-cheer-primary); color: var(--season-cheer-primary-fg); border: .4rem dashed var(--season-cheer-primary-fg); } /* dashed fg rim so cheer ≠ gold HOME; the rim is not behind the text */
 .cheer .locker, .cheer .side { background: var(--season-cheer-primary-fg); color: var(--season-cheer-primary); }
 .cheer .coach, .cheer .row-note { color: var(--season-cheer-primary-fg); }
+
+/* ---- QA R29 fit-to-height (Devon; for Sage to restyle). lobby.js fitStage() sets html[data-density] = compact | tight
+   (3+ bands start compact) and, only if tight still overflows, --fit-k scales <main> (top-centred). Names keep their
+   size until tight; pills, row padding and gaps shrink first. */
+html[data-density] .locker { min-height: 5.8rem !important; padding: .3rem .6rem !important; }
+html[data-density] .locker small { font-size: 1.5rem; }
+html[data-density] .locker b { font-size: 3.2rem !important; margin-top: .2rem; }
+html[data-density] .row { min-height: 7.2rem !important; padding: .4rem 1.2rem !important; }
+html[data-density] .game, html[data-density] .band .court, html[data-density] .court { gap: .6rem; }
+html[data-density] .cheer-band { gap: .4rem; }
+html[data-density] main.split .next-bar, html[data-density] .full .pair .next-bar { margin-top: .8rem; }
+html[data-density] .mascot { width: 5.6rem; height: 5.6rem; }
+html[data-density="tight"] header { padding-top: .6rem; }
+html[data-density="tight"] header h1 { font-size: 8.4rem; }
+html[data-density="tight"] header .sub { margin-top: .2rem; font-size: 1.8rem; }
+html[data-density="tight"] main { padding-top: .8rem; }
+html[data-density="tight"] .locker { min-height: 4.8rem !important; padding: .2rem .5rem !important; }
+html[data-density="tight"] .locker small { font-size: 1.3rem; }
+html[data-density="tight"] .locker b { font-size: 2.8rem !important; }
+html[data-density="tight"] .row { min-height: 6rem !important; padding: .2rem 1.2rem !important; }
+html[data-density="tight"] .who .coach { font-size: 1.8rem; margin-top: .1rem; }
+html[data-density="tight"] .mascot { width: 4.8rem; height: 4.8rem; }
+html[data-density="tight"] .status { font-size: 2.2rem; }
+html[data-density="tight"] .tab { padding: .3rem 4rem; }
+html[data-fit-scaled] main { transform: scale(var(--fit-k, 1)); transform-origin: 50% 0; }
