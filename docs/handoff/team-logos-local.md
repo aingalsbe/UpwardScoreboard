@@ -33,23 +33,17 @@ Goal: every real-2027 team shows its LBC mascot logo wherever a logo slot alread
 - No `git commit`, no `git push`, no deploy/droplet/SSH, no `docker compose down`.
 
 ## (d) Ordered steps
-1. Backup first (data changes: `teams.logo_url`), PowerShell in repo:
-   ```powershell
-   $ts = Get-Date -Format yyyyMMdd-HHmmss
-   docker compose exec -T db sh -c "pg_dump -U scoreboard -Fc scoreboard > /tmp/pre.dump"
-   docker compose cp db:/tmp/pre.dump "C:\Users\ainga\Backups\UpwardScoreboard\pre-team-logos-$ts.dump"
-   ```
-   Verify file size > 0.
+1. Backup ALREADY DONE by Devon: `C:\Users\ainga\Backups\UpwardScoreboard\pre-team-logos-20261103-174348.dump`. Do NOT run pg_dump, docker, or any DB command. Do NOT rebuild containers (Devon rebuilds). Only edit files, generate padded logo PNGs (python/node), and run build + unit tests.
 2. Copy + normalize logos using the mapping CSV: write each to `deliverables/logos/teams/2027-<division-slug>-<mascot-slug>.png` (lowercase `[a-z0-9-]`, e.g. `2027-3rd-4th-grade-girls-lady-bearcats.png`), converted to **512x512 PNG <= 300 KB** (fit inside square, keep aspect, pad; keep alpha for Kindergarten; no cropping of art). Keep demo files untouched.
 3. Manifest: keep demo `manifest.json` as is; add a real-season manifest (e.g. `deliverables/logos/manifest-2027.json`, same schema, 52 teams, `name` = exact team name incl. `Lady `, `division` = canonical label, NO colors used). Add a `manifest` option to `readManifest`/`loadLogos`/`load-logos.ts` (`--manifest 2027`), choose the 2027 manifest when the DB holds the real season (e.g. teams match it), and run the 2027 load at the end of `seed-season` and on startup for empty real-team logos. Fill-only-empty semantics unchanged.
 4. Tests: extend `test/logos.test.ts` for the 2027 manifest (52 entries, unique, files exist, 512x512, <= 300 KB, every real team in `data/season-2027` matched, unmatched 0); keep the demo 44+4 assertions passing.
-5. Rebuild: `docker compose up -d --build app`; then `docker compose exec app node dist/src/load-logos.js --dry-run` and (if needed) without `--dry-run`.
-6. Run tests (section e). Spot-check Lobby, court, practice in a browser.
+5. (Skip: Devon rebuilds with `docker compose up -d --build app` and runs the loader.)
+6. Run `npm run build` and the unit tests (section e). No docker, no DB.
 
 ## (e) Proof
 - `npm run build` then unit under node 24: `node --test "dist/test/*.test.js"` (report pass/fail/skip counts).
-- e2e: `bash scripts/run-e2e.sh` (or the existing `scripts/*-e2e.mjs` it runs) + `npm run smoke`; report counts or why skipped.
-- Report: `git status --short` changed-file list, loader output (logo count loaded, matched 52, unmatched 0), team count 52 / game count 208 (`docker compose exec -T db psql -U scoreboard -c "select count(*) from teams; select count(*) from games;"`), backup path + size.
+- e2e (Devon runs after rebuild; skip): `bash scripts/run-e2e.sh` (or the existing `scripts/*-e2e.mjs` it runs) + `npm run smoke`; report counts or why skipped.
+- Report: `git status --short` changed-file list, unit test counts, the 52 generated files (dims/bytes). Devon checks loader/DB counts.
 - Leave ALL changes uncommitted for Devon review.
 
 ## Run command (laptop, repo root, fresh branch, output logged)
