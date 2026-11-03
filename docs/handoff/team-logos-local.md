@@ -24,8 +24,8 @@ Goal: every real-2027 team shows its LBC mascot logo wherever a logo slot alread
   5. Counts unchanged: 52 teams, 208 games (plus practices/cheer as today).
   6. Demo seed still works (demo manifest/tests intact or updated consistently).
   7. Unit + e2e pass.
-- Sage (visual): logos are not distorted/cropped; 768x512 source art fits square slots (letterboxed, centered); backgrounds are NOT transparent (see image facts) and must look acceptable on dark and light screens; Lobby normal/compact/tight density still fits; cheer grid unaffected.
-- Image facts (source): 52 PNGs; 32 are 512x512, 8 are 768x512 (1st-2nd Girls, 5th-6th Girls); others vary (range 384–768 w × 341–512 h). Modes: Kindergarten RGBA (alpha 0–254); all others RGB (opaque backgrounds, per README). Sizes 178–494 KB; **20 files exceed the 300 KB `LOGO_MAX_BYTES` limit** (all Kindergarten, 1st-2nd Girls, 3rd-4th Girls, 5th-6th Girls).
+- Sage (visual): logos are not distorted/cropped; non-square source art (768x512, 384x512, 384x341) fits square slots (letterboxed, centered); backgrounds are NOT transparent (see image facts) and must look acceptable on dark and light screens; Lobby normal/compact/tight density still fits; cheer grid unaffected.
+- Image facts (source): 52 PNGs, mixed sizes: 12× 512x512 (K, 3rd-4th Girls), 8× 768x512 (1st-2nd Girls, 5th-6th Girls), 8× 384x512 (5th-6th Boys), 24× 384x341/342 (1st-2nd Boys, 3rd-4th Boys). Only 12 are already square. Modes: Kindergarten RGBA (alpha 0–254); all others RGB (opaque backgrounds, per README). Sizes 178–494 KB; **20 files exceed the 300 KB `LOGO_MAX_BYTES` limit** (all Kindergarten, 1st-2nd Girls, 3rd-4th Girls, 5th-6th Girls).
 
 ## (c) Boundaries
 - Allowed: `deliverables/logos/**` (new PNGs + manifest), `src/logo-files.ts`, `src/load-logos.ts`, `src/seed-season.ts` (logo-load step only), logo tests (`test/logos.test.ts`, `test/combined-grades.test.ts` logo assertions, new `test/*logos*.test.ts`), `scripts/` helper for logo conversion if needed.
