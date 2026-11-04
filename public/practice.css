@@ -91,3 +91,12 @@ body[data-density="tight"] .card .mascot { width: 5.6rem; height: 5.6rem; }
 body[data-density] .frame { margin-top: 2.4rem; padding: 2rem; gap: 2rem; }
 body[data-density] .court .mascot { width: 8rem; height: 8rem; }
 body[data-fit-scaled] main { transform: scale(var(--fit-k, 1)); transform-origin: 50% 0; }
+
+/* SAGE R2 cheer logos (a8d0361 NO-GO): cheer logos are wide (~3:2), so CHEER cards get a 3:2 box (stage px).
+   <=6 squads 180x120; 4-column grid (7+) 150x100; tight density 132x88. Names keep their size. Team logos unchanged. */
+.cheer-grid .card img.mascot { width: 18rem; height: 12rem; object-fit: contain; object-position: center;
+  /* cheer PNGs are 512x512 squares with the wide art centred (rows >=58..<=453 of 512): view only rows 56-456 so the
+     art, not transparent padding, fills the 3:2 box. Chromium/Edge only; elsewhere it falls back to plain contain. */
+  object-view-box: inset(11% 0); margin-left: auto; margin-right: auto; }
+.cheer-grid[data-cols="4"] .card img.mascot { width: 15rem; height: 10rem; }
+body[data-density="tight"] .cheer-grid .card img.mascot { width: 13.2rem; height: 8.8rem; }
