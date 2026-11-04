@@ -284,7 +284,7 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   assert.deepEqual(shotB, shotA);
   assert.equal(await colors(), beforeColors);
   assert.equal(await gameCount(), 208);
-  assert.equal(await withLogo(), 0);
+  assert.equal(await withLogo(), 52, "re-import keeps the 52 real logos");
 
   // B5: played data is never replaced without --reset (status or events); --reset overrides.
   const g1 = (await db.pool.query('SELECT id FROM games ORDER BY id LIMIT 1')).rows[0].id;
