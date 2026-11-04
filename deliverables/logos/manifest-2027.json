@@ -1,0 +1,371 @@
+{
+  "season": "2027 Upward (LBC, real season)",
+  "note": "512x512, fit + padded (never cropped), <=300 KB. No colors: season colors only.",
+  "teams": [
+    {
+      "name": "Bears",
+      "division": "Kindergarten",
+      "file": "teams/2027-kindergarten-bears.png",
+      "mascot": "Bears",
+      "source": "01_Kindergarten/Kindergarten_Bears.png"
+    },
+    {
+      "name": "Cowboys",
+      "division": "Kindergarten",
+      "file": "teams/2027-kindergarten-cowboys.png",
+      "mascot": "Cowboys",
+      "source": "01_Kindergarten/Kindergarten_Cowboys.png"
+    },
+    {
+      "name": "Lions",
+      "division": "Kindergarten",
+      "file": "teams/2027-kindergarten-lions.png",
+      "mascot": "Lions",
+      "source": "01_Kindergarten/Kindergarten_Lions.png"
+    },
+    {
+      "name": "Mavericks",
+      "division": "Kindergarten",
+      "file": "teams/2027-kindergarten-mavericks.png",
+      "mascot": "Mavericks",
+      "source": "01_Kindergarten/Kindergarten_Mavericks.png"
+    },
+    {
+      "name": "Rams",
+      "division": "Kindergarten",
+      "file": "teams/2027-kindergarten-rams.png",
+      "mascot": "Rams",
+      "source": "01_Kindergarten/Kindergarten_Rams.png"
+    },
+    {
+      "name": "Spartans",
+      "division": "Kindergarten",
+      "file": "teams/2027-kindergarten-spartans.png",
+      "mascot": "Spartans",
+      "source": "01_Kindergarten/Kindergarten_Spartans.png"
+    },
+    {
+      "name": "Lady Hawks",
+      "division": "1st-2nd Grade Girls",
+      "file": "teams/2027-1st-2nd-grade-girls-lady-hawks.png",
+      "mascot": "Hawks",
+      "source": "02_1st-2nd_Grade_Girls/Lady_Hawks.png"
+    },
+    {
+      "name": "Lady Hurricanes",
+      "division": "1st-2nd Grade Girls",
+      "file": "teams/2027-1st-2nd-grade-girls-lady-hurricanes.png",
+      "mascot": "Hurricanes",
+      "source": "02_1st-2nd_Grade_Girls/Lady_Hurricanes.png"
+    },
+    {
+      "name": "Lady Lobos",
+      "division": "1st-2nd Grade Girls",
+      "file": "teams/2027-1st-2nd-grade-girls-lady-lobos.png",
+      "mascot": "Lobos",
+      "source": "02_1st-2nd_Grade_Girls/Lady_Lobos.png"
+    },
+    {
+      "name": "Lady Terrapins",
+      "division": "1st-2nd Grade Girls",
+      "file": "teams/2027-1st-2nd-grade-girls-lady-terrapins.png",
+      "mascot": "Terrapins",
+      "source": "02_1st-2nd_Grade_Girls/Lady_Terrapins.png"
+    },
+    {
+      "name": "Badgers",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-badgers.png",
+      "mascot": "Badgers",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Badgers.png"
+    },
+    {
+      "name": "Bobcats",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-bobcats.png",
+      "mascot": "Bobcats",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Bobcats.png"
+    },
+    {
+      "name": "Coyotes",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-coyotes.png",
+      "mascot": "Coyotes",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Coyotes.png"
+    },
+    {
+      "name": "Eagles",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-eagles.png",
+      "mascot": "Eagles",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Eagles.png"
+    },
+    {
+      "name": "Grizzlies",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-grizzlies.png",
+      "mascot": "Grizzlies",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Grizzlies.png"
+    },
+    {
+      "name": "Jaguars",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-jaguars.png",
+      "mascot": "Jaguars",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Jaguars.png"
+    },
+    {
+      "name": "Knights",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-knights.png",
+      "mascot": "Knights",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Knights.png"
+    },
+    {
+      "name": "Lightning",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-lightning.png",
+      "mascot": "Lightning",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Lightning.png"
+    },
+    {
+      "name": "Mustangs",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-mustangs.png",
+      "mascot": "Mustangs",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Mustangs.png"
+    },
+    {
+      "name": "Panthers",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-panthers.png",
+      "mascot": "Panthers",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Panthers.png"
+    },
+    {
+      "name": "Rangers",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-rangers.png",
+      "mascot": "Rangers",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Rangers.png"
+    },
+    {
+      "name": "Wolfpack",
+      "division": "1st-2nd Grade Boys",
+      "file": "teams/2027-1st-2nd-grade-boys-wolfpack.png",
+      "mascot": "Wolfpack",
+      "source": "03_1st-2nd_Grade_Boys/1st_2nd_Boys_Wolfpack.png"
+    },
+    {
+      "name": "Lady Bearcats",
+      "division": "3rd-4th Grade Girls",
+      "file": "teams/2027-3rd-4th-grade-girls-lady-bearcats.png",
+      "mascot": "Bearcats",
+      "source": "04_3rd-4th_Grade_Girls/3rd_4th_Girls_Lady_Bearcats.png"
+    },
+    {
+      "name": "Lady Cardinals",
+      "division": "3rd-4th Grade Girls",
+      "file": "teams/2027-3rd-4th-grade-girls-lady-cardinals.png",
+      "mascot": "Cardinals",
+      "source": "04_3rd-4th_Grade_Girls/3rd_4th_Girls_Lady_Cardinals.png"
+    },
+    {
+      "name": "Lady Clippers",
+      "division": "3rd-4th Grade Girls",
+      "file": "teams/2027-3rd-4th-grade-girls-lady-clippers.png",
+      "mascot": "Clippers",
+      "source": "04_3rd-4th_Grade_Girls/3rd_4th_Girls_Lady_Clippers.png"
+    },
+    {
+      "name": "Lady Huskies",
+      "division": "3rd-4th Grade Girls",
+      "file": "teams/2027-3rd-4th-grade-girls-lady-huskies.png",
+      "mascot": "Huskies",
+      "source": "04_3rd-4th_Grade_Girls/3rd_4th_Girls_Lady_Huskies.png"
+    },
+    {
+      "name": "Lady Razorbacks",
+      "division": "3rd-4th Grade Girls",
+      "file": "teams/2027-3rd-4th-grade-girls-lady-razorbacks.png",
+      "mascot": "Razorbacks",
+      "source": "04_3rd-4th_Grade_Girls/3rd_4th_Girls_Lady_Razorbacks.png"
+    },
+    {
+      "name": "Lady Sparks",
+      "division": "3rd-4th Grade Girls",
+      "file": "teams/2027-3rd-4th-grade-girls-lady-sparks.png",
+      "mascot": "Sparks",
+      "source": "04_3rd-4th_Grade_Girls/3rd_4th_Girls_Lady_Sparks.png"
+    },
+    {
+      "name": "Aggies",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-aggies.png",
+      "mascot": "Aggies",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Aggies.png"
+    },
+    {
+      "name": "Buckeyes",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-buckeyes.png",
+      "mascot": "Buckeyes",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Buckeyes.png"
+    },
+    {
+      "name": "Bulldogs",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-bulldogs.png",
+      "mascot": "Bulldogs",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Bulldogs.png"
+    },
+    {
+      "name": "Cornhuskers",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-cornhuskers.png",
+      "mascot": "Cornhuskers",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Cornhuskers.png"
+    },
+    {
+      "name": "Jayhawks",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-jayhawks.png",
+      "mascot": "Jayhawks",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Jayhawks.png"
+    },
+    {
+      "name": "Longhorns",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-longhorns.png",
+      "mascot": "Longhorns",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Longhorns.png"
+    },
+    {
+      "name": "Raiders",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-raiders.png",
+      "mascot": "Raiders",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Raiders.png"
+    },
+    {
+      "name": "Sooners",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-sooners.png",
+      "mascot": "Sooners",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Sooners.png"
+    },
+    {
+      "name": "Tarheels",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-tarheels.png",
+      "mascot": "Tarheels",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Tarheels.png"
+    },
+    {
+      "name": "Tigers",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-tigers.png",
+      "mascot": "Tigers",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Tigers.png"
+    },
+    {
+      "name": "Wildcats",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-wildcats.png",
+      "mascot": "Wildcats",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Wildcats.png"
+    },
+    {
+      "name": "Wolverines",
+      "division": "3rd-4th Grade Boys",
+      "file": "teams/2027-3rd-4th-grade-boys-wolverines.png",
+      "mascot": "Wolverines",
+      "source": "05_3rd-4th_Grade_Boys/3rd_4th_Boys_Wolverines.png"
+    },
+    {
+      "name": "Lady Fever",
+      "division": "5th-6th Grade Girls",
+      "file": "teams/2027-5th-6th-grade-girls-lady-fever.png",
+      "mascot": "Fever",
+      "source": "06_5th-6th_Grade_Girls/5th_6th_Girls_Lady_Fever.png"
+    },
+    {
+      "name": "Lady Gators",
+      "division": "5th-6th Grade Girls",
+      "file": "teams/2027-5th-6th-grade-girls-lady-gators.png",
+      "mascot": "Gators",
+      "source": "06_5th-6th_Grade_Girls/5th_6th_Girls_Lady_Gators.png"
+    },
+    {
+      "name": "Lady Monarchs",
+      "division": "5th-6th Grade Girls",
+      "file": "teams/2027-5th-6th-grade-girls-lady-monarchs.png",
+      "mascot": "Monarchs",
+      "source": "06_5th-6th_Grade_Girls/5th_6th_Girls_Lady_Monarchs.png"
+    },
+    {
+      "name": "Lady Owls",
+      "division": "5th-6th Grade Girls",
+      "file": "teams/2027-5th-6th-grade-girls-lady-owls.png",
+      "mascot": "Owls",
+      "source": "06_5th-6th_Grade_Girls/5th_6th_Girls_Lady_Owls.png"
+    },
+    {
+      "name": "Bucks",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-bucks.png",
+      "mascot": "Bucks",
+      "source": "07_5th-6th_Grade_Boys/Bucks.png"
+    },
+    {
+      "name": "Bulls",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-bulls.png",
+      "mascot": "Bulls",
+      "source": "07_5th-6th_Grade_Boys/Bulls.png"
+    },
+    {
+      "name": "Jazz",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-jazz.png",
+      "mascot": "Jazz",
+      "source": "07_5th-6th_Grade_Boys/Jazz.png"
+    },
+    {
+      "name": "Lakers",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-lakers.png",
+      "mascot": "Lakers",
+      "source": "07_5th-6th_Grade_Boys/Lakers.png"
+    },
+    {
+      "name": "Raptors",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-raptors.png",
+      "mascot": "Raptors",
+      "source": "07_5th-6th_Grade_Boys/Raptors.png"
+    },
+    {
+      "name": "Rockets",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-rockets.png",
+      "mascot": "Rockets",
+      "source": "07_5th-6th_Grade_Boys/Rockets.png"
+    },
+    {
+      "name": "Suns",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-suns.png",
+      "mascot": "Suns",
+      "source": "07_5th-6th_Grade_Boys/Suns.png"
+    },
+    {
+      "name": "Warriors",
+      "division": "5th-6th Grade Boys",
+      "file": "teams/2027-5th-6th-grade-boys-warriors.png",
+      "mascot": "Warriors",
+      "source": "07_5th-6th_Grade_Boys/Warriors.png"
+    }
+  ],
+  "cheer": []
+}

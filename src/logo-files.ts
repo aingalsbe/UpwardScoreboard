@@ -12,7 +12,10 @@ export const LOGO_ROUTE = '/team-logos/';
 export const LOGO_MAX_BYTES = 300 * 1024;
 
 export interface Manifest { teams: { name: string; division: string; file: string }[]; cheer: { name: string; file: string }[] }
-export const readManifest = (dir = LOGO_DIR): Manifest => JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+export const MANIFEST_DEMO = 'manifest.json';
+/** Real 2027 season (LBC mascots): exact name + division matches only, loaded when settings.season_data = '2027'. */
+export const MANIFEST_2027 = 'manifest-2027.json';
+export const readManifest = (dir = LOGO_DIR, file = MANIFEST_DEMO): Manifest => JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
 /** Case/space-insensitive key: "  5th grade   BOYS " -> "5th grade boys". */
 export const norm = (s: unknown) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const normMascot = (s: unknown) => norm(s).replace(/^lady\s+/i, '');
@@ -41,8 +44,8 @@ export interface LoadReport { dryRun: boolean; overwrite: boolean;
 /** Fill teams/cheer_squads logos from the manifest. Teams match on name + division ("<grade> <gender>"), with
  *  fallback to matching by mascot name across divisions (e.g. after a merged-grade collision rename); squads match
  *  on name. Default fills only rows with no logo_url and no uploaded logo_data; overwrite replaces both. */
-export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: boolean; overwrite?: boolean; dir?: string } = {}): Promise<LoadReport> {
-  const man = readManifest(opts.dir), dryRun = !!opts.dryRun, overwrite = !!opts.overwrite;
+export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: boolean; overwrite?: boolean; dir?: string; manifest?: string; fallback?: boolean } = {}): Promise<LoadReport> {
+  const man = readManifest(opts.dir, opts.manifest), dryRun = !!opts.dryRun, overwrite = !!opts.overwrite;
   const rep: LoadReport = { dryRun, overwrite, teams: { matched: 0, filled: 0, skipped: 0, unmatched: [], withoutLogo: [] }, squads: { matched: 0, filled: 0, skipped: 0, unmatched: [], withoutLogo: [] } };
   const run = async (
     kind: 'teams' | 'squads',
@@ -79,7 +82,7 @@ export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: bo
     (t) => normMascot(t.name) + '|' + normTeamDiv(t.grade, t.gender),
     man.teams.map((t) => ({ k: normMascot(t.name) + '|' + normDiv(t.division), mascot: normMascot(t.name), div: normDiv(t.division), label: `${t.name} · ${t.division}`, file: t.file })),
     'teams',
-    (row, entries, seen) => {
+    opts.fallback === false ? undefined : (row, entries, seen) => {
       const m = normMascot(row.name);
       const hit = entries.find((e) => e.mascot === m && !seen.has(e.k)) ?? entries.find((e) => e.mascot === m);
       if (hit) {
@@ -95,6 +98,15 @@ export async function loadLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: bo
   const squads = (await db.query(`SELECT id, name, name label, logo_url, (logo_data IS NOT NULL) has_data FROM cheer_squads ORDER BY id`)).rows;
   await run('squads', squads, (s) => norm(s.name), man.cheer.map((c) => ({ k: norm(c.name), label: c.name, file: c.file })), 'cheer_squads');
   return rep;
+}
+
+/** Fill empty real-season team logos from manifest-2027.json (exact name + division; no cross-division fallback).
+ *  No-op unless the DB holds the real 2027 season (settings.season_data = '2027') and the manifest exists. */
+export async function loadSeasonLogos(db: pg.Pool | pg.PoolClient, opts: { dryRun?: boolean; overwrite?: boolean; dir?: string } = {}): Promise<LoadReport | null> {
+  if (!fs.existsSync(path.join(opts.dir ?? LOGO_DIR, MANIFEST_2027))) return null;
+  const r = await db.query(`SELECT value FROM settings WHERE key = 'season_data'`);
+  if (r.rows[0]?.value !== '2027') return null;
+  return loadLogos(db, { ...opts, manifest: MANIFEST_2027, fallback: false });
 }
 
 export function formatReport(r: LoadReport): string {

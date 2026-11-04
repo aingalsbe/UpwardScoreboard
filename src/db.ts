@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { LOGO_DIR, loadLogos } from "./logo-files.js";
+import { LOGO_DIR, loadLogos, loadSeasonLogos } from "./logo-files.js";
 import pg from 'pg';
 import { toHexLoose } from './color.js';
 import { PRACTICE_SCHEMA, seedPracticeDemo } from './practice.js';
@@ -157,6 +157,7 @@ export async function migrate(): Promise<void> {
   await migrateColors();
   await migrateCheerColors(); // after colors are canonical #RRGGBB, so the copy is uppercase
   await migrateCombinedGrades();
+  await loadSeasonLogos(pool).catch((e) => console.error('season logos:', e?.message ?? e)); // real 2027 season: fill empty team logos
 }
 
 /**

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type pg from 'pg';
 import { migrate, pool } from './db.js';
+import { loadSeasonLogos, formatReport } from './logo-files.js';
 import { savePractice, validatePractice } from './practice.js';
 import { seasonConfig } from './season-config.js';
 import {
@@ -219,9 +220,9 @@ export async function seedSeason(opts: SeedSeasonOptions = {}): Promise<SeedSeas
   } finally {
     client.release();
   }
-  // No automatic logo load: the manifest holds demo mascot art, so all real teams and squads start blank.
-  // Load real logos later with the manual logo loader (loadLogos / src/load-logos.ts).
-  return { report: `${formatSeasonReport(plan)}\nIMPORTED (logos left blank; load real logos manually)`, committed: true, skipped: false, plan };
+  // Real 2027 logos (manifest-2027.json, LBC mascots) fill the teams; demo mascot art is never used; squads stay blank.
+  const logos = await loadSeasonLogos(pool);
+  return { report: `${formatSeasonReport(plan)}\nIMPORTED (${logos ? formatReport(logos).split('\n')[1] : 'logos left blank'})`, committed: true, skipped: false, plan };
 }
 
 export { gameNaturalKey };

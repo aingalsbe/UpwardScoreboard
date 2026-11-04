@@ -261,10 +261,11 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   const first = await season.seedSeason({ reset: true });
   assert.equal(first.committed, true);
   assert.match(first.report, /IMPORTED/);
-  assert.match(first.report, /logos left blank/);
+  assert.match(first.report, /teams: matched 52, filled 52/);
   const withLogo = async () => Number((await db.pool.query(`SELECT (SELECT count(*) FROM teams WHERE logo_url IS NOT NULL OR logo_data IS NOT NULL)
     + (SELECT count(*) FROM cheer_squads WHERE logo_url IS NOT NULL OR logo_data IS NOT NULL) AS n`)).rows[0].n);
-  assert.equal(await withLogo(), 0, 'no demo mascot art on real teams or squads');
+  assert.equal(await withLogo(), 52, 'real 2027 logos on all 52 teams; squads blank');
+  assert.equal(Number((await db.pool.query(`SELECT count(*)::int AS n FROM teams WHERE logo_url NOT LIKE '/team-logos/teams/2027-%'`)).rows[0].n), 0, 'no demo mascot art on real teams');
   console.log('SEASON_WARNINGS\n' + plan.warnings.join('\n'));
   assert.equal(await sentinel(), 0);
   assert.equal(await gameCount(), 208);
