@@ -10,7 +10,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 test('manifest-2027: 52 unique teams, every file a 512x512 PNG <= 300 KB, no colors', { skip: noFiles }, () => {
   const m = readManifest(LOGO_DIR, MANIFEST_2027);
-  assert.equal(m.teams.length, 52); assert.equal(m.cheer.length, 0);
+  assert.equal(m.teams.length, 52); assert.equal(m.cheer.length, 10);
   assert.equal(new Set(m.teams.map((t) => norm(`${t.name}|${t.division}`))).size, 52);
   for (const e of m.teams) {
     assert.match(e.file, /^teams\/2027-[a-z0-9-]+\.png$/);
@@ -34,4 +34,25 @@ test('manifest-2027 matches every team in data/season-2027 by name + division', 
   assert.equal(teams.size, 52);
   const man = new Set(readManifest(LOGO_DIR, MANIFEST_2027).teams.map((t) => norm(`${t.name}|${t.division}`)));
   assert.deepEqual([...teams].filter((t) => !man.has(t)), []);
+});
+
+test('manifest-2027 cheer: 10 unique squads matching data/season-2027, 512x512 PNG <= 300 KB in cheer/', { skip: noFiles }, () => {
+  const m = readManifest(LOGO_DIR, MANIFEST_2027);
+  assert.equal(new Set(m.cheer.map((c) => norm(c.name))).size, 10);
+  for (const e of m.cheer) {
+    assert.match(e.file, /^cheer\/2027-[a-z0-9-]+\.png$/);
+    const f = path.join(LOGO_DIR, e.file), b = fs.readFileSync(f);
+    assert.ok(b.subarray(0, 8).equals(PNG), `${e.file} is a PNG`);
+    assert.ok(b.length <= LOGO_MAX_BYTES, `${e.file} ${b.length} bytes`);
+    assert.deepEqual([b.readUInt32BE(16), b.readUInt32BE(20)], [512, 512], `${e.file} 512x512`);
+    assert.equal(logoFile(logoUrl(e.file)), f);
+  }
+  assert.equal(readManifest().cheer.length, 4, 'demo cheer manifest unchanged');
+  const csvPath = path.resolve(LOGO_DIR, '../../data/season-2027/Cheer Practice Schedule.csv');
+  if (!fs.existsSync(csvPath)) return;
+  const lines = fs.readFileSync(csvPath, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean);
+  const ti = lines[0].split(',').indexOf('TeamName');
+  const squads = new Set(lines.slice(1).map((l) => norm(l.split(',')[ti])));
+  assert.equal(squads.size, 10);
+  assert.deepEqual([...squads].filter((s) => !m.cheer.some((c) => norm(c.name) === s)), []);
 });

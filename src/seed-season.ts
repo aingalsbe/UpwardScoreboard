@@ -222,7 +222,7 @@ export async function seedSeason(opts: SeedSeasonOptions = {}): Promise<SeedSeas
   }
   // Real 2027 logos (manifest-2027.json, LBC mascots) fill the teams; demo mascot art is never used; squads stay blank.
   const logos = await loadSeasonLogos(pool);
-  return { report: `${formatSeasonReport(plan)}\nIMPORTED (${logos ? formatReport(logos).split('\n')[1] : 'logos left blank'})`, committed: true, skipped: false, plan };
+  return { report: `${formatSeasonReport(plan)}\nIMPORTED (${logos ? formatReport(logos).split('\n').slice(1).join('; ') : 'logos left blank'})`, committed: true, skipped: false, plan };
 }
 
 export { gameNaturalKey };

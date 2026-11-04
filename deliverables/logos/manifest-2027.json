@@ -367,5 +367,66 @@
       "source": "07_5th-6th_Grade_Boys/Warriors.png"
     }
   ],
-  "cheer": []
+  "cheer": [
+    {
+      "name": "Faith Fusion",
+      "division": "1st-2nd Grade Girls",
+      "file": "cheer/2027-faith-fusion.png",
+      "source": "1st-2nd_Grade_Girls/Faith_Fusion.png"
+    },
+    {
+      "name": "Grace United",
+      "division": "1st-2nd Grade Girls",
+      "file": "cheer/2027-grace-united.png",
+      "source": "1st-2nd_Grade_Girls/Grace_United.png"
+    },
+    {
+      "name": "Shining Lights",
+      "division": "1st-2nd Grade Girls",
+      "file": "cheer/2027-shining-lights.png",
+      "source": "1st-2nd_Grade_Girls/Shining_Lights.png"
+    },
+    {
+      "name": "Sparklers",
+      "division": "1st-2nd Grade Girls",
+      "file": "cheer/2027-sparklers.png",
+      "source": "1st-2nd_Grade_Girls/Sparklers.png"
+    },
+    {
+      "name": "Cheer Angels",
+      "division": "3rd-4th Grade Girls",
+      "file": "cheer/2027-cheer-angels.png",
+      "source": "3rd-4th_Grade_Girls/Cheer_Angels.png"
+    },
+    {
+      "name": "Firecrackers",
+      "division": "3rd-4th Grade Girls",
+      "file": "cheer/2027-firecrackers.png",
+      "source": "3rd-4th_Grade_Girls/Firecrackers.png"
+    },
+    {
+      "name": "Spirit Squad",
+      "division": "3rd-4th Grade Girls",
+      "file": "cheer/2027-spirit-squad.png",
+      "source": "3rd-4th_Grade_Girls/Spirit_Squad.png"
+    },
+    {
+      "name": "Momentum",
+      "division": "5th-6th Grade Girls",
+      "file": "cheer/2027-momentum.png",
+      "source": "5th-6th_Grade_Girls/Momentum.png"
+    },
+    {
+      "name": "Heavenly Halos",
+      "division": "Kindergarten",
+      "file": "cheer/2027-heavenly-halos.png",
+      "source": "Kindergarten/Heavenly_Halos.png"
+    },
+    {
+      "name": "Heavenly Hype",
+      "division": "Kindergarten",
+      "file": "cheer/2027-heavenly-hype.png",
+      "source": "Kindergarten/Heavenly_Hype.png"
+    }
+  ]
 }

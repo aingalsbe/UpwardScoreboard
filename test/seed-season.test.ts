@@ -264,8 +264,9 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   assert.match(first.report, /teams: matched 52, filled 52/);
   const withLogo = async () => Number((await db.pool.query(`SELECT (SELECT count(*) FROM teams WHERE logo_url IS NOT NULL OR logo_data IS NOT NULL)
     + (SELECT count(*) FROM cheer_squads WHERE logo_url IS NOT NULL OR logo_data IS NOT NULL) AS n`)).rows[0].n);
-  assert.equal(await withLogo(), 52, 'real 2027 logos on all 52 teams; squads blank');
+  assert.equal(await withLogo(), 62, 'real 2027 logos on all 52 teams + 10 cheer squads');
   assert.equal(Number((await db.pool.query(`SELECT count(*)::int AS n FROM teams WHERE logo_url NOT LIKE '/team-logos/teams/2027-%'`)).rows[0].n), 0, 'no demo mascot art on real teams');
+  assert.equal(Number((await db.pool.query(`SELECT count(*)::int AS n FROM cheer_squads WHERE logo_url IS NULL OR logo_url NOT LIKE '/team-logos/cheer/2027-%'`)).rows[0].n), 0, 'every real squad has its 2027 cheer logo');
   console.log('SEASON_WARNINGS\n' + plan.warnings.join('\n'));
   assert.equal(await sentinel(), 0);
   assert.equal(await gameCount(), 208);
@@ -284,7 +285,7 @@ test('dry-run writes nothing, a mid-import failure rolls back, two real imports 
   assert.deepEqual(shotB, shotA);
   assert.equal(await colors(), beforeColors);
   assert.equal(await gameCount(), 208);
-  assert.equal(await withLogo(), 52, "re-import keeps the 52 real logos");
+  assert.equal(await withLogo(), 62, "re-import keeps the 62 real logos");
 
   // B5: played data is never replaced without --reset (status or events); --reset overrides.
   const g1 = (await db.pool.query('SELECT id FROM games ORDER BY id LIMIT 1')).rows[0].id;
