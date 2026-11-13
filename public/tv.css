@@ -1,3 +1,4 @@
+@import url("/look-spirit.css");
 /* TV scoreboard (owned by Sage). Lenexa Baptist Church · Upward Basketball 2026–27.
    Two-tone season look: each team sits on a big panel in its season tone (--home-color /
    --away-color = season light or dark, set by display.js; swaps follow automatically).

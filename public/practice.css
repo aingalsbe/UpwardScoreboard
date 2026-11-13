@@ -1,3 +1,4 @@
+@import url("/look-spirit.css");
 /* Practice TVs. Base = Sage's mockup CSS (deliverables/mockups/practice/practice.css, commit 80a2fcf), copied verbatim
    except the font URLs. Additions at the end are marked SAGE: (stopgaps for her to restyle). */
 @font-face { font-family: "Anton"; src: url(/fonts/Anton-Regular-latin.woff2) format("woff2"); }
