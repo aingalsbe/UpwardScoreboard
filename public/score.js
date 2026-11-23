@@ -226,6 +226,7 @@ function render() {
     Object.assign(view, {
       home: side('home'), away: side('away'),
       period: periodLabel(s.period, s.rules.periods), periods: s.rules.periods,
+      ofPeriods: s.period > s.rules.periods ? '' : ` of ${s.rules.periods}`, // OT reads just "OT" (Sage, Release 1)
       // 2nd Grade and below: TV/overlay/lobby hide the score; it is still kept here for the record.
       scoreNote: g.hideScore ? ' · K–2nd Grade: no score, fouls or timeouts (clock, period, possession only)' : '',
       possText: s.possession ? (s.possession === 'home' ? `◀ ${g.home.name}` : `${g.away.name} ▶`) : 'not set',
