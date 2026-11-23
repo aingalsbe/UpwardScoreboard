@@ -143,7 +143,7 @@ try {
   ok(await p.inputValue('#season-form [name=light]') === '#12', 'typed season light kept across the background reload');
   ok(/#224466/i.test(await p.inputValue('#season-form [name=dark]')), 'untouched season dark was refreshed to #224466');
   // 11) Avery R21b: idle -> game and game -> idle -> game on /upwardbasketballscores/westcourt keep the derived
-  //     panel fg (contrast.js) — team names and fouls stay >= 4.5:1 for season #FFF0B0 / #010101.
+  //     panel fg (contrast.js) — team names stay >= 4.5:1 (Release 1: fouls are no longer shown) for season #FFF0B0 / #010101.
   await call('/api/settings/season', 'PUT', { name: season0.name, light: '#FFF0B0', dark: '#010101' });
   const courts = (await call('/api/courts')).body, west = courts.find((c) => c.slug === 'west');
   for (const x of (await call('/api/games')).body) if (x.court_id === west.id && x.status === 'active') await call(`/api/games/${x.id}/complete`, 'POST');
@@ -160,7 +160,7 @@ try {
   const status = () => wtv.pg.evaluate(() => document.documentElement.dataset.status);
   const waitStatus = async (want) => { for (let i = 0; i < 60 && (await status()) !== want; i++) await wtv.pg.waitForTimeout(100); return status(); };
   ok((await waitStatus('idle')) === 'idle', 'West TV starts idle (no game)');
-  const SEL = ['[data-bind="home.name"]', '[data-bind="away.name"]', '[data-bind="home.fouls"]', '[data-bind="away.fouls"]'];
+  const SEL = ['[data-bind="home.name"]', '[data-bind="away.name"]'];
   const check = async (when) => { await wtv.pg.waitForTimeout(400); for (const q of SEL) { const r = await wtv.pg.evaluate((x) => window.__ratio(x), q); ok(r >= 4.5, `${when}: ${q} ${r}:1 >= 4.5`); }
     // the derived vars must really be there (not the CSS #111/#fff fallback that only happens to read on some seasons)
     const v = await wtv.pg.evaluate(() => ['home', 'away'].map((s) => document.documentElement.style.getPropertyValue(`--${s}-fg`)));
