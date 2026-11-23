@@ -23,9 +23,9 @@ test('default rules: 6 periods, two halves of 3, 2 timeouts per half', () => {
   assert.equal(timeoutCap({ ...s.rules, timeoutsPerHalf: undefined, timeoutsPerGame: 3 }), 3, 'legacy games keep per-game timeouts');
 });
 
-test('one label scheme: "1st Half · P2", "2nd Half · P5", OT', () => {
+test('one label scheme: "1st Half · P2", "2nd Half · P5"; no OT (an old stored P7 gets a plain fallback)', () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((p) => periodLabel(p, 6)),
-    ['1st Half · P1', '1st Half · P2', '1st Half · P3', '2nd Half · P4', '2nd Half · P5', '2nd Half · P6', 'OT', 'OT2']);
+    ['1st Half · P1', '1st Half · P2', '1st Half · P3', '2nd Half · P4', '2nd Half · P5', '2nd Half · P6', '2nd Half · P7', '2nd Half · P8']);
 });
 
 test('period rollover: halftime after P3, fouls + timeouts reset for the 2nd half only', () => {
@@ -57,13 +57,14 @@ test('accidental Next into the 2nd half: Prev restores fouls, timeouts, clock', 
   assert.equal(s.period, 3); assert.equal(s.home.fouls, 5); assert.equal(s.away.timeoutsLeft, 1); assert.equal(s.clock.remainingMs, 9_000); assert.equal(s.banner, null);
 });
 
-test('overtime continues the 2nd half: no foul or timeout reset', () => {
+test('no overtime (Aaron, Release 1): Next stops at P6; an old game stored past P6 can only go back', () => {
   let s = initialState();
   for (let i = 0; i < 5; i++) s = apply(s, { type: 'PERIOD', delta: 1 }, T0); // P6
-  s = apply(s, { type: 'FOUL', team: 'home', delta: 1 }, T0); s = apply(s, { type: 'TIMEOUT', team: 'home', delta: -1 }, T0);
-  s = apply(s, { type: 'PERIOD', delta: 1 }, T0);
-  assert.equal(s.period, 7); assert.equal(periodLabel(s.period, 6), 'OT');
-  assert.equal(s.home.fouls, 1); assert.equal(s.home.timeoutsLeft, 1); assert.equal(s.banner, null);
+  assert.equal(s.period, 6);
+  assert.equal(apply(s, { type: 'PERIOD', delta: 1 }, T0), s, 'Next at the last period is a no-op');
+  const legacy = { ...s, period: 7 };
+  assert.equal(apply(legacy, { type: 'PERIOD', delta: 1 }, T0), legacy, 'no further Next from a stored P7');
+  assert.equal(apply(legacy, { type: 'PERIOD', delta: -1 }, T0).period, 6, 'Prev still works');
 });
 
 test('score hiding by grade: K, 1st, 2nd hidden; 3rd and up / unknown shown', () => {

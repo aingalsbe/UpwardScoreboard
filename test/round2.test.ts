@@ -41,7 +41,7 @@ test('pastHalftime: P4+ or P3 at 0:00 stopped', { skip }, async () => {
   assert.equal(pastHalftime(G(1, 'west', '11:00', 'active', at(3, 30_000))), false);
   assert.equal(pastHalftime(G(1, 'west', '11:00', 'active', at(3, 0))), true, 'end of P3 = halftime');
   assert.equal(pastHalftime(G(1, 'west', '11:00', 'active', at(4))), true);
-  assert.equal(pastHalftime(G(1, 'west', '11:00', 'active', at(7))), true, 'OT');
+  assert.equal(pastHalftime(G(1, 'west', '11:00', 'active', at(7))), true, 'old stored period past P6');
   assert.equal(pastHalftime(G(1, 'west', '11:00', 'scheduled', at(4))), false);
 });
 

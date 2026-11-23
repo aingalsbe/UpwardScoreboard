@@ -20,11 +20,11 @@ export const headerText = (date, hm, realToday) => {
   if (realToday !== undefined && date !== realToday) return `${DOW3[d.getUTCDay()]} ${MON3[d.getUTCMonth()]} ${d.getUTCDate()}${hm ? ' · ' + ampm(hm) : ''}`;
   return `${DAYS[d.getUTCDay()]}${hm ? ' ' + ampm(hm) : ''}`;
 };
-/** Period label, same scheme as every screen (common.js periodLabel): "1st Half · P2", "2nd Half · P5", OT, OT2. */
-export const quarter = (p, periods = 6) => (!p ? '' : p > periods ? `OT${p - periods > 1 ? p - periods : ''}` : `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`);
+/** Period label, same scheme as every screen (common.js periodLabel): "1st Half · P2", "2nd Half · P5" (no overtime). */
+export const quarter = (p, periods = 6) => (!p ? '' : `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`);
 
 /**
- * Lobby roll-off: true once an active game reaches halftime: period past the first half (P4+, or OT), or the
+ * Lobby roll-off: true once an active game reaches halftime: period past the first half (P4+), or the
  * last first-half period (P3) with its clock run out (stopped at 0:00). The lobby then shows that court's next game.
  */
 export function pastHalftime(g) {

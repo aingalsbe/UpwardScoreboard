@@ -10,8 +10,7 @@ import { ChildProcess } from 'node:child_process';
 import pg from 'pg';
 import { WebSocket } from 'ws';
 import {
-  initialState, apply, newHistory, dispatch, undo, withFullCourtTimeouts, release1Refusal, FULL_COURT_TIMEOUTS_PER_HALF, GameState,
-  canStartOvertime, OVERTIME_WINDOW_MS,
+  initialState, apply, newHistory, dispatch, undo, parseCommand, withFullCourtTimeouts, release1Refusal, FULL_COURT_TIMEOUTS_PER_HALF, GameState,
 } from '../src/game.js';
 import { isFullCourtGame } from '../src/schedule.js';
 import { brandText, BRAND } from '../src/brand.js';
@@ -66,7 +65,7 @@ test('timeouts rule: full court = 1 per team per half, reset at halftime (no car
 });
 
 // ---------------------------------------------------------------- auto-advance + halftime fix
-test('auto-advance: at 0 every period moves on with the clock reset and STOPPED; the final period and OT end the game', () => {
+test('auto-advance: at 0 every period moves on with the clock reset and STOPPED; the final period ends the game, even tied (no OT)', () => {
   let s = initialState({ periodLengthMs: L });
   for (let p = 1; p <= 5; p++) {
     s = apply(s, { type: 'CLOCK_START' }, T0); const seq = s.seq;
@@ -78,29 +77,15 @@ test('auto-advance: at 0 every period moves on with the clock reset and STOPPED;
   }
   s = apply(s, { type: 'SCORE', team: 'home', pts: 2 }, T0); s = apply(s, { type: 'SCORE', team: 'away', pts: 2 }, T0); // tied 2-2
   s = apply(s, { type: 'CLOCK_START' }, T0); s = apply(s, { type: 'CLOCK_EXPIRE' }, T0 + L + 5);
-  // Aaron (answer #2): the final 0:00 ENDS the game by itself, no "Ready to end the game?" prompt.
+  // Aaron: the final 0:00 ENDS the game by itself, no prompt, even tied: there is no overtime.
   assert.equal(s.period, 6); assert.deepEqual(s.clock, { running: false, remainingMs: 0, startedAt: null });
-  assert.equal(s.status, 'complete', 'auto-completed at the final 0:00'); assert.equal(s.banner, 'FINAL');
-  assert.equal(s.autoEndedAt, T0 + L + 5); assert.equal(s.lastLabel, 'Final (clock 0:00)');
-  // OT via Next: OVERTIME reopens the tie straight into OT1, clock reset and stopped
-  assert.equal(canStartOvertime(s, T0 + L + 60_000), true);
-  s = apply(s, { type: 'OVERTIME' }, T0 + L + 60_000);
-  assert.equal(s.status, 'active'); assert.equal(s.period, 7); assert.equal(s.banner, null); assert.equal(s.autoEndedAt, null);
-  assert.deepEqual(s.clock, { running: false, remainingMs: L, startedAt: null }); assert.equal(s.lastLabel, 'Overtime OT');
-  assert.equal(s.home.score, 2); assert.equal(s.away.score, 2, 'scores carry into OT');
-  // an OT period hitting 0 ends the game again; still tied -> OT2 is possible; a winner -> no more OT
-  s = apply(s, { type: 'CLOCK_START' }, T0); s = apply(s, { type: 'CLOCK_EXPIRE' }, T0 + L + 5);
-  assert.equal(s.period, 7); assert.equal(s.status, 'complete', 'OT auto-ends too');
-  assert.equal(apply(s, { type: 'OVERTIME' }, T0 + L + 10).period, 8, 'OT2 after a tied OT');
-  const won = { ...s, home: { ...s.home, score: 4 } } as GameState;
-  assert.equal(canStartOvertime(won), false); assert.equal(apply(won, { type: 'OVERTIME' }, T0 + L + 10), won, 'no OT unless tied');
-  // only an AUTO-ended game (not "Complete game"), only within the window, never past the last OT period
-  const manual = apply(apply(initialState({ periodLengthMs: L }), { type: 'START_GAME' }, T0), { type: 'END_GAME' }, T0);
-  assert.equal(canStartOvertime(manual), false); assert.equal(apply(manual, { type: 'OVERTIME' }, T0), manual);
-  assert.equal(canStartOvertime(s, (s.autoEndedAt as number) + OVERTIME_WINDOW_MS + 1), false, 'window closed');
-  assert.equal(canStartOvertime({ ...s, period: 10 } as GameState), false, 'OT4 is the last');
-  // admin REOPEN of an auto-ended game clears the flag
-  assert.equal(apply(s, { type: 'REOPEN' }, T0).autoEndedAt, null);
+  assert.equal(s.status, 'complete', 'tied game auto-completed at the final 0:00'); assert.equal(s.banner, 'FINAL');
+  assert.equal(s.lastLabel, 'Final (clock 0:00)'); assert.equal(s.home.score, 2); assert.equal(s.away.score, 2);
+  assert.equal('autoEndedAt' in s, false, 'no overtime marker');
+  // Admin REOPEN is unchanged: active again at P6 0:00; Next still can't go past P6
+  const r0 = apply(s, { type: 'REOPEN' }, T0);
+  assert.equal(r0.status, 'active'); assert.equal(r0.period, 6); assert.equal(r0.banner, null); assert.equal(r0.lastLabel, 'Game reopened');
+  assert.equal(apply(r0, { type: 'PERIOD', delta: 1 }, T0), r0, 'no OT period');
   // expire before 0 or on a stopped clock: no-op
   const r = apply(initialState({ periodLengthMs: L }), { type: 'CLOCK_START' }, T0);
   assert.equal(apply(r, { type: 'CLOCK_EXPIRE' }, T0 + 10), r);
@@ -137,19 +122,18 @@ test('auto-advance is undoable (back to the ended period at 0:00, stopped) and P
   assert.equal(s.period, 1); assert.equal(s.clock.remainingMs, 0);
 });
 
-test('overtime (Aaron #2): Undo right after "Start overtime" goes back to regulation at 0:00, ACTIVE (never back to complete)', () => {
+test('no overtime (Aaron): Next stops at the final period; no OT UI, prompt or copy on the score screen', () => {
   let h = newHistory(initialState({ periodLengthMs: L }));
   for (let p = 1; p <= 5; p++) h = dispatch(h, { type: 'PERIOD', delta: 1 }, T0); // P6
+  assert.equal(dispatch(h, { type: 'PERIOD', delta: 1 }, T0), h, 'Next at P6 changes nothing');
   h = dispatch(h, { type: 'CLOCK_START' }, T0); h = dispatch(h, { type: 'CLOCK_EXPIRE' }, T0 + L + 5);
-  assert.equal(h.present.status, 'complete');
-  h = dispatch(h, { type: 'OVERTIME' }, T0 + L + 1000);
-  assert.equal(h.present.period, 7); assert.equal(h.present.status, 'active');
-  h = undo(h, T0 + L + 2000);
-  assert.equal(h.present.period, 6); assert.equal(h.present.status, 'active'); assert.equal(h.present.autoEndedAt, null);
-  assert.deepEqual(h.present.clock, { running: false, remainingMs: 0, startedAt: null });
-  // and the "Ready to end the game?" prompt is gone from the score screen
+  assert.equal(h.present.status, 'complete', '0-0 tie ends at the final 0:00');
+  assert.throws(() => parseCommand({ type: 'OVERTIME' }), 'no OVERTIME command');
   const js = fs.readFileSync(path.join(PUB, 'score.js'), 'utf8'), html = fs.readFileSync(path.join(PUB, 'score.html'), 'utf8');
-  assert.equal(/Ready to end the game/.test(js + html), false); assert.match(html, /id="ot-start"/); assert.match(js, /type: 'overtime'/);
+  assert.equal(/Ready to end the game|overtime|ot-offer|ot-start/i.test(js.replace(/no overtime[^\n]*/gi, '') + html), false);
+  assert.match(html, /id="next-period"/); assert.match(js, /#next-period'\)\.disabled = s\.period >= s\.rules\.periods/);
+  const common = fs.readFileSync(path.join(PUB, 'common.js'), 'utf8'), lobby = fs.readFileSync(path.join(PUB, 'lobby-view.js'), 'utf8');
+  assert.equal(/`OT/.test(common + lobby), false, 'no OT labels');
 });
 
 // ---------------------------------------------------------------- practice :30 rotation (basketball only)
@@ -336,45 +320,29 @@ test('server: full court rules, manual + auto buzzer to that court TV only, half
   assert.equal(tvWest.msgs.some((m) => m.type === 'buzzer'), false, 'other court TV never buzzes');
   assert.equal(ovFull.msgs.some((m) => m.type === 'buzzer'), false, 'overlay never buzzes');
 
-  // Aaron #2: the final 0:00 ends the game by itself (buzzer still plays); a tie goes on to OT from the scorekeeper
+  // Aaron: the final 0:00 ends the game by itself, even TIED (no overtime); the TV buzzer still plays
   const buzzes = () => tvFull.msgs.filter((m) => m.type === 'buzzer' && m.reason === 'period').length;
-  const runOut = async (ms: number) => {
-    const b0 = buzzes();
-    assert.equal((await cmd(score, { type: 'CLOCK_SET', ms })).type, 'ack');
-    assert.equal((await cmd(score, { type: 'CLOCK_START' })).type, 'ack');
-    await tvFull.next(() => buzzes() > b0, 3000); await new Promise((r) => setTimeout(r, 250));
-    assert.equal(buzzes(), b0 + 1, 'one 3 s buzzer at that 0:00');
-  };
   assert.equal((await cmd(score, { type: 'CLOCK_STOP' })).type, 'ack');
   assert.equal((await cmd(score, { type: 'PERIOD', delta: 1 })).type, 'ack'); assert.equal((await cmd(score, { type: 'PERIOD', delta: 1 })).type, 'ack'); // P6
+  assert.equal((await cmd(score, { type: 'PERIOD', delta: 1 })).type, 'ack'); // Next at P6: accepted, changes nothing
+  st = await state('full'); assert.equal(st.game.state.period, 6, 'Next never goes past the final period (no OT)');
   assert.equal((await cmd(score, { type: 'SCORE', team: 'home', pts: 2 })).type, 'ack'); assert.equal((await cmd(score, { type: 'SCORE', team: 'away', pts: 2 })).type, 'ack');
-  await runOut(400);
-  let g = (await api('/api/games')).body.find((x: any) => x.id === fullGame.id);
-  assert.equal(g.status, 'complete', 'auto-completed at the final 0:00');
+  const b0 = buzzes();
+  assert.equal((await cmd(score, { type: 'CLOCK_SET', ms: 400 })).type, 'ack');
+  assert.equal((await cmd(score, { type: 'CLOCK_START' })).type, 'ack');
+  await tvFull.next(() => buzzes() > b0, 3000); await new Promise((r) => setTimeout(r, 250));
+  assert.equal(buzzes(), b0 + 1, 'one 3 s buzzer at the final 0:00');
+  const g = (await api('/api/games')).body.find((x: any) => x.id === fullGame.id);
+  assert.equal(g.status, 'complete', 'tied game auto-completed at the final 0:00');
   st = await state('full');
   assert.equal(st.game, null, 'court idle (current game cleared)'); assert.equal(st.lastFinal?.id, fullGame.id);
-  assert.equal(st.overtime?.gameId, fullGame.id, 'tie: overtime offered'); assert.equal(st.overtime.nextLabel, 'OT'); assert.equal(st.overtime.score, 2);
-  assert.match((await cmd(score, { type: 'SCORE', team: 'home', pts: 1 })).error, /No game is loaded/, 'nothing to score on after the auto-end');
-  anon.ws.send(JSON.stringify({ type: 'overtime', id: 'ot0', gameId: fullGame.id }));
-  assert.match((await anon.next((m) => m.id === 'ot0')).error, /PIN required/, 'OT needs the scorekeeper PIN');
-  const swx = await open('court=west&role=score', true); await swx.next((m) => m.type === 'state');
-  swx.ws.send(JSON.stringify({ type: 'overtime', id: 'ot1', gameId: fullGame.id }));
-  assert.equal((await swx.next((m) => m.id === 'ot1')).type, 'error', 'another court cannot start this OT'); swx.ws.close();
-  score.ws.send(JSON.stringify({ type: 'overtime', id: 'ot2', gameId: fullGame.id }));
-  const ota = await score.next((m) => m.id === 'ot2'); assert.equal(ota.type, 'ack', JSON.stringify(ota)); assert.equal(ota.overtime, true);
-  st = await state('full');
-  assert.equal(st.game?.id, fullGame.id, 'court shows the game again'); assert.equal(st.game.state.status, 'active');
-  assert.equal(st.game.state.period, 7); assert.deepEqual(st.game.state.clock, { running: false, remainingMs: 360_000, startedAt: null });
-  assert.equal(st.game.state.home.score, 2); assert.equal(st.overtime, null);
-  assert.equal((await api('/api/public/courts')).body.find((c: any) => c.slug === 'full').current_game_id, fullGame.id);
-  // OT hits 0 with a winner: ends again, no further OT
-  assert.equal((await cmd(score, { type: 'SCORE', team: 'home', pts: 1 })).type, 'ack');
-  await runOut(400);
-  g = (await api('/api/games')).body.find((x: any) => x.id === fullGame.id);
-  assert.equal(g.status, 'complete', 'OT auto-ends'); st = await state('full');
-  assert.equal(st.game, null); assert.equal(st.overtime, null, 'not tied: no OT offer');
-  score.ws.send(JSON.stringify({ type: 'overtime', id: 'ot3', gameId: fullGame.id }));
-  assert.match((await score.next((m) => m.id === 'ot3')).error, /Overtime can only start/);
+  assert.equal(st.lastFinal.final_home, 2); assert.equal(st.lastFinal.final_away, 2, 'final 2-2 (tie) saved');
+  assert.equal('overtime' in st, false, 'no overtime offer');
+  assert.match((await cmd(score, { type: 'SCORE', team: 'home', pts: 1 })).error, /No game is loaded/, 'final score locked after the auto-end');
+  // Admin Reopen unchanged: active again at P6 0:00 on its court
+  assert.equal((await api(`/api/games/${fullGame.id}/reopen`, 'POST', {})).status, 200);
+  st = await state('full'); assert.equal(st.game?.id, fullGame.id); assert.equal(st.game.state.status, 'active'); assert.equal(st.game.state.period, 6);
+  assert.equal((await api(`/api/games/${fullGame.id}/complete`, 'POST')).status, 200);
 
   // -- non-full-court game (West, 3rd-4th): no timeouts, no buzzer
   assert.equal((await api(`/api/games/${westGame.id}/start`, 'POST', { force: true })).status, 200);

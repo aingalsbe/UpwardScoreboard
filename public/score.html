@@ -32,11 +32,6 @@
     <!-- Game picker: today's games on this court that aren't complete (filled by score.js). -->
     <section id="picker" class="picker" hidden aria-labelledby="picker-title">
       <h2 id="picker-title">Pick a game · <span data-bind="court"></span></h2>
-      <!-- Release 1: the final 0:00 ends the game by itself; after a TIE, overtime starts here (OT via Next). -->
-      <div id="ot-offer" class="ot-offer" hidden>
-        <p id="ot-text" class="ot-text"></p>
-        <button class="btn go" id="ot-start" type="button">Next ▶ Start overtime</button>
-      </div>
       <ul id="picker-list" class="picker-list"></ul>
       <p id="picker-empty" class="picker-empty" hidden>No games left today on this court.</p>
     </section>
@@ -63,10 +58,10 @@
           <button class="btn sm" data-cmd='{"type":"CLOCK_ADJUST","ms":1000}'>+1 s</button>
         </div>
         <button class="btn sm" id="set-clock">Set clock…</button>
-        <div class="per"><b data-bind="period"></b><span data-bind="ofPeriods"></span><span class="no-score-note" data-bind="scoreNote"></span></div>
+        <div class="per"><b data-bind="period"></b> of <span data-bind="periods"></span><span class="no-score-note" data-bind="scoreNote"></span></div>
         <div class="row">
           <button class="btn sm" data-cmd='{"type":"PERIOD","delta":-1}'>◀ Prev</button>
-          <button class="btn sm" data-cmd='{"type":"PERIOD","delta":1}'>Next ▶</button>
+          <button class="btn sm" id="next-period" data-cmd='{"type":"PERIOD","delta":1}'>Next ▶</button>
         </div>
         <button class="btn sm" data-cmd='{"type":"POSSESSION","team":"toggle"}'>Possession ⇄<small data-bind="possText"></small></button>
         <!-- Release 1: full court games only; each press plays the 3-second buzzer on this court's TV. -->

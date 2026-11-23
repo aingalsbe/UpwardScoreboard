@@ -138,7 +138,7 @@ function confirmBox(text, okLabel) {
   const d = $('#confirm-dialog');
   if (!d.showModal) return Promise.resolve(confirm(text));
   $('#confirm-text').textContent = text; $('#confirm-ok').textContent = okLabel;
-  d.dataset.kind = okLabel === 'Load' ? 'load' : okLabel === 'Start overtime' ? 'overtime' : 'complete';
+  d.dataset.kind = okLabel === 'Load' ? 'load' : 'complete';
   return new Promise((res) => { d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }); d.returnValue = ''; d.showModal(); });
 }
 const matchup = (x) => `${x.label || x.grade ? (x.label || x.grade) + ' · ' : ''}${x.home} vs ${x.away}`;
@@ -147,13 +147,6 @@ $('#picker-list').addEventListener('click', async (e) => {
   const x = (snap?.today || []).find((t) => String(t.id) === b.dataset.gameId); if (!x) return;
   if (!(await confirmBox(`Load ${matchup(x)} on ${snap.court.name} Court?`, 'Load'))) return;
   if (!conn.send({ type: 'load', id: uid(), gameId: x.id })) toast('Not connected. Try again in a moment.', 'warn');
-});
-// Release 1 (Aaron): the final 0:00 ends the game by itself. A TIE can go on to overtime from here (OT via Next).
-$('#ot-start').addEventListener('click', async () => {
-  const o = snap?.overtime; if (!o) return;
-  if (!(await confirmBox(`Start overtime? ${o.home} ${o.score} – ${o.score} ${o.away} reopens on ${snap.court.name} Court and goes to ${o.nextLabel} (clock reset, stopped).`, 'Start overtime'))) return;
-  localStorage.setItem(LOADED_KEY, String(o.gameId)); // straight back into the game view once it is active again
-  if (!conn.send({ type: 'overtime', id: uid(), gameId: o.gameId })) toast('Not connected. Try again in a moment.', 'warn');
 });
 $('#resume-ok').addEventListener('click', () => { if (snap?.game) { localStorage.setItem(LOADED_KEY, String(snap.game.id)); render(); } });
 $('#complete-game').addEventListener('click', async () => {
@@ -190,9 +183,6 @@ function renderMode() {
     const html = list.map((x) => `<li><button type="button" class="pick" data-game-id="${x.id}" data-status="${x.status}"><span class="pick-time">${x.is_today === false && x.day ? esc(x.day) + ' · ' : ''}${esc(x.time)}</span> <span class="pick-grade">${esc(x.label || x.grade || '')}</span> <span class="pick-matchup">${esc(x.home)} vs ${esc(x.away)}</span> <span class="status-badge" data-status="${x.status}">${STATUS_LABEL[x.status] || esc(x.status)}</span></button></li>`).join('');
     if ($('#picker-list').innerHTML !== html) $('#picker-list').innerHTML = html;
     $('#picker-empty').hidden = list.length > 0;
-    const o = snap?.overtime; // Release 1: tie at the final 0:00
-    $('#ot-offer').hidden = !o;
-    if (o) $('#ot-text').textContent = `Final at 0:00 (${o.endedLabel}): ${o.home} ${o.score} – ${o.score} ${o.away}. Tied, so this game can go to overtime.`;
   }
 }
 
@@ -226,7 +216,6 @@ function render() {
     Object.assign(view, {
       home: side('home'), away: side('away'),
       period: periodLabel(s.period, s.rules.periods), periods: s.rules.periods,
-      ofPeriods: s.period > s.rules.periods ? '' : ` of ${s.rules.periods}`, // OT reads just "OT" (Sage, Release 1)
       // 2nd Grade and below: TV/overlay/lobby hide the score; it is still kept here for the record.
       scoreNote: g.hideScore ? ' · K–2nd Grade: no score, fouls or timeouts (clock, period, possession only)' : '',
       possText: s.possession ? (s.possession === 'home' ? `◀ ${g.home.name}` : `${g.away.name} ▶`) : 'not set',
@@ -258,9 +247,10 @@ function render() {
     // At 0:00 (stopped) START would do nothing: say why instead of looking hung (halftime bug, Release 1).
     const atZero = !s.clock.running && s.clock.remainingMs <= 0 && s.status !== 'complete';
     t.disabled = atZero;
+    $('#next-period').disabled = s.period >= s.rules.periods; // no overtime (Aaron, Release 1): Next stops at the last period
     const hint = $('#clock-hint');
     hint.hidden = !atZero;
-    hint.textContent = atZero ? (s.period >= s.rules.periods ? 'Clock at 0:00. Complete the game, or Next ▶ for overtime.' : 'Clock at 0:00. Press Next ▶ or Set clock… to go on.') : '';
+    hint.textContent = atZero ? (s.period >= s.rules.periods ? 'Clock at 0:00. Complete the game.' : 'Clock at 0:00. Press Next ▶ or Set clock… to go on.') : '';
   }
   bindText(document, view);
 }

@@ -105,11 +105,11 @@ export function fmtClock(ms) {
 
 /**
  * The one period label for every screen (TV, overlay, scorekeeper, lobby; same as periodLabel in src/game.ts):
- * "1st Half · P2", "2nd Half · P5", "OT", "OT2". 6 periods = two halves of 3, halftime after P3.
+ * "1st Half · P2", "2nd Half · P5". 6 periods = two halves of 3, halftime after P3. No overtime (Aaron, Release 1):
+ * an old stored game past the last period still gets a plain label ("2nd Half · P7").
  */
 export function periodLabel(p, periods = 6) {
   if (!p) return '';
-  if (p > periods) return `OT${p - periods > 1 ? p - periods : ''}`;
   return `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`;
 }
 /** Timeouts a team can hold: per half (2026-10 rules) or per game (older games). */

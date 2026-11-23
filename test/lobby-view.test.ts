@@ -70,7 +70,7 @@ test('nothing left today = empty; header and time formatting', { skip }, async (
   assert.equal(headerText('2027-01-15', '17:15', null), 'FRI JAN 15 \u00b7 5:15 PM', 'unknown league date -> dated, never a guessed weekday');
   assert.equal(headerText('2026-10-23', '17:15'), 'FRIDAY 5:15 PM', 'demo (undefined) keeps the old header');
   assert.equal(ampm('00:30'), '12:30 AM'); assert.equal(ampm('12:00'), '12:00 PM');
-  assert.equal(quarter(2, 6), '1st Half · P2'); assert.equal(quarter(4, 6), '2nd Half · P4'); assert.equal(quarter(7, 6), 'OT'); assert.equal(quarter(8, 6), 'OT2'); assert.equal(quarter(3), '1st Half · P3'); assert.equal(hourOf('09:59'), '09:00');
+  assert.equal(quarter(2, 6), '1st Half · P2'); assert.equal(quarter(4, 6), '2nd Half · P4'); assert.equal(quarter(7, 6), '2nd Half · P7', 'no OT: plain fallback for an old stored P7'); assert.equal(quarter(3), '1st Half · P3'); assert.equal(hourOf('09:59'), '09:00');
 });
 
 test('mixed days and empty-court text', { skip }, async () => {

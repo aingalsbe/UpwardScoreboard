@@ -17,7 +17,7 @@ export interface Rules {
 /**
  * League rules (2026-10): 6 periods of 6 minutes (36-minute game) = two halves of 3, halftime after period 3.
  * Fouls reset at halftime (bonus is per half); timeouts are per half (2) and refill at halftime.
- * Overtime (period 7+) continues the 2nd half: fouls and remaining timeouts carry over.
+ * No overtime (Aaron, 2026-11-23): the game ends at the final period's 0:00, even when tied; Next stops at the last period.
  */
 export const DEFAULT_RULES: Rules = {
   periods: 6,
@@ -35,19 +35,12 @@ export const timeoutCap = (r: Rules) => (r.timeoutsPerHalf && r.timeoutsPerHalf 
 
 /**
  * The one period label used on every screen (TV, overlay, scorekeeper, lobby; mirrored in public/common.js):
- * "1st Half · P2", "2nd Half · P5", "OT", "OT2". Periods are numbered P1..P6 across the game.
+ * "1st Half · P2", "2nd Half · P5". Periods are numbered P1..P6 across the game. There is no overtime (Aaron, Release 1);
+ * an old stored game past the last period (an earlier build allowed it) still gets a plain label, e.g. "2nd Half · P7".
  */
 export function periodLabel(p: number, periods: number): string {
   if (!p) return '';
-  if (p > periods) return `OT${p - periods > 1 ? p - periods : ''}`;
   return `${p <= Math.ceil(periods / 2) ? '1st' : '2nd'} Half · P${p}`;
-}
-
-/** Release 1: overtime may start only on a game that ended by itself at 0:00, tied, with an OT period left. */
-export const OVERTIME_WINDOW_MS = 30 * 60_000;
-export function canStartOvertime(s: GameState, now?: number): boolean {
-  return s.status === 'complete' && !!s.autoEndedAt && s.home.score === s.away.score && s.period < s.rules.periods + 4
-    && (now === undefined || now - s.autoEndedAt <= OVERTIME_WINDOW_MS);
 }
 
 export interface TeamState { score: number; fouls: number; timeoutsLeft: number; }
@@ -67,9 +60,6 @@ export interface GameState {
   lastLabel: string | null; // human label of last change, for the Undo button
   /** Snapshot taken when "Next period" was pressed, so an accidental Next can be reversed with Prev. */
   beforeNext?: { period: number; homeFouls: number; awayFouls: number; remainingMs: number; homeTimeouts?: number; awayTimeouts?: number; banner?: string | null } | null;
-  /** Release 1: set (app clock ms) when the final regulation or an OT period hit 0:00 and the game ended by itself.
-   *  Lets the scorekeeper start overtime on a tie (OVERTIME); cleared by OVERTIME / REOPEN. Lives in the history JSON (no migration). */
-  autoEndedAt?: number | null;
 }
 
 export type Command =
@@ -86,8 +76,7 @@ export type Command =
   | { type: 'BANNER'; text: string | null }
   | { type: 'START_GAME' }
   | { type: 'END_GAME' }
-  | { type: 'REOPEN' }
-  | { type: 'OVERTIME' };                           // server only: reopen an auto-ended tie straight into the next (OT) period
+  | { type: 'REOPEN' };
 
 export interface History { present: GameState; past: GameState[]; future: GameState[]; }
 
@@ -212,9 +201,8 @@ export function apply(s: GameState, c: Command, now: number): GameState {
         const adv = apply(ended, { type: 'PERIOD', delta: 1 }, now);
         return { ...adv, seq: s.seq + 1, lastLabel: 'End of period' };
       }
-      // Aaron (2026-11-23, answer #2): the final regulation period, and any OT period, ENDS THE GAME at 0:00 (no prompt).
-      // A tie can go to overtime from the scorekeeper's picker ("Next ▶ Start overtime" = OVERTIME below).
-      next.status = 'complete'; next.banner = 'FINAL'; next.autoEndedAt = now; label = 'Final (clock 0:00)';
+      // Aaron (2026-11-23): the final period ENDS THE GAME at 0:00, no prompt, even when tied (there is no overtime).
+      next.status = 'complete'; next.banner = 'FINAL'; label = 'Final (clock 0:00)';
       break;
     }
     case 'CLOCK_ADJUST': {
@@ -227,7 +215,9 @@ export function apply(s: GameState, c: Command, now: number): GameState {
       next.clock = { running: false, remainingMs: clamp(Math.trunc(c.ms), 0, s.rules.periodLengthMs), startedAt: null };
       label = 'Clock set'; break;
     case 'PERIOD': {
-      const p = clamp(s.period + Math.trunc(c.delta), 1, s.rules.periods + 4); // allow overtime
+      // No overtime (Aaron, Release 1): Next stops at the last period. An old game stored past it can only go back.
+      const p = clamp(s.period + Math.trunc(c.delta), 1, Math.max(s.rules.periods, c.delta > 0 ? 0 : s.period));
+      if (c.delta > 0 && p < s.period) return s;
       if (p === s.period) return s;
       next.period = p;
       next.clock = { running: false, remainingMs: s.rules.periodLengthMs, startedAt: null };
@@ -268,13 +258,7 @@ export function apply(s: GameState, c: Command, now: number): GameState {
       next.clock = frozen(s.clock, now); next.status = 'complete'; next.banner = 'FINAL'; label = 'Game completed'; break;
     case 'REOPEN': // admin only (the server never accepts it from a scorekeeper)
       if (s.status !== 'complete') return s;
-      next.status = 'active'; next.banner = null; next.autoEndedAt = null; label = 'Game reopened'; break;
-    case 'OVERTIME': { // Release 1: an auto-ended TIE goes on into the next period (OT), clock reset and stopped
-      if (!canStartOvertime(s)) return s;
-      const reopened: GameState = { ...next, status: 'active', banner: null, autoEndedAt: null };
-      const ot = apply(reopened, { type: 'PERIOD', delta: 1 }, now);
-      return { ...ot, beforeNext: null, seq: s.seq + 1, lastLabel: `Overtime ${periodLabel(ot.period, s.rules.periods)}` };
-    }
+      next.status = 'active'; next.banner = null; label = 'Game reopened'; break;
     default:
       throw new Error('Unknown command');
   }
@@ -305,12 +289,6 @@ export function dispatch(h: History, c: Command, now: number): History {
     // Otherwise (not reached today): system event, not undoable; keep the Undo label on the real top of the history (QA #7).
     return { ...h, present: { ...n, lastLabel: h.present.lastLabel } };
   }
-  if (c.type === 'OVERTIME') {
-    // Undo after "Start overtime" goes back to the end of regulation at 0:00, ACTIVE (never back to complete), where
-    // the scorekeeper can Complete game or press Next again.
-    const ended: GameState = { ...h.present, status: 'active', banner: null, autoEndedAt: null };
-    return { present: n, past: [...h.past, ended].slice(-HISTORY_LIMIT), future: [] };
-  }
   return { present: n, past: [...h.past, h.present].slice(-HISTORY_LIMIT), future: [] };
 }
 
@@ -323,7 +301,7 @@ function restore(target: GameState, current: GameState, keepClock: boolean, labe
 }
 
 /** Labels whose undo/redo restores the clock too ("End of period" = the auto-advance at 0:00). */
-const CLOCK_LABEL = /^(Clock|End of period|Final \(clock|Overtime)/;
+const CLOCK_LABEL = /^(Clock|End of period|Final \(clock)/;
 
 export function undo(h: History, _now: number): History {
   const prev = h.past[h.past.length - 1];
