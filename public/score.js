@@ -190,7 +190,7 @@ function render() {
   const p = $('#pending'); p.hidden = pending.size === 0; p.textContent = `${pending.size} tap${pending.size === 1 ? '' : 's'} sending…`;
   const view = {
     court: snap?.court?.name || court,
-    title: g ? `${[g.label || g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')} · ${snap.court.name}` : `UpwardScoreboard · ${snap?.court?.name || court}`,
+    title: g ? `${[g.label || g.grade, `${g.home.name} vs ${g.away.name}`].filter(Boolean).join(' · ')} · ${snap.court.name}` : `Upward Basketball and Cheer · ${snap?.court?.name || court}`,
     grade: g?.label || g?.grade || '',
     connText: online ? '● Online' : '● Offline · reconnecting…',
     // Presence is stale while this phone is offline: don't show a green "TV connected" from before the drop.

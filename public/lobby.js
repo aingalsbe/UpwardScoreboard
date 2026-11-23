@@ -86,7 +86,7 @@ const courtsOf = (band) => (band.layout === 'full' ? ['full'] : ['west', 'east']
 function renderIdle() {
   delete root.dataset.density; delete root.dataset.fitScaled; root.style.removeProperty('--fit-k');
   const had = (snap.games || []).length > 0;
-  document.querySelector('[data-bind="header"]').textContent = 'UPWARD BASKETBALL';
+  document.querySelector('[data-bind="header"]').textContent = 'UPWARD BASKETBALL AND CHEER';
   main.className = 'idle';
   main.innerHTML = `<section class="idle" data-state="idle"><div class="idle-title" data-bind="idle-title">${esc(idleTitle(had, snap.date, realToday()))}</div>
 <div class="idle-next" data-bind="idle-next">${esc(gameDays ? idleLine() : '')}</div></section>`;
@@ -100,7 +100,7 @@ function render() {
   const games = demo ? demoGames(snap.games || [], demo.at) : snap.games || [];
   const p = planLobby(games, snap.cheerSlots || []);
   document.querySelector('[data-bind="header"]').textContent = headerText(snap.date, p.header, demo ? undefined : (snap.today || null)); // R26: league date from the same snapshot; unknown -> dated; demo ?at keeps the old one
-  document.querySelector('[data-bind="sub"]').textContent = `${snap.church?.name || 'Lenexa Baptist Church'} · Upward Basketball`.toUpperCase();
+  document.querySelector('[data-bind="sub"]').textContent = `${snap.church?.name || 'Lenexa Baptist Church'} · Upward Basketball and Cheer`.toUpperCase();
   root.dataset.empty = String(p.empty);
   if (p.empty) return renderIdle();
   const allFull = (!p.now || p.now.layout === 'full') && (!p.next || p.next.layout === 'full');

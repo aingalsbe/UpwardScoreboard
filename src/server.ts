@@ -22,14 +22,16 @@ import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand,
 } from './game.js';
+import { brandText } from './brand.js';
 import QRCode from 'qrcode';
 import { makeQrToken, verifyQrToken, weekEnd } from './qr.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const LEAGUE_NAME = process.env.LEAGUE_NAME || 'Lenexa Baptist Church Youth Basketball';
-const CHURCH_NAME = process.env.CHURCH_NAME || 'Lenexa Baptist Church';
+// Release 1 branding: an env value saying "Upward Basketball" is shown as "Upward Basketball and Cheer".
+const LEAGUE_NAME = brandText(process.env.LEAGUE_NAME || 'Lenexa Baptist Church Youth Basketball');
+const CHURCH_NAME = brandText(process.env.CHURCH_NAME || 'Lenexa Baptist Church');
 // Optional church logo for the TV/overlay header: an http(s) URL or a path under /public (e.g. /church-logo.png).
 const CHURCH_LOGO_URL = (() => { const v = (process.env.CHURCH_LOGO_URL || '').trim(); return /^\/[\w./-]+$/.test(v) && !v.includes('..') ? v : (/^https?:\/\//i.test(v) ? v : null); })();
 const COURT_PINS = new Map(
