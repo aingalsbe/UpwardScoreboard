@@ -20,7 +20,7 @@ import { teamLocker, cheerLocker } from './season-config.js';
 import { loadPractice, loadPracticeRange, validatePractice, savePractice, droppedSlots, practiceDisplayOf } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
-  hiddenGameRefusal, isTeamStatCommand, withFullCourtTimeouts, release1Refusal,
+  hiddenGameRefusal, isTeamStatCommand, withFullCourtTimeouts, release1Refusal, canStartOvertime, periodLabel,
 } from './game.js';
 import { BRAND, brandText } from './brand.js';
 import QRCode from 'qrcode';
@@ -150,8 +150,9 @@ async function mutate(gameId: number, actor: string, cmdId: string | null, op: O
   const run = rt.queue.then(async () => {
     if (cmdId && rt.seen.includes(cmdId)) return { seq: rt.history.present.seq, dup: true }; // retry-safe
     const before = rt.history;
-    // Complete locks the final score: no commands, no undo/redo. Only an admin REOPEN gets through.
-    if (before.present.status === 'complete' && (logged as any)?.type !== 'REOPEN') throw new HttpError(409, 'This game is complete. The final score is locked (an admin can reopen it).');
+    // Complete locks the final score: no commands, no undo/redo. Only an admin REOPEN gets through, and (Release 1)
+    // OVERTIME on an auto-ended tie, which startOvertime() checks first.
+    if (before.present.status === 'complete' && !['REOPEN', 'OVERTIME'].includes((logged as any)?.type)) throw new HttpError(409, 'This game is complete. The final score is locked (an admin can reopen it).');
     const after = op(before);
     if (cmdId) { rt.seen.push(cmdId); if (rt.seen.length > 500) rt.seen.shift(); }
     if (after === before) return { seq: before.present.seq };
@@ -187,6 +188,29 @@ async function gameIsFullCourt(gameId: number): Promise<boolean> {
 async function gameHidesScore(gameId: number): Promise<boolean> {
   const { rows } = await pool.query('SELECT COALESCE(h.grade, a.grade) AS grade FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.id=$1', [gameId]);
   return isScoreHiddenGrade(rows[0]?.grade);
+}
+
+/**
+ * Release 1 (Aaron, 2026-11-23): the final 0:00 ends the game by itself. If it ended TIED, the court's scorekeeper gets
+ * "Next ▶ Start overtime" on the picker for OVERTIME_WINDOW_MS, as long as nothing else was loaded on the court since.
+ * Not for K-2nd Grade games (no score is kept). Returns the offer for the court snapshot, else null.
+ */
+async function overtimeOffer(courtId: number) {
+  if ((await pool.query(`SELECT 1 FROM games WHERE court_id=$1 AND status='active'`, [courtId])).rowCount) return null;
+  const r = (await pool.query(`SELECT g.id, g.history, h.name AS home, a.name AS away, COALESCE(h.grade, a.grade) AS grade FROM games g
+    JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.court_id=$1 AND g.status='complete'
+    ORDER BY g.updated_at DESC, g.id DESC LIMIT 1`, [courtId])).rows[0];
+  const st = r?.history?.present;
+  if (!st || isScoreHiddenGrade(r.grade) || !canStartOvertime(normalizeStatus(r.history).present, Date.now())) return null;
+  return { gameId: r.id, home: r.home, away: r.away, score: st.home.score, grade: r.grade,
+    endedLabel: periodLabel(st.period, st.rules.periods), nextLabel: periodLabel(st.period + 1, st.rules.periods) };
+}
+/** Scorekeeper "Start overtime": re-checks the offer, then reopens the game straight into the next (OT) period on its court. */
+async function startOvertime(gameId: number, courtSlug: string, actor: string) {
+  const c = (await pool.query('SELECT id FROM courts WHERE slug=$1', [courtSlug])).rows[0];
+  const offer = c ? await overtimeOffer(c.id) : null;
+  if (!offer || offer.gameId !== gameId) throw new HttpError(409, 'Overtime can only start right after a game on this court ended tied at 0:00 (and before another game is loaded). An admin can reopen it.');
+  return activateGame(gameId, courtSlug, actor, false, 'OVERTIME');
 }
 
 /**
@@ -301,7 +325,8 @@ async function courtSnapshot(slug: string) {
   // Young grades (2nd and below): flag rows so publicView() strips their scores for non-scorekeeper clients.
   const flag = (x: any) => (x ? Object.assign(x, { hideScore: isScoreHiddenGrade(x.grade) }) : x);
   [nextUp, lastFinal, ...today, ...upNext].forEach(flag);
-  return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext, nextUp, lastFinal, today };
+  const overtime = active ? null : await overtimeOffer(c.id); // Release 1: tie at the final 0:00 -> scorekeeper can start OT
+  return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext, nextUp, lastFinal, today, overtime };
 }
 
 async function gameViewNorm(gameId: number) {
@@ -522,6 +547,11 @@ function attachWs(server: http.Server) {
           if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
           const gid = await activateGame(Number(msg.gameId), court, `pin:${court}`, false);
           return send(client, { type: 'ack', id: msg.id, loaded: gid });
+        }
+        if (msg.type === 'overtime') { // Release 1: "Next ▶ Start overtime" after an auto-ended tie
+          if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
+          const gid = await startOvertime(Number(msg.gameId), court, `pin:${court}`);
+          return send(client, { type: 'ack', id: msg.id, loaded: gid, overtime: true });
         }
         if (msg.type === 'buzzer') { // manual buzzer (full court games only): plays 3 s on this court's TV
           if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
@@ -937,7 +967,7 @@ async function scheduleSnapshot(date: string) {
  * Rules: one active game per court (DB partial unique index), complete the current game first,
  * and the shared floor (Full vs West/East can't both be active; admins may force).
  */
-async function activateGame(gameId: number, courtSlug: string | null, actor: string, force: boolean, reopen = false): Promise<number> {
+async function activateGame(gameId: number, courtSlug: string | null, actor: string, force: boolean, reopen: boolean | 'OVERTIME' = false): Promise<number> {
   const g = (await pool.query(`SELECT g.id, g.court_id, g.status, c.slug, c.name AS court FROM games g LEFT JOIN courts c ON c.id=g.court_id WHERE g.id=$1`, [gameId])).rows[0];
   if (!g) throw new HttpError(404, 'game not found');
   if (!g.court_id) throw new HttpError(400, 'assign the game to a court first');
@@ -956,7 +986,8 @@ async function activateGame(gameId: number, courtSlug: string | null, actor: str
     if (cur) throw new HttpError(409, `${cur.m} is still active on ${g.court}. Complete it before loading another game.`);
   }
   try {
-    if (reopen) await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'REOPEN' }, Date.now()), { type: 'REOPEN' });
+    if (reopen === 'OVERTIME') await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'OVERTIME' }, Date.now()), { type: 'OVERTIME' });
+    else if (reopen) await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'REOPEN' }, Date.now()), { type: 'REOPEN' });
     else {
       const fc = await gameIsFullCourt(gameId); // court/grade may have changed since the runtime was loaded
       await mutate(gameId, actor, null, (h) => dispatch(fc ? { ...h, present: withFullCourtTimeouts(h.present) } : h, { type: 'START_GAME' }, Date.now()), { type: 'START_GAME' });

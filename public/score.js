@@ -138,7 +138,7 @@ function confirmBox(text, okLabel) {
   const d = $('#confirm-dialog');
   if (!d.showModal) return Promise.resolve(confirm(text));
   $('#confirm-text').textContent = text; $('#confirm-ok').textContent = okLabel;
-  d.dataset.kind = okLabel === 'Load' ? 'load' : okLabel === 'End game' ? 'end-game' : 'complete';
+  d.dataset.kind = okLabel === 'Load' ? 'load' : okLabel === 'Start overtime' ? 'overtime' : 'complete';
   return new Promise((res) => { d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }); d.returnValue = ''; d.showModal(); });
 }
 const matchup = (x) => `${x.label || x.grade ? (x.label || x.grade) + ' · ' : ''}${x.home} vs ${x.away}`;
@@ -147,6 +147,13 @@ $('#picker-list').addEventListener('click', async (e) => {
   const x = (snap?.today || []).find((t) => String(t.id) === b.dataset.gameId); if (!x) return;
   if (!(await confirmBox(`Load ${matchup(x)} on ${snap.court.name} Court?`, 'Load'))) return;
   if (!conn.send({ type: 'load', id: uid(), gameId: x.id })) toast('Not connected. Try again in a moment.', 'warn');
+});
+// Release 1 (Aaron): the final 0:00 ends the game by itself. A TIE can go on to overtime from here (OT via Next).
+$('#ot-start').addEventListener('click', async () => {
+  const o = snap?.overtime; if (!o) return;
+  if (!(await confirmBox(`Start overtime? ${o.home} ${o.score} – ${o.score} ${o.away} reopens on ${snap.court.name} Court and goes to ${o.nextLabel} (clock reset, stopped).`, 'Start overtime'))) return;
+  localStorage.setItem(LOADED_KEY, String(o.gameId)); // straight back into the game view once it is active again
+  if (!conn.send({ type: 'overtime', id: uid(), gameId: o.gameId })) toast('Not connected. Try again in a moment.', 'warn');
 });
 $('#resume-ok').addEventListener('click', () => { if (snap?.game) { localStorage.setItem(LOADED_KEY, String(snap.game.id)); render(); } });
 $('#complete-game').addEventListener('click', async () => {
@@ -183,6 +190,9 @@ function renderMode() {
     const html = list.map((x) => `<li><button type="button" class="pick" data-game-id="${x.id}" data-status="${x.status}"><span class="pick-time">${x.is_today === false && x.day ? esc(x.day) + ' · ' : ''}${esc(x.time)}</span> <span class="pick-grade">${esc(x.label || x.grade || '')}</span> <span class="pick-matchup">${esc(x.home)} vs ${esc(x.away)}</span> <span class="status-badge" data-status="${x.status}">${STATUS_LABEL[x.status] || esc(x.status)}</span></button></li>`).join('');
     if ($('#picker-list').innerHTML !== html) $('#picker-list').innerHTML = html;
     $('#picker-empty').hidden = list.length > 0;
+    const o = snap?.overtime; // Release 1: tie at the final 0:00
+    $('#ot-offer').hidden = !o;
+    if (o) $('#ot-text').textContent = `Final at 0:00 (${o.endedLabel}): ${o.home} ${o.score} – ${o.score} ${o.away}. Tied, so this game can go to overtime.`;
   }
 }
 
@@ -250,23 +260,8 @@ function render() {
     const hint = $('#clock-hint');
     hint.hidden = !atZero;
     hint.textContent = atZero ? (s.period >= s.rules.periods ? 'Clock at 0:00. Complete the game, or Next ▶ for overtime.' : 'Clock at 0:00. Press Next ▶ or Set clock… to go on.') : '';
-    maybeAskEndGame(g, s);
   }
   bindText(document, view);
-}
-
-/**
- * Release 1: when the final period (or an OT period) ends at 0:00, ask "Ready to end the game?" once per period on
- * this device. Confirm completes the game; Cancel stays (Next ▶ goes to overtime, Complete game is still there).
- */
-let endAsked = null;
-async function maybeAskEndGame(g, s) {
-  if (s.status !== 'active' || s.clock.running || s.clock.remainingMs > 0 || s.period < s.rules.periods) return;
-  if (root.dataset.view !== 'game' || $('#confirm-dialog').open) return;
-  const key = `sb-endask-${g.id}-${s.period}`;
-  if (endAsked === key || sessionStorage.getItem(key)) return;
-  endAsked = key; sessionStorage.setItem(key, '1');
-  if (await confirmBox('Ready to end the game?', 'End game')) send('cmd', { cmd: { type: 'END_GAME' } });
 }
 
 function tick() {

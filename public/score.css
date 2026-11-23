@@ -78,9 +78,11 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 #confirm-cancel { background: transparent; border: 2px solid var(--line); color: var(--ink); }
 #confirm-ok { font-size: 20px; }
 .confirm-dialog[data-kind="complete"] #confirm-ok { background: #b3261e; color: #fff; }
-/* SAGE: Release 1 — "Ready to end the game?" (final period hit 0:00) + START disabled at 0:00 with a hint (halftime bug fix). */
-.confirm-dialog[data-kind="end-game"] form::before { content: "⚠ End of the final period · locks the final score"; color: #ffc4a8; }
-.confirm-dialog[data-kind="end-game"] #confirm-ok { background: #b3261e; color: #fff; }
+/* SAGE: Release 1 — "Start overtime?" (auto-ended tie, picker) + START disabled at 0:00 with a hint (halftime bug fix). */
+.confirm-dialog[data-kind="overtime"] form::before { content: "Overtime · reopens the tied game"; }
+.ot-offer { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; padding: 14px; border-radius: 14px; background: var(--panel); border: 2px solid #ffb347; }
+.ot-offer[hidden] { display: none; }
+.ot-text { font-size: 17px; font-weight: 700; line-height: 1.4; }
 .clock-hint { margin: 0; font-size: 16px; line-height: 1.35; color: #ffe9a8; background: #3a3010; border: 1px solid #6b5a1f; border-radius: 10px; padding: 8px 10px; text-align: center; }
 .clock-hint[hidden] { display: none; }
 

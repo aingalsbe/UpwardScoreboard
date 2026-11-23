@@ -102,17 +102,7 @@ await shot(scFull, '04-score-halftime-auto-advanced.png', true);
 await shot(tvFull, '08-court-tv-halftime.png');
 await scFull.click('#clock-toggle'); await sleep(600);
 check('START works at halftime (no Prev/Next)', await scFull.evaluate(() => document.getElementById('clock-toggle').textContent.includes('STOP')));
-// end-game prompt after the final period
-await cmds('full', [{ type: 'CLOCK_STOP' }, { type: 'PERIOD', delta: 1 }, { type: 'PERIOD', delta: 1 }, { type: 'CLOCK_SET', ms: 1200 }, { type: 'CLOCK_START' }]);
-await sleep(2200);
-const dlg = await scFull.evaluate(() => ({ open: document.getElementById('confirm-dialog').open, text: document.getElementById('confirm-text').textContent, ok: document.getElementById('confirm-ok').textContent, kind: document.getElementById('confirm-dialog').dataset.kind, kicker: getComputedStyle(document.querySelector('#confirm-dialog form'), '::before').content }));
-check('"Ready to end the game?" after the final period', dlg.open && dlg.text === 'Ready to end the game?' && dlg.ok === 'End game', JSON.stringify(dlg));
-await shot(scFull, '02-score-end-game-prompt.png', true);
-await scFull.click('#confirm-cancel'); await sleep(500);
-const stays = await api(`/api/public/court/full`);
-check('Cancel keeps the game active', stays.game?.state.status === 'active' && stays.game.state.period === 6);
-
-// --- Admin: buzzer button on the Full court card
+// --- Admin: buzzer button on the Full court card (game still live in P4)
 const adm = await open('/admin', DESK);
 if (await adm.locator('#login').isVisible()) { await adm.fill('#login input[type=password]', ADMIN); await adm.click('#login button'); await sleep(1500); }
 check('Admin: Buzzer button on the full court card', await adm.locator('button[data-buzzer]').count() === 1);
@@ -121,12 +111,32 @@ await shot(adm, '10-admin-buzzer-button.png');
 const b3 = await tvFull.evaluate(() => (window.__buzzerLog || []).length);
 await adm.click('button[data-buzzer]'); await sleep(700);
 check('Admin buzzer plays on the full court TV', (await tvFull.evaluate(() => (window.__buzzerLog || []).length)) === b3 + 1);
-// End game via the prompt's confirm path: reload score (new period key) -> use Complete instead is covered by tests; here confirm a fresh prompt
-await scFull.evaluate(() => { for (const k of Object.keys(sessionStorage)) sessionStorage.removeItem(k); });
-await scFull.reload(); await sleep(1200); await scoreSignIn(scFull, 'full'); await sleep(800);
-if (await scFull.evaluate(() => document.getElementById('confirm-dialog').open)) { await scFull.click('#confirm-ok'); await sleep(800); }
-const done = await api(`/api/games/${fullG.id}/events`);
-check('Confirm on "Ready to end the game?" completes the game', Array.isArray(done) && done.some((e) => (e.command?.type || JSON.parse(e.command || '{}').type) === 'END_GAME'));
+
+// --- Aaron #2: the final 0:00 ends the game by itself (no prompt); a tie goes on to OT via "Next ▶ Start overtime"
+const gameStatus = async () => (await api('/api/games')).find((g) => g.id === fullG.id)?.status;
+const b4 = await tvFull.evaluate(() => (window.__buzzerLog || []).length);
+await cmds('full', [{ type: 'CLOCK_STOP' }, { type: 'SCORE', team: 'away', pts: 1 }, { type: 'PERIOD', delta: 1 }, { type: 'PERIOD', delta: 1 }, { type: 'CLOCK_SET', ms: 1200 }, { type: 'CLOCK_START' }]); // tied 4-4, P6
+await sleep(2400);
+check('buzzer at the final 0:00 on the court TV', (await tvFull.evaluate(() => (window.__buzzerLog || []).length)) === b4 + 1);
+check('final 0:00 auto-completes the game (no "Ready to end the game?" prompt)', (await gameStatus()) === 'complete' && !(await scFull.evaluate(() => document.getElementById('confirm-dialog').open)));
+const offer = await scFull.evaluate(() => ({ view: document.documentElement.dataset.view, shown: !document.getElementById('ot-offer').hidden, text: document.getElementById('ot-text').textContent, btn: document.getElementById('ot-start').textContent }));
+check('tie: scorekeeper sees "Next ▶ Start overtime"', offer.view === 'picker' && offer.shown && /Tied/.test(offer.text) && /Start overtime/.test(offer.btn), JSON.stringify(offer));
+await shot(scFull, '02-score-auto-end-tie-overtime-offer.png', true);
+await shot(tvFull, '02d-court-tv-final-after-auto-end.png');
+await scFull.click('#ot-start'); await sleep(500);
+const otDlg = await scFull.evaluate(() => ({ open: document.getElementById('confirm-dialog').open, kind: document.getElementById('confirm-dialog').dataset.kind, ok: document.getElementById('confirm-ok').textContent }));
+check('"Start overtime?" confirm', otDlg.open && otDlg.kind === 'overtime' && otDlg.ok === 'Start overtime', JSON.stringify(otDlg));
+await shot(scFull, '02b-score-start-overtime-confirm.png', true);
+await scFull.click('#confirm-ok'); await sleep(1200);
+const ot = await scFull.evaluate(() => ({ view: document.documentElement.dataset.view, per: document.querySelector('[data-bind="period"]').textContent, clock: document.querySelector('[data-clock]').textContent, start: document.getElementById('clock-toggle').disabled }));
+const otTv = await tvFull.evaluate(() => document.querySelector('[data-bind="period"]')?.textContent);
+check('OT: game back on the court in OT, clock 06:00 stopped, START enabled (score screen + TV)', (await gameStatus()) === 'active' && ot.view === 'game' && ot.per === 'OT' && ot.clock === '06:00' && !ot.start && otTv === 'OT', JSON.stringify({ ...ot, otTv }));
+await shot(scFull, '02c-score-overtime-OT.png', true);
+const b5 = await tvFull.evaluate(() => (window.__buzzerLog || []).length);
+await cmds('full', [{ type: 'SCORE', team: 'home', pts: 2 }, { type: 'CLOCK_SET', ms: 1200 }, { type: 'CLOCK_START' }]); // home wins in OT
+await sleep(2400);
+const after = await scFull.evaluate(() => ({ view: document.documentElement.dataset.view, offer: !document.getElementById('ot-offer').hidden }));
+check('OT 0:00 auto-ends again with the buzzer; winner -> no OT offer', (await gameStatus()) === 'complete' && (await tvFull.evaluate(() => (window.__buzzerLog || []).length)) === b5 + 1 && after.view === 'picker' && !after.offer, JSON.stringify(after));
 
 // --- Non-full-court game on West
 await api(`/api/games/${westG.id}/start`, { method: 'POST', body: JSON.stringify({ force: true }) });

@@ -85,13 +85,17 @@ The scorekeeper lists today's games on its court; when there are none today it l
 1. Scorekeeper: type the PIN. The court's games are listed (on a weekday: Friday's, with the day shown).
 2. Tap the first game (e.g. "5th Grade Boys · Eagles vs Lions" on Full, or "2nd Grade Boys · Eagles vs Lions" on West), then confirm "Load ... Court?". The TV switches from Next up to the game; the schedule highlights it as LIVE.
 3. Tap +2 for the home team (always listed first, on the left), +3 for the away team. TV and schedule update instantly.
-4. Add a foul for the away team.
+4. (Release 1: fouls are no longer kept on any game.)
 5. Start the clock, let it run a few seconds, stop it.
-6. Take a timeout for the home team (the clock stops, a timeout dot goes out).
+6. On a full court game (Court Full or 5th-6th Grade) take a timeout for the home team (the clock stops, the timeout dot goes out; 1 per team per half). Other games have no timeouts.
 7. Tap Undo: the last action is reversed on the TV.
 8. Tap Complete game and confirm. The score locks, the TV shows Next up with the final score, and the schedule shows FINAL.
 
 Game rules (2026-10): **6 periods of 6:00 (36-minute game), 3 per half**, halftime after P3. Every screen labels the period the same way: **"1st Half · P1"–"1st Half · P3", "2nd Half · P4"–"2nd Half · P6"**, then "OT", "OT2". Show it: tap Next period three times (or let P3's clock run out): the TV shows HALFTIME, team fouls go back to 0 (bonus is per half) and each team has 2 timeouts again. Prev right after an accidental Next restores fouls, timeouts and the clock.
+
+**Release 1 (Aaron, 2026-11-23):** when a period's clock hits 0:00 the court TV buzzes for 3 s and the game moves to the next period by itself (clock reset and stopped; START works right away, also at halftime). When the **final period (P6) or an OT period** hits 0:00 the game **ends by itself** (FINAL, no prompt) and the court goes to Next up. If it ended **tied**, the scorekeeper's game list shows **"Next ▶ Start overtime"** (for 30 minutes, until another game is loaded on that court): confirm and the game comes back in OT with a fresh 6:00 clock, stopped. OT that ends tied offers OT2, and so on (up to OT4). Not tied: no OT offer (an admin can still Reopen). Undo right after starting OT goes back to P6 at 0:00 (active), where Complete game is available.
+
+**TV sound:** the demo TV window shows "Tap to enable sound" at the bottom until you click it once. Real court TVs are started with `--autoplay-policy=no-user-gesture-required` so no tap is needed (SETUP.md, "Court TV kiosk + buzzer sound").
 
 **K–2nd Grade (Pre-K, K, 1st, 2nd in any spelling: "2nd Grade", "Gr 2", "grade-1", "Kindergarten", ...): no score on the TV, overlay or lobby**, only clock, period and possession. The scorekeeper for these games has **no points, fouls or timeouts** (buttons hidden; the server refuses them, even from an old screen); it notes "K–2nd Grade: no score, fouls or timeouts". Undo/Redo still work for clock, period and possession taps; Prev/Next period stay. To demo a score, load a 3rd Grade or older game.
 

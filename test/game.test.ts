@@ -91,16 +91,16 @@ test('possession toggles and commands are validated', () => {
   assert.deepEqual(parseCommand({ type: 'SCORE', team: 'away', pts: '3' }), { type: 'SCORE', team: 'away', pts: 3 });
 });
 
-test('QA #7: undo after the clock auto-expires undoes the clock start consistently (final period: no auto-advance)', () => {
+test('QA #7 (Release 1): the final period expiring ends the game; history keeps the ended period at 0:00', () => {
   let h = newHistory(initialState({ periods: 1, periodLengthMs: 60_000 }));
   h = dispatch(h, { type: 'CLOCK_SET', ms: 1500 }, T0);
   h = dispatch(h, { type: 'CLOCK_START' }, T0);
   h = dispatch(h, { type: 'CLOCK_EXPIRE' }, T0 + 1600);
   assert.equal(h.present.clock.remainingMs, 0);
-  assert.equal(h.present.lastLabel, 'Clock start', 'undo button names the real top of history');
-  h = undo(h, T0 + 2000);
-  assert.equal(h.present.clock.remainingMs, 1500, 'undo restores the time before the start');
-  assert.equal(h.present.clock.running, false);
+  assert.equal(h.present.status, 'complete'); assert.equal(h.present.banner, 'FINAL');
+  assert.equal(h.present.lastLabel, 'Final (clock 0:00)');
+  const top = h.past[h.past.length - 1];
+  assert.equal(top.status, 'active'); assert.deepEqual(top.clock, { running: false, remainingMs: 0, startedAt: null });
 });
 
 test('QA #11: Prev right after Next restores fouls and clock', () => {

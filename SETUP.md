@@ -130,11 +130,30 @@ App on **http://localhost:3000** (health: `/api/health`). Postgres is not publis
 | Court picker | http://localhost:3000/ |
 | Admin | http://localhost:3000/admin |
 | Scorekeeper | `/score/full`, `/score/west`, `/score/east` |
-| TV | `/fullcourt`, `/westcourt`, `/eastcourt` (add `/overlay` for OBS); the old `/upwardbasketballscores/<court>court` links still work. Court TVs show "Tap to enable sound" once after loading (buzzer; browser autoplay rule) unless Chrome runs with `--autoplay-policy=no-user-gesture-required` |
+| TV | `/fullcourt`, `/westcourt`, `/eastcourt` (add `/overlay` for OBS); the old `/upwardbasketballscores/<court>court` links still work. Court TVs show "Tap to enable sound" once after loading (buzzer; browser autoplay rule) unless the browser is started with `--autoplay-policy=no-user-gesture-required` (see "Court TV kiosk + buzzer sound" below) |
 | West + East on one TV | `/tv/split` |
 | Lobby TV | `/upwardbasketballscores/lobby` (alias `/lobby`, `?day=fri`, `?day=sat`, `?date=YYYY-MM-DD`) |
 
 Dev-only logins (from `.env.demo` / `DEMO.md`): admin password `change-me-admin`; PINs Full `1111`, West `2222`, East `3333`.
+
+### Court TV kiosk + buzzer sound (Release 1)
+
+Court TVs play a 3-second buzzer when a period's clock hits 0:00 (and on the scorekeeper/Admin Buzzer button, full court games). Browsers block sound until someone taps the page, so a TV opened normally shows **"Tap to enable sound"** at the bottom after every load/reload. **Start each court TV browser with `--autoplay-policy=no-user-gesture-required`** so the buzzer works with no tap (Aaron, 2026-11-23). No app setting is needed.
+
+Windows shortcut targets (one shortcut per TV; replace `<host>` with the scoreboard address and pick the court URL: `/fullcourt`, `/westcourt`, `/eastcourt` or `/tv/split`):
+
+```text
+Microsoft Edge (kiosk, full screen):
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk "https://<host>/westcourt" --edge-kiosk-type=fullscreen --autoplay-policy=no-user-gesture-required --user-data-dir="C:\ScoreboardTV\edge-west" --no-first-run
+
+Google Chrome (kiosk):
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --autoplay-policy=no-user-gesture-required --user-data-dir="C:\ScoreboardTV\chrome-west" --no-first-run "https://<host>/westcourt"
+```
+
+- The flag only applies when that browser process **starts**. If Edge/Chrome is already running with the same profile, the new window joins it and ignores the flag. The separate `--user-data-dir` per TV avoids that (also turn off Edge "Startup boost" if you reuse the normal profile). Check at `edge://version` or `chrome://version`: the "Command Line" must include the flag.
+- To exit kiosk mode: Alt+F4.
+- **Fallback:** without the flag (or if a browser ignores it) nothing breaks. The TV shows the "Tap to enable sound" pill over the ticker after each load, and one tap or key press enables the buzzer until the next reload. The split TV needs one tap for both halves. The lobby, practice TVs and overlay never play sound.
+- `Start-Demo.ps1` does not add the flag, so the demo TV window shows the tap pill (useful for QA of the fallback).
 
 ## 9. Cron flags
 

@@ -32,6 +32,11 @@
     <!-- Game picker: today's games on this court that aren't complete (filled by score.js). -->
     <section id="picker" class="picker" hidden aria-labelledby="picker-title">
       <h2 id="picker-title">Pick a game · <span data-bind="court"></span></h2>
+      <!-- Release 1: the final 0:00 ends the game by itself; after a TIE, overtime starts here (OT via Next). -->
+      <div id="ot-offer" class="ot-offer" hidden>
+        <p id="ot-text" class="ot-text"></p>
+        <button class="btn go" id="ot-start" type="button">Next ▶ Start overtime</button>
+      </div>
       <ul id="picker-list" class="picker-list"></ul>
       <p id="picker-empty" class="picker-empty" hidden>No games left today on this court.</p>
     </section>
