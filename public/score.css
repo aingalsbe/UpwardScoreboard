@@ -99,7 +99,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .btn.timeout[hidden] { display: none; }
 html:not(.full-court) .panel.team .small { grid-template-columns: 1fr; }
 .small, .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.clock { font-family: "DejaVu Sans Mono", monospace; font-size: 64px; font-weight: 900; color: #ff4d42; background: #000; text-align: center; border-radius: 12px; padding: 4px 0; font-variant-numeric: tabular-nums; border: 3px solid transparent; }
+.clock { font-family: "DejaVu Sans Mono", monospace; font-size: 64px; font-weight: 900; color: #fff; background: #000; text-align: center; border-radius: 12px; padding: 4px 0; font-variant-numeric: tabular-nums; border: 3px solid transparent; }
 .per { font-size: 20px; text-align: center; color: #dfe2ec; } .per b { font-size: 32px; }
 .foot { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* Complete game: deliberately separated, outlined, full width, at the very end. */
@@ -177,3 +177,11 @@ html:not(.full-court) .panel.team .small { grid-template-columns: 1fr; }
 /* SAGE: stopgap (round 2) — K-2nd Grade games: score, points, fouls and timeouts are hidden (score.js sets
    [data-team-stat] + hidden; .btn display rules would otherwise win over [hidden]). Restyle freely. */
 .score-hidden [data-team-stat] { display: none !important; }
+
+/* SAGE: Release 1 (2026-11-23) stopgaps — restyle freely.
+   Red clock at 1:00 or less (score.js sets [data-low]); the clock is white above that. Offline styling still wins. */
+.clock[data-low="true"] { color: #ff4d42; }
+[data-conn="offline"] .clock[data-low="true"], [data-conn="connecting"] .clock[data-low="true"] { color: #d9b3b0; }
+/* Manual buzzer (full court games only). */
+.btn.buzzer { background: #6b3a00; color: #fff; border: 2px solid #ffb347; }
+.btn.buzzer[hidden] { display: none; }

@@ -134,6 +134,7 @@ function renderLive() {
     const g = games.find((x) => x.court_id === c.id && x.status === 'active');
     const s = encodeURIComponent(c.slug);
     return `<div class="card"><h3>${esc(c.name)}</h3><p>${g ? `<b>${esc(g.home)} ${g.home_score} – ${g.away_score} ${esc(g.away)}</b> <span class="tag status-badge ${esc(g.status)}" data-status="${esc(g.status)}">${STATUS[g.status]}</span>` : '<span class="muted">No active game (TV shows Next up)</span>'}</p>
+      ${g && g.full_court ? `<p class="buzzer-row"><button class="sm buzzer" type="button" data-buzzer="${g.id}" title="Plays the 3-second buzzer on the ${esc(c.name)} court TV">📣 Buzzer</button> <span class="muted">full court game · plays on this court's TV</span></p>` : ''}
       <p class="links"><a href="${tvPath(c.slug)}" target="_blank">TV</a> · <a href="/score/${s}" target="_blank">Scorekeeper</a> · <a href="${tvPath(c.slug)}/overlay" target="_blank">Overlay</a></p></div>`;
   }).join('');
   // Bug A1: this used to drop complete games (filter status !== 'complete'), so a finished game vanished instead of
@@ -182,6 +183,10 @@ document.addEventListener('click', guard(async (e) => {
       r = await api(url, { method: 'POST', body: JSON.stringify({ force: true }) });
     }
     msg(`Game is now on ${r.court}. TV and scorekeeper update automatically.`); await load();
+  }
+  if (b.dataset.buzzer) { // Release 1: manual buzzer, full court games only (no confirm: it is pressed in the moment)
+    const r = await api(`/api/games/${b.dataset.buzzer}/buzzer`, { method: 'POST' });
+    msg(r.tvs ? 'Buzzer played on the court TV.' : 'Buzzer sent, but no TV is connected on that court.');
   }
   if (b.dataset.complete && confirm('Complete this game? The final score will be locked and the court goes to "Next up".')) {
     await api(`/api/games/${b.dataset.complete}/complete`, { method: 'POST' }); msg('Game completed. Final score locked.'); await load();

@@ -55,6 +55,7 @@ const conn = connect({
         }
       }
     }
+    if (m.type === 'ack' && m.buzzer) { toast(m.tvs ? 'Buzzer sent to the court TV.' : 'Buzzer sent, but no court TV is connected.', m.tvs ? 'info' : 'warn'); return; }
     if (m.type === 'ack') { pending.delete(m.id); savePending(); render(); }
     if (m.type === 'error') {
       if (m.id && /game changed|complete/.test(m.error) && pending.has(m.id)) toast(/complete/.test(m.error) ? 'The game is complete; a saved tap was not applied.' : 'A saved tap was for an earlier game and was discarded.', 'warn');
@@ -127,6 +128,11 @@ document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click
 $('#undo').addEventListener('click', () => send('undo'));
 $('#redo').addEventListener('click', () => send('redo'));
 $('#banner').addEventListener('click', () => send('cmd', { cmd: { type: 'BANNER', text: snap?.game?.state.banner ? null : 'HALFTIME' } }));
+// Release 1: manual buzzer (full court games). Sent once, live only: never queued, so a late retry can't buzz the TV.
+$('#buzzer').addEventListener('click', () => {
+  if (!snap?.game?.fullCourt) return;
+  if (!authed || !conn.send({ type: 'buzzer', id: uid(), gameId: snap.game.id })) toast('Not connected. The buzzer did not play; try again in a moment.', 'warn');
+});
 // Confirm dialog (Load / Complete game). Falls back to confirm() where <dialog> isn't supported.
 function confirmBox(text, okLabel) {
   const d = $('#confirm-dialog');
@@ -265,7 +271,13 @@ async function maybeAskEndGame(g, s) {
 
 function tick() {
   const el = $('[data-clock]');
-  if (el && snap?.game) { const t = fmtClock(clockMs(snap.game.state.clock, displayNow(conn))); if (el.textContent !== t) el.textContent = t; }
+  if (el && snap?.game) {
+    const ms = clockMs(snap.game.state.clock, displayNow(conn)), t = fmtClock(ms);
+    if (el.textContent !== t) el.textContent = t;
+    // Release 1: red at 1:00 or less (score.css [data-low]).
+    const low = ms <= 60000;
+    if (low !== (el.dataset.low === 'true')) { if (low) el.dataset.low = 'true'; else delete el.dataset.low; }
+  }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);

@@ -64,6 +64,8 @@
           <button class="btn sm" data-cmd='{"type":"PERIOD","delta":1}'>Next ▶</button>
         </div>
         <button class="btn sm" data-cmd='{"type":"POSSESSION","team":"toggle"}'>Possession ⇄<small data-bind="possText"></small></button>
+        <!-- Release 1: full court games only; each press plays the 3-second buzzer on this court's TV. -->
+        <button class="btn sm buzzer" id="buzzer" type="button" data-full-court hidden>📣 Buzzer<small>plays on the court TV</small></button>
       </section>
 
       <section class="panel team home">

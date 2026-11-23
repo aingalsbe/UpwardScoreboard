@@ -160,6 +160,7 @@ async function mutate(gameId: number, actor: string, cmdId: string | null, op: O
       [gameId, p.seq, cmdId, actor, JSON.stringify(logged)]);
     rt.history = after;
     armClock(gameId, rt);
+    if ((logged as any)?.type === 'CLOCK_EXPIRE') await buzzGame(gameId, 'period'); // end of every period: buzzer first, then the new state
     if (p.status === 'complete' && before.present.status !== 'complete') {
       // court goes idle ("Next up") the moment a game is completed
       const { rows } = await pool.query('UPDATE courts SET current_game_id=NULL WHERE current_game_id=$1 RETURNING slug', [gameId]);
@@ -183,6 +184,21 @@ async function gameIsFullCourt(gameId: number): Promise<boolean> {
 async function gameHidesScore(gameId: number): Promise<boolean> {
   const { rows } = await pool.query('SELECT COALESCE(h.grade, a.grade) AS grade FROM games g JOIN teams h ON h.id=g.home_team_id JOIN teams a ON a.id=g.away_team_id WHERE g.id=$1', [gameId]);
   return isScoreHiddenGrade(rows[0]?.grade);
+}
+
+/**
+ * Buzzer (Release 1): 3 s on that court's TV(s) only (role tv; also each half of the split TV, which embeds /tv/<court>).
+ * Never the lobby, overlay or scorekeeper. reason: 'period' (clock hit 0) | 'manual' (button on the score screen / Admin).
+ */
+function broadcastBuzzer(slug: string, reason: 'period' | 'manual') {
+  const m = { type: 'buzzer', id: crypto.randomUUID(), reason, court: slug, serverNow: Date.now(), durationMs: 3000 };
+  let n = 0;
+  for (const c of clients) if (c.court === slug && c.role === 'tv') { send(c, m); n++; }
+  return n;
+}
+async function buzzGame(gameId: number, reason: 'period' | 'manual') {
+  const { rows } = await pool.query('SELECT slug FROM courts WHERE current_game_id=$1', [gameId]);
+  for (const r of rows) broadcastBuzzer(r.slug, reason);
 }
 
 // ------------------------------------------------------------ view models
@@ -496,6 +512,14 @@ function attachWs(server: http.Server) {
           if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
           const gid = await activateGame(Number(msg.gameId), court, `pin:${court}`, false);
           return send(client, { type: 'ack', id: msg.id, loaded: gid });
+        }
+        if (msg.type === 'buzzer') { // manual buzzer (full court games only): plays 3 s on this court's TV
+          if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
+          const c = (await pool.query(`SELECT g.id FROM courts c JOIN games g ON g.court_id=c.id AND g.status='active' WHERE c.slug=$1`, [court])).rows[0];
+          if (!c?.id) return send(client, { type: 'error', id: msg.id, error: 'No game is loaded on this court. Pick a game first.' });
+          if (!(await gameIsFullCourt(c.id))) return send(client, { type: 'error', id: msg.id, error: 'The buzzer button is only for full court games.', code: 'release1-rule' });
+          const tvs = broadcastBuzzer(court, 'manual');
+          return send(client, { type: 'ack', id: msg.id, buzzer: true, tvs });
         }
         if (['cmd', 'undo', 'redo'].includes(msg.type)) {
           if (role !== 'score' || !client.authed) return send(client, { type: 'error', id: msg.id, error: 'read-only: scorekeeper PIN required' });
@@ -1525,6 +1549,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       await activateGame(id, null, 'admin', !!sb?.force);
       const slug = (await pool.query('SELECT c.slug FROM games g JOIN courts c ON c.id=g.court_id WHERE g.id=$1', [id])).rows[0].slug;
       return json(res, 200, { ok: true, court: slug });
+    }
+    if (m === 'POST' && id && seg[3] === 'buzzer') { // Release 1: Admin's manual buzzer (full court games only)
+      const g = (await pool.query(`SELECT g.status, c.slug FROM games g LEFT JOIN courts c ON c.id=g.court_id WHERE g.id=$1`, [id])).rows[0];
+      if (!g) throw new HttpError(404, 'game not found');
+      if (g.status !== 'active' || !g.slug) throw new HttpError(409, 'The buzzer works only for the active game on a court.');
+      if (!(await gameIsFullCourt(id))) throw new HttpError(409, 'The buzzer button is only for full court games.');
+      return json(res, 200, { ok: true, court: g.slug, tvs: broadcastBuzzer(g.slug, 'manual') });
     }
     if (m === 'POST' && id && seg[3] === 'complete') { // admin force-complete (locks the final score)
       await mutate(id, 'admin', null, (h) => dispatch(h, { type: 'END_GAME' }, Date.now()), { type: 'END_GAME', by: 'admin' });

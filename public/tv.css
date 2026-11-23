@@ -85,8 +85,8 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 .center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; }
 .grade { font-size: 2.1rem; font-weight: 800; padding: .5rem 1.6rem; border-radius: 3rem; background: #262d45; color: #fff; letter-spacing: .05rem; }
 .grade:empty { display: none; }
-.clock { position: relative; font-size: 8.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #ff4d42; background: #000;
-  padding: .6rem 1.8rem; border-radius: 1.4rem; border: .3rem solid #3a4058; text-shadow: 0 0 2rem rgba(255,77,66,.55); font-variant-numeric: tabular-nums; margin-top: .8rem; }
+.clock { position: relative; font-size: 8.6rem; font-weight: 900; font-family: "DejaVu Sans Mono", monospace; color: #fff; background: #000;
+  padding: .6rem 1.8rem; border-radius: 1.4rem; border: .3rem solid #3a4058; text-shadow: 0 0 2rem rgba(255,255,255,.35); font-variant-numeric: tabular-nums; margin-top: .8rem; }
 .period-lbl { margin-top: 1.6rem; font-size: 1.8rem; letter-spacing: .4rem; color: var(--muted); font-weight: 700; }
 .period { font-size: 6rem; font-weight: 900; line-height: 1; }
 .poss { margin-top: 1.2rem; font-size: 1.7rem; font-weight: 800; letter-spacing: .2rem; color: var(--ink); visibility: hidden; display: flex; align-items: center; gap: .8rem; }
@@ -176,3 +176,16 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 .no-score .score { visibility: hidden; }
 /* SAGE: stopgap — the period now reads "1st Half · P2" (was "2"); smaller so it fits the center column. */
 .period { font-size: 3.6rem; white-space: nowrap; }
+
+/* SAGE: Release 1 (2026-11-23) stopgaps — restyle freely.
+   Red clock at 1:00 or less (display.js: root .clock-low). White above that. Offline styling (above) still wins. */
+.clock-low .clock { color: #ff4d42; text-shadow: 0 0 2rem rgba(255,77,66,.55); }
+.clock-low[data-conn="offline"] [data-clock], .clock-low[data-conn="connecting"] [data-clock] { color: #d9b3b0; text-shadow: none; }
+/* One-time "Tap to enable sound" (browser autoplay rule), centered over the board until the TV is tapped. */
+.sound-gate { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20; display: flex; flex-direction: column; align-items: center; gap: .6rem;
+  padding: 2.4rem 4rem; border-radius: 1.6rem; border: .3rem solid var(--season-light, #FFC72C); background: rgba(10,12,20,.92); color: #fff; font: inherit; cursor: pointer;
+  box-shadow: 0 2rem 6rem rgba(0,0,0,.6); }
+.sound-gate b { font-size: 3.2rem; font-weight: 900; letter-spacing: .1rem; }
+.sound-gate small { font-size: 1.6rem; color: #c9cee0; }
+.sound-gate-icon { font-size: 4.4rem; line-height: 1; }
+.sound-gate[hidden] { display: none; }

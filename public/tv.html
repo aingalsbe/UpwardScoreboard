@@ -60,6 +60,8 @@
 
   <footer class="ticker"><b>UP NEXT</b><span data-bind="upNext"></span></footer>
   <div class="conn-dot" title="connection"></div>
+  <!-- Release 1: the end-of-period / manual buzzer needs one tap per TV (browser autoplay rules). buzzer.js shows it. -->
+  <button class="sound-gate" id="sound-gate" type="button" hidden><span class="sound-gate-icon" aria-hidden="true">🔊</span><b>Tap to enable sound</b><small>for the buzzer on this TV</small></button>
   <script src="/contrast.js"></script>
   <script type="module" src="/display.js"></script>
 </body>

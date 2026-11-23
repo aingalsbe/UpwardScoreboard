@@ -2,11 +2,14 @@
 // this file only fills [data-bind] text, sets CSS variables and state classes.
 import { fillTeamLogo, fillImg } from './logo-badge.js';
 import { connect, courtFromPath, displayNow, clockMs, fmtClock, periodLabel, bindText, timeoutCap } from './common.js';
+import { createBuzzer } from './buzzer.js';
 
 const court = courtFromPath();
 const role = document.body.dataset.role || 'tv';
 const root = document.documentElement;
 let snap = null;
+// Release 1: court TVs (role tv, incl. each half of the split TV) play the buzzer; never the overlay or lobby.
+const buzzer = role === 'tv' ? createBuzzer({ gate: document.getElementById('sound-gate') }) : null;
 
 // Broken logo (404 etc.) -> the initial, never an empty circle (logo-badge.js).
 function logo(el, team) { fillTeamLogo(el, team.logo, team.short || team.name); }
@@ -81,13 +84,18 @@ function render() {
 const conn = connect({
   court, role,
   onState: (m) => { snap = m; render(); },
+  onMessage: (m) => { if (buzzer && m.type === 'buzzer') buzzer.onMessage(m, conn.serverNow()); },
   onStatus: (st) => { root.dataset.conn = st; for (const id of ['idle', 'next-up']) { const el = document.getElementById(id); if (el) el.dataset.conn = st; } },
 });
 
 // Repaint only the clock, every animation frame, from server time.
 function tick() {
   const el = document.querySelector('[data-clock]');
-  if (el && snap?.game) { const t = fmtClock(clockMs(snap.game.state.clock, displayNow(conn))); if (el.textContent !== t) el.textContent = t; }
+  if (el && snap?.game) {
+    const ms = clockMs(snap.game.state.clock, displayNow(conn)), t = fmtClock(ms);
+    if (el.textContent !== t) el.textContent = t;
+    root.classList.toggle('clock-low', ms <= 60000); // Release 1: red at 1:00 or less (tv.css / overlay.css)
+  } else root.classList.remove('clock-low');
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
