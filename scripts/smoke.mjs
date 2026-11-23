@@ -346,7 +346,7 @@ ok(!(await api('/api/courts')).body.find((c) => c.slug === 'full').current_game_
 
 console.log('15. Church branding, season colors, cheer squads, grades');
 const pubW = (await api('/api/public/court/west')).body;
-ok(pubW.church?.name === 'Lenexa Baptist Church' && /Lenexa Baptist Church/.test(pubW.league), `TV header branding: "${pubW.church?.name}" / "${pubW.league}"`);
+ok(pubW.church?.name === 'Lenexa Baptist Church' && /Upward Basketball and Cheer/.test(pubW.league), `TV header branding: "${pubW.church?.name}" / "${pubW.league}"`);
 const seasonNow = (await api('/api/settings/season')).body;
 ok(/^#[0-9A-F]{6}$/.test(seasonNow.dark) && /^#[0-9A-F]{6}$/.test(seasonNow.light), `season colors: ${seasonNow.name} dark ${seasonNow.dark} light ${seasonNow.light}`);
 const gW = pubW.game;

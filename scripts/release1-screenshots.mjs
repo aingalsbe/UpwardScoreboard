@@ -48,11 +48,26 @@ async function scoreSignIn(page, court) {
   if (await page.locator('#resume-ok').isVisible()) { await page.click('#resume-ok'); await sleep(500); }
 }
 const shot = (page, f, full = false) => page.screenshot({ path: OUT + f, fullPage: full });
+// Sage UI fixes: geometry of the TV header league line and the "Tap to enable sound" pill (works in a page or a split iframe).
+const GEOM = () => {
+  const vis = (el) => { if (!el) return null; const r = el.getBoundingClientRect(), cs = getComputedStyle(el); return r.width && r.height && cs.display !== 'none' && cs.visibility !== 'hidden' ? r : null; };
+  const hit = (a, b) => a && b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const q = (sel) => [...document.querySelectorAll(sel)].map((el) => [sel, vis(el)]).filter(([, r]) => r);
+  const gate = vis(document.getElementById('sound-gate'));
+  const live = ['.clock', '.period', '.period-lbl', '.score', '.team .name', '[data-bind="home.name"]', '[data-bind="away.name"]'].flatMap(q);
+  const league = document.querySelector('.top .league'), lr = vis(league), cn = vis(document.querySelector('.top .church-name')), gi = vis(document.querySelector('.top .game-info'));
+  return { gate: gate && { top: Math.round(gate.top), bottom: Math.round(gate.bottom), left: Math.round(gate.left), right: Math.round(gate.right) }, vh: innerHeight,
+    gateHits: gate ? live.filter(([, r]) => hit(gate, r)).map(([s]) => s) : [], liveCount: live.length,
+    league: lr ? league.textContent : null, leagueBelowName: !!(lr && cn && lr.top >= cn.bottom - 1 && Math.abs(lr.left - cn.left) < 2), leagueHitsInfo: !!(lr && gi && hit(lr, gi)) };
+};
 
 // --- Court TV (full court): sound gate first, then tap, then normal
 const tvFull = await open('/fullcourt', TV);
 check('court TV shows "Tap to enable sound" while audio is locked', await tvFull.locator('#sound-gate').isVisible());
 await shot(tvFull, '07-court-tv-enable-sound-overlay.png');
+{ const g = await tvFull.evaluate(GEOM);
+  check('court TV sound pill at the bottom, clear of clock/period/scores/team names', !!g.gate && g.gate.bottom > g.vh * 0.85 && g.gateHits.length === 0 && g.liveCount >= 5, JSON.stringify({ gate: g.gate, hits: g.gateHits, live: g.liveCount }));
+  check('court TV header: league line "Upward Basketball and Cheer" under the church name, no overlap with game-info', /^Upward Basketball and Cheer$/i.test(g.league || '') && g.leagueBelowName && !g.leagueHitsInfo, JSON.stringify({ league: g.league, below: g.leagueBelowName, hitsInfo: g.leagueHitsInfo })); }
 await tvFull.mouse.click(960, 540); await sleep(600);
 check('one tap hides the sound gate (audio running)', !(await tvFull.locator('#sound-gate').isVisible()) && (await tvFull.evaluate(() => document.documentElement.dataset.sound)) === 'on');
 check('full court TV shows timeouts, no fouls/bonus', await tvFull.evaluate(() => document.documentElement.classList.contains('full-court') && !document.body.innerText.includes('FOULS') && !document.body.innerText.includes('BONUS')));
@@ -139,6 +154,10 @@ const pc = await open('/practice/cheer?day=mon&at=17:30', TV); await sleep(800);
 await shot(pc, '13-practice-cheer.png');
 const sp = await open('/split', TV); await sleep(800);
 await shot(sp, '14-split-tv.png');
+for (const f of sp.frames().filter((f) => f !== sp.mainFrame())) {
+  const g = await f.evaluate(GEOM), name = new URL(f.url()).pathname;
+  check(`split half ${name}: sound pill clear of clocks/scores; header unchanged (no league line)`, !!g.gate && g.gateHits.length === 0 && g.league === null, JSON.stringify({ gate: g.gate, hits: g.gateHits, live: g.liveCount, league: g.league }));
+}
 for (const u of ['/', '/score/east', '/fullcourt/overlay', '/admin/practice', '/upwardbasketballscores/lobby', '/upwardbasketballscores/practice/cheer']) await open(u, DESK);
 
 // --- Tab titles page

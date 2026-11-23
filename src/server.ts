@@ -22,7 +22,7 @@ import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand, withFullCourtTimeouts, release1Refusal,
 } from './game.js';
-import { brandText } from './brand.js';
+import { BRAND, brandText } from './brand.js';
 import QRCode from 'qrcode';
 import { makeQrToken, verifyQrToken, weekEnd } from './qr.js';
 
@@ -30,7 +30,10 @@ const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 // Release 1 branding: an env value saying "Upward Basketball" is shown as "Upward Basketball and Cheer".
-const LEAGUE_NAME = brandText(process.env.LEAGUE_NAME || 'Lenexa Baptist Church Youth Basketball');
+// The court TV header's league line must read "Upward Basketball and Cheer" (Sage, Release 1): an env LEAGUE_NAME is
+// used only when it names the brand (after brandText), otherwise the brand itself.
+const LEAGUE_ENV = brandText(process.env.LEAGUE_NAME || '');
+const LEAGUE_NAME = /Upward Basketball and Cheer/i.test(LEAGUE_ENV) ? LEAGUE_ENV : BRAND;
 const CHURCH_NAME = brandText(process.env.CHURCH_NAME || 'Lenexa Baptist Church');
 // Optional church logo for the TV/overlay header: an http(s) URL or a path under /public (e.g. /church-logo.png).
 const CHURCH_LOGO_URL = (() => { const v = (process.env.CHURCH_LOGO_URL || '').trim(); return /^\/[\w./-]+$/.test(v) && !v.includes('..') ? v : (/^https?:\/\//i.test(v) ? v : null); })();
