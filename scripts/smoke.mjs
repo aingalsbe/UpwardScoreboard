@@ -111,7 +111,8 @@ ok(!tv2.msgs.some((m) => m.type === 'state' && m.game?.state.home.score !== base
 const a2 = await sk2.cmd({ type: 'SCORE', team: 'away', pts: 3 });
 const u2 = await tv2.wait(stateWhere((g) => g.state.seq === a2.seq));
 ok(u2.game.state.away.score === base2.away.score + 3, `TV2 shows away ${u2.game.state.away.score} (two courts at once)`);
-await sk1.cmd({ type: 'FOUL', team: 'away', delta: 1 });
+const fr = await sk1.cmd({ type: 'FOUL', team: 'away', delta: 1 }); // Release 1: fouls are no longer kept
+ok(fr.type === 'error' && /Fouls are not kept/.test(fr.error), 'Release 1: a foul is refused (no fouls on any game)');
 await sk1.cmd({ type: 'POSSESSION', team: 'toggle' });
 
 console.log('4. Clock runs from server timestamps; TV reconnect resyncs exact state');
@@ -135,7 +136,7 @@ await sk1.close();
 const sk1b = client('west', 'score'); await sk1b.open;
 sk1b.send({ type: 'auth', pin: PIN1, device: DEV('c1') }); await sk1b.wait((m) => m.type === 'auth' && m.ok);
 const cs = await sk1b.wait(stateWhere((g) => g.id === g1.id));
-ok(cs.game.state.seq === ax.seq && cs.game.state.away.fouls >= 1, 'refreshed controller sees exact server state');
+ok(cs.game.state.seq === ax.seq && cs.game.state.possession != null, 'refreshed controller sees exact server state');
 const dupId = 'retry-123-' + Date.now();
 const d1 = await sk1b.cmd({ type: 'SCORE', team: 'home', pts: 3 }, dupId);
 const d2 = await sk1b.cmd({ type: 'SCORE', team: 'home', pts: 3 }, dupId);

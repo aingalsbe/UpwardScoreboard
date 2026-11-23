@@ -38,6 +38,7 @@ function render() {
   root.dataset.status = g ? g.state.status : 'idle';
   root.classList.toggle('no-game', !g);
   root.classList.toggle('no-score', !!g?.hideScore); // 2nd Grade and below: clock + period only (see tv.css / overlay.css)
+  root.classList.toggle('full-court', !!g?.fullCourt); // Release 1: timeouts show on full court games only (no fouls anywhere)
   const view = {
     league: snap.league, court: snap.court?.name,
     'church-name': snap.church?.name || '', cheer: ch?.name || '',

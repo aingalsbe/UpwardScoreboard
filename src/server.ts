@@ -12,7 +12,7 @@ import { pool, demoBlockedReason, migrate, migrateColors, seedIfEmpty, seedDemo,
 import { scorekeeperView, publicView } from './payload.js';
 import { parseCsvTable, toCsv } from './csv.js';
 import { Limiter } from './limits.js';
-import { GAME_MINUTES, parseConflicts, normalizeGrade, normalizeDivision, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, scheduleQueryGiven, defaultScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings, gameTimeErrors, isIsoDate } from './schedule.js';
+import { GAME_MINUTES, parseConflicts, normalizeGrade, normalizeDivision, gradeOrder, gradeMismatch, sideOf, normalizeGender, genderMismatch, divisionLabel, isScoreHiddenGrade, scheduleWarnings, resolveScheduleDay, scheduleQueryGiven, defaultScheduleDay, localDate, LEAGUE_TZ, WarnGame, hourSlot, cheerSlotWarnings, gameTimeErrors, isIsoDate, isFullCourtGame } from './schedule.js';
 import { HttpError, decodeLogo, safeLogoUrl } from './logo.js';
 import { logoFile, loadLogos, formatReport } from './logo-files.js';
 import { seedSeason, SeasonRefusedError } from './seed-season.js';
@@ -20,7 +20,7 @@ import { teamLocker, cheerLocker } from './season-config.js';
 import { loadPractice, loadPracticeRange, validatePractice, savePractice, droppedSlots, practiceDisplayOf } from './practice.js';
 import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
-  hiddenGameRefusal, isTeamStatCommand,
+  hiddenGameRefusal, isTeamStatCommand, withFullCourtTimeouts, release1Refusal,
 } from './game.js';
 import { brandText } from './brand.js';
 import QRCode from 'qrcode';
@@ -121,6 +121,11 @@ async function getRuntime(gameId: number): Promise<Runtime> {
   const fresh = () => { const st = initialState(rows[0].rules || {}); if (rows[0].final_home != null) st.home.score = rows[0].final_home; if (rows[0].final_away != null) st.away.score = rows[0].final_away; return newHistory(st); };
   const h: History = normalizeStatus(rows[0].history) ?? fresh();
   h.present.status = rows[0].status; // the games.status column is authoritative (imports, migrations)
+  // Release 1: a full court game that isn't complete plays 1 timeout per team per half (in memory; saved with its next change).
+  const fc = h.present.status !== 'complete' && await gameIsFullCourt(gameId);
+  rt = runtimes.get(gameId); // another caller may have loaded it meanwhile
+  if (rt) return rt;
+  if (fc) h.present = withFullCourtTimeouts(h.present);
   rt = { history: h, queue: Promise.resolve(), seen: [] };
   runtimes.set(gameId, rt);
   armClock(gameId, rt);
@@ -164,6 +169,14 @@ async function mutate(gameId: number, actor: string, cmdId: string | null, op: O
   });
   rt.queue = run.catch(() => undefined);
   return run;
+}
+
+/** Release 1: full court game = on the Full court or a 5th-6th Grade game (isFullCourtGame in schedule.ts). */
+async function gameIsFullCourt(gameId: number): Promise<boolean> {
+  const { rows } = await pool.query(`SELECT c.slug, c.name, h.grade AS hg, a.grade AS ag, g.division FROM games g JOIN teams h ON h.id=g.home_team_id
+    JOIN teams a ON a.id=g.away_team_id LEFT JOIN courts c ON c.id=g.court_id WHERE g.id=$1`, [gameId]);
+  const r = rows[0];
+  return !!r && isFullCourtGame({ courtSlug: r.slug, courtName: r.name, grades: [r.hg, r.ag], division: r.division });
 }
 
 /** K-2nd Grade game (score-hidden): the grade text of either team, via isScoreHiddenGrade. */
@@ -285,6 +298,8 @@ async function gameViewNorm(gameId: number) {
     homeSide: sideOf(r.swap_colors, 'home'), swapped: !!r.swap_colors, grade: r.home_grade || r.away_grade || null,
     gender: r.home_gender || r.away_gender || null, label: divisionLabel(r.home_grade || r.away_grade, r.home_gender || r.away_gender),
     hideScore: isScoreHiddenGrade(r.home_grade || r.away_grade), // 2nd Grade and below: public screens show no score
+    // Release 1: full court (Full court or 5th-6th Grade) = timeouts (1 per half) + manual buzzer; never fouls.
+    fullCourt: isFullCourtGame({ courtSlug: r.court_slug, courtName: r.court_name, grades: [r.home_grade, r.away_grade], division: r.division }),
     cheer: cheerView(r),
     home: { ...teamView(r, 'home_team', theme, 'home'), bonus: isBonus(s, 'home') },
     away: { ...teamView(r, 'away_team', theme, 'away'), bonus: isBonus(s, 'away') },
@@ -503,6 +518,11 @@ function attachWs(server: http.Server) {
           if (hides) {
             const no = hiddenGameRefusal(msg.type, parsed, (await getRuntime(c.current_game_id)).history);
             if (no) return send(client, { type: 'error', id: msg.id, error: no, code: 'score-hidden' });
+          }
+          // Release 1: no fouls on any game; timeouts on full court games only (also for a stale client's buttons).
+          if (msg.type === 'cmd') {
+            const no = release1Refusal(parsed, await gameIsFullCourt(c.current_game_id));
+            if (no) return send(client, { type: 'error', id: msg.id, error: no, code: 'release1-rule' });
           }
           if (msg.type === 'cmd') {
             const cmd: Command = parsed!;
@@ -903,7 +923,10 @@ async function activateGame(gameId: number, courtSlug: string | null, actor: str
   }
   try {
     if (reopen) await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'REOPEN' }, Date.now()), { type: 'REOPEN' });
-    else await mutate(gameId, actor, null, (h) => dispatch(h, { type: 'START_GAME' }, Date.now()), { type: 'START_GAME' });
+    else {
+      const fc = await gameIsFullCourt(gameId); // court/grade may have changed since the runtime was loaded
+      await mutate(gameId, actor, null, (h) => dispatch(fc ? { ...h, present: withFullCourtTimeouts(h.present) } : h, { type: 'START_GAME' }, Date.now()), { type: 'START_GAME' });
+    }
   } catch (e: any) {
     if (/games_one_active_per_court|duplicate key/.test(e.message)) throw new HttpError(409, `Another game just became active on ${g.court}. Complete it first.`);
     throw e;
@@ -1414,7 +1437,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
   if (seg[1] === 'games') {
     const id = seg[2] ? Number(seg[2]) : undefined;
     if (m === 'GET' && !id) {
-      const { rows } = await pool.query(`SELECT g.id, g.court_id, c.name AS court, g.scheduled_at, g.division, g.status, g.theme,
+      const { rows } = await pool.query(`SELECT g.id, g.court_id, c.name AS court, c.slug AS court_slug, h.grade AS home_grade, a.grade AS away_grade, g.scheduled_at, g.division, g.status, g.theme,
         g.home_team_id, h.name AS home, g.away_team_id, a.name AS away, COALESCE(h.grade, a.grade) AS grade, COALESCE(h.gender, a.gender) AS gender, concat_ws(' ', COALESCE(h.grade, a.grade), CASE WHEN COALESCE(h.grade, a.grade) = 'Kindergarten' THEN NULL ELSE COALESCE(h.gender, a.gender) END) AS label, LEAST(h.grade_order, a.grade_order) AS grade_order,
         COALESCE(g.final_home, (g.history->'present'->'home'->>'score')::int, 0) AS home_score,
         COALESCE(g.final_away, (g.history->'present'->'away'->>'score')::int, 0) AS away_score,
@@ -1424,7 +1447,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
         ${CHEER_JOIN}
         ORDER BY g.scheduled_at NULLS LAST, g.id`);
       const warn = await loadWarnings();
-      for (const r of rows) { r.warnings = warn.filter((w) => w.gameId === r.id).map((w) => w.message); r.theme = publicTheme(r.theme); }
+      for (const r of rows) {
+        r.warnings = warn.filter((w) => w.gameId === r.id).map((w) => w.message); r.theme = publicTheme(r.theme);
+        r.full_court = isFullCourtGame({ courtSlug: r.court_slug, courtName: r.court, grades: [r.home_grade, r.away_grade], division: r.division }); // Release 1
+        delete r.home_grade; delete r.away_grade;
+      }
       return json(res, 200, rows);
     }
     if (m === 'POST' && !id) {

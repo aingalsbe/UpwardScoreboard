@@ -77,6 +77,9 @@ body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; c
 .away .bonus { background: var(--away-fg, #fff); color: var(--away-color); }
 .bonus::before { content: "★ "; }
 .home-bonus .home .bonus, .away-bonus .away .bonus { visibility: visible; }
+/* SAGE: Release 1 — No fouls/bonus any more; timeouts only on full court games (root .full-court). The row keeps its height. */
+.stats .timeouts { visibility: hidden; }
+.full-court .stats .timeouts { visibility: visible; }
 
 /* ---------- center ---------- */
 .center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; }

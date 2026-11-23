@@ -205,7 +205,7 @@ function render() {
     const side = (k) => ({
       ...g[k], ...s[k],
       foulText: `${s[k].fouls}${g[k === 'home' ? 'away' : 'home'].bonus ? ' · BONUS' : ''}`, // this team's fouls put the OTHER team in bonus
-      toText: `${s[k].timeoutsLeft} left${s.rules.timeoutsPerHalf ? ' this half' : ''}`,
+      toText: `${s[k].timeoutsLeft} left${s.rules.timeoutsPerHalf ? ' this half' : ''}`, // full court only (1 per half)
     });
     Object.assign(view, {
       home: side('home'), away: side('away'),
@@ -232,6 +232,10 @@ function render() {
       b.dataset.teamStat = ''; b.disabled = hid; b.hidden = hid;
     });
     document.querySelectorAll('.panel.team .sc').forEach((el) => { el.dataset.teamStat = ''; el.hidden = hid; });
+    // Release 1: fouls are gone; timeouts and the buzzer button only on full court games (Full court or 5th-6th Grade).
+    const fc = !!g.fullCourt;
+    root.classList.toggle('full-court', fc);
+    document.querySelectorAll('[data-full-court]').forEach((b) => { const off = !fc || ('teamStat' in b.dataset && hid); b.hidden = off; b.disabled = off; });
     $('#undo').disabled = !g.canUndo || (hid && /^(Home|Away) /.test(s.lastLabel || '')); $('#redo').disabled = !g.canRedo || (hid && /^(Home|Away) /.test(g.redoLabel || ''));
     $('#banner').textContent = s.banner === 'HALFTIME' ? 'Hide "Halftime"' : 'Show "Halftime"';
   }

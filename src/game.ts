@@ -92,6 +92,28 @@ export function initialState(rules: Partial<Rules> = {}): GameState {
   };
 }
 
+// ---- Release 1 (2026-11-23): timeouts and fouls ---------------------------------------------------------
+// Fouls are no longer kept on any game. Timeouts only on full court games: 1 per team per half, refilled at
+// halftime (unused ones don't carry over). Stored foul/timeout values are left as they are.
+export const FULL_COURT_TIMEOUTS_PER_HALF = 1;
+/**
+ * A full court game's state with the 1-per-half timeout rule applied (rules.timeoutsPerHalf = 1, timeoutsLeft
+ * capped at 1). Same object when nothing changes. Never used on a complete game (its record stays as it was).
+ */
+export function withFullCourtTimeouts(s: GameState): GameState {
+  const cap = FULL_COURT_TIMEOUTS_PER_HALF;
+  if (s.rules.timeoutsPerHalf === cap && s.home.timeoutsLeft <= cap && s.away.timeoutsLeft <= cap) return s;
+  return { ...s, rules: { ...s.rules, timeoutsPerHalf: cap },
+    home: { ...s.home, timeoutsLeft: Math.min(s.home.timeoutsLeft, cap) }, away: { ...s.away, timeoutsLeft: Math.min(s.away.timeoutsLeft, cap) } };
+}
+/** Server-side refusal text for a scorekeeper command under the Release 1 rules, or null if allowed. */
+export function release1Refusal(cmd: { type: string } | null, fullCourt: boolean): string | null {
+  if (!cmd) return null;
+  if (cmd.type === 'FOUL') return 'Fouls are not kept.';
+  if (cmd.type === 'TIMEOUT' && !fullCourt) return 'Timeouts are only kept for full court games.';
+  return null;
+}
+
 export function remainingMs(clock: Clock, now: number): number {
   if (!clock.running || clock.startedAt == null) return Math.max(0, clock.remainingMs);
   return Math.max(0, clock.remainingMs - (now - clock.startedAt));

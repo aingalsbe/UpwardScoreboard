@@ -50,6 +50,24 @@ export function normalizeGrade(v: unknown): string | null {
  * ("2nd Grade", " 1ST ", "Gr 2", "grade-1", "Grade: Second"). 3rd and above, unknown text and empty never match.
  * The one helper behind every score-hiding decision (server payloads + scorekeeper enforcement).
  */
+/**
+ * Release 1 (Aaron, 2026-11-23): a full court game is one scheduled on the Full court (courts.slug 'full' / name
+ * "Full", which already exists: no new column) OR a 5th-6th Grade game ("5th-6th grade games are full court"), by
+ * either team's grade or the game's division text. Full court games keep timeouts (1 per team per half) and get the
+ * manual buzzer button.
+ */
+export function isFullCourtGame(x: { courtSlug?: string | null; courtName?: string | null; grades?: (string | null | undefined)[]; division?: string | null }): boolean {
+  if (String(x.courtSlug ?? '').trim().toLowerCase() === 'full' || /^full(\s+court)?$/i.test(String(x.courtName ?? '').trim())) return true;
+  const isFiveSix = (v: unknown) => {
+    const t = String(v ?? '').trim().replace(/\s+(boys?|girls?|coed|mixed)$/i, '');
+    if (!t) return false;
+    try { if (normalizeGrade(t) === '5th-6th Grade') return true; } catch { /* free text longer than 30 chars */ }
+    const g = gradeNumbers(t);
+    return !!g && g.length > 0 && g.every((n) => n === 5 || n === 6);
+  };
+  return (x.grades || []).some(isFiveSix) || isFiveSix(x.division);
+}
+
 export function isScoreHiddenGrade(v: unknown): boolean {
   const g = gradeNumbers(v);
   return !!g && g.length > 0 && Math.max(...g) <= 2;

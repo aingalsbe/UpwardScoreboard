@@ -74,10 +74,8 @@
           <button class="btn pt" data-cmd='{"type":"SCORE","team":"home","pts":3}'>+3</button>
         </div>
         <div class="small">
-          <button class="btn sm" data-cmd='{"type":"FOUL","team":"home","delta":1}'>+ Foul<small data-bind="home.foulText"></small></button>
-          <button class="btn sm" data-cmd='{"type":"TIMEOUT","team":"home","delta":-1}'>Timeout<small data-bind="home.toText"></small></button>
+          <button class="btn sm timeout" data-full-court data-cmd='{"type":"TIMEOUT","team":"home","delta":-1}'>Timeout<small data-bind="home.toText"></small></button>
           <button class="btn sm" data-cmd='{"type":"SCORE","team":"home","pts":-1}'>−1 point</button>
-          <button class="btn sm" data-cmd='{"type":"FOUL","team":"home","delta":-1}'>− Foul</button>
         </div>
       </section>
 
@@ -90,10 +88,8 @@
           <button class="btn pt" data-cmd='{"type":"SCORE","team":"away","pts":3}'>+3</button>
         </div>
         <div class="small">
-          <button class="btn sm" data-cmd='{"type":"FOUL","team":"away","delta":1}'>+ Foul<small data-bind="away.foulText"></small></button>
-          <button class="btn sm" data-cmd='{"type":"TIMEOUT","team":"away","delta":-1}'>Timeout<small data-bind="away.toText"></small></button>
+          <button class="btn sm timeout" data-full-court data-cmd='{"type":"TIMEOUT","team":"away","delta":-1}'>Timeout<small data-bind="away.toText"></small></button>
           <button class="btn sm" data-cmd='{"type":"SCORE","team":"away","pts":-1}'>−1 point</button>
-          <button class="btn sm" data-cmd='{"type":"FOUL","team":"away","delta":-1}'>− Foul</button>
         </div>
       </section>
     </main>
