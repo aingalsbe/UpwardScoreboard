@@ -52,6 +52,7 @@
       <section class="panel mid">
         <div class="clock" data-clock>--:--</div>
         <button class="btn go" id="clock-toggle" data-cmd='{"type":"CLOCK_START"}'>▶ START CLOCK</button>
+        <p class="clock-hint" id="clock-hint" role="status" aria-live="polite" hidden></p>
         <div class="row">
           <button class="btn sm" data-cmd='{"type":"CLOCK_ADJUST","ms":-1000}'>−1 s</button>
           <button class="btn sm" data-cmd='{"type":"CLOCK_ADJUST","ms":1000}'>+1 s</button>

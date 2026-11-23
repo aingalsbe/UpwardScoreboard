@@ -132,7 +132,7 @@ function confirmBox(text, okLabel) {
   const d = $('#confirm-dialog');
   if (!d.showModal) return Promise.resolve(confirm(text));
   $('#confirm-text').textContent = text; $('#confirm-ok').textContent = okLabel;
-  d.dataset.kind = okLabel === 'Load' ? 'load' : 'complete';
+  d.dataset.kind = okLabel === 'Load' ? 'load' : okLabel === 'End game' ? 'end-game' : 'complete';
   return new Promise((res) => { d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }); d.returnValue = ''; d.showModal(); });
 }
 const matchup = (x) => `${x.label || x.grade ? (x.label || x.grade) + ' · ' : ''}${x.home} vs ${x.away}`;
@@ -238,8 +238,29 @@ function render() {
     document.querySelectorAll('[data-full-court]').forEach((b) => { const off = !fc || ('teamStat' in b.dataset && hid); b.hidden = off; b.disabled = off; });
     $('#undo').disabled = !g.canUndo || (hid && /^(Home|Away) /.test(s.lastLabel || '')); $('#redo').disabled = !g.canRedo || (hid && /^(Home|Away) /.test(g.redoLabel || ''));
     $('#banner').textContent = s.banner === 'HALFTIME' ? 'Hide "Halftime"' : 'Show "Halftime"';
+    // At 0:00 (stopped) START would do nothing: say why instead of looking hung (halftime bug, Release 1).
+    const atZero = !s.clock.running && s.clock.remainingMs <= 0 && s.status !== 'complete';
+    t.disabled = atZero;
+    const hint = $('#clock-hint');
+    hint.hidden = !atZero;
+    hint.textContent = atZero ? (s.period >= s.rules.periods ? 'Clock at 0:00. Complete the game, or Next ▶ for overtime.' : 'Clock at 0:00. Press Next ▶ or Set clock… to go on.') : '';
+    maybeAskEndGame(g, s);
   }
   bindText(document, view);
+}
+
+/**
+ * Release 1: when the final period (or an OT period) ends at 0:00, ask "Ready to end the game?" once per period on
+ * this device. Confirm completes the game; Cancel stays (Next ▶ goes to overtime, Complete game is still there).
+ */
+let endAsked = null;
+async function maybeAskEndGame(g, s) {
+  if (s.status !== 'active' || s.clock.running || s.clock.remainingMs > 0 || s.period < s.rules.periods) return;
+  if (root.dataset.view !== 'game' || $('#confirm-dialog').open) return;
+  const key = `sb-endask-${g.id}-${s.period}`;
+  if (endAsked === key || sessionStorage.getItem(key)) return;
+  endAsked = key; sessionStorage.setItem(key, '1');
+  if (await confirmBox('Ready to end the game?', 'End game')) send('cmd', { cmd: { type: 'END_GAME' } });
 }
 
 function tick() {

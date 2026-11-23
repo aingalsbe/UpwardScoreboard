@@ -189,11 +189,21 @@ export function apply(s: GameState, c: Command, now: number): GameState {
     case 'CLOCK_STOP':
       if (!s.clock.running) return s;
       next.clock = frozen(s.clock, now); label = 'Clock stop'; break;
-    case 'CLOCK_EXPIRE':
+    case 'CLOCK_EXPIRE': {
       if (!s.clock.running || remainingMs(s.clock, now) > 0) return s;
       next.clock = { running: false, remainingMs: 0, startedAt: null }; label = 'End of period';
-      if (s.period === periodsPerHalf(s.rules)) next.banner = 'HALFTIME'; // end of the 1st half (P3 by default)
+      // Release 1 (Aaron, 2026-11-23): at 0 the game moves on to the next period by itself, clock reset and STOPPED
+      // until the scorekeeper starts it. Into the 2nd half that is the normal Next logic (HALFTIME banner, fouls
+      // reset, timeouts refilled). The final regulation period (and any OT period) does not advance: the scorekeeper
+      // is asked "Ready to end the game?" (score.js) and can still go to OT with Next.
+      // Halftime bug fix: the game used to stay on P3 at 0:00 with HALFTIME up, where START is a silent no-op.
+      if (s.period < s.rules.periods) {
+        const ended: GameState = { ...next, seq: s.seq, lastLabel: s.lastLabel };
+        const adv = apply(ended, { type: 'PERIOD', delta: 1 }, now);
+        return { ...adv, seq: s.seq + 1, lastLabel: 'End of period' };
+      }
       break;
+    }
     case 'CLOCK_ADJUST': {
       const f = frozen(s.clock, now);
       const v = clamp(f.remainingMs + c.ms, 0, s.rules.periodLengthMs);
@@ -263,8 +273,15 @@ export function newHistory(state: GameState): History { return { present: state,
 export function dispatch(h: History, c: Command, now: number): History {
   const n = apply(h.present, c, now);
   if (n === h.present) return h;
-  // System event, not undoable: keep the Undo label pointing at the real top of the history (QA #7).
-  if (c.type === 'CLOCK_EXPIRE') return { ...h, present: { ...n, lastLabel: h.present.lastLabel } };
+  if (c.type === 'CLOCK_EXPIRE') {
+    // Auto-advance (Release 1) is undoable: Undo goes back to the ended period at 0:00 (stopped), like Prev.
+    if (n.period !== h.present.period) {
+      const ended: GameState = { ...h.present, clock: { running: false, remainingMs: 0, startedAt: null } };
+      return { present: n, past: [...h.past, ended].slice(-HISTORY_LIMIT), future: [] };
+    }
+    // Final period: system event, not undoable; keep the Undo label pointing at the real top of the history (QA #7).
+    return { ...h, present: { ...n, lastLabel: h.present.lastLabel } };
+  }
   return { present: n, past: [...h.past, h.present].slice(-HISTORY_LIMIT), future: [] };
 }
 
@@ -276,10 +293,13 @@ function restore(target: GameState, current: GameState, keepClock: boolean, labe
   return r;
 }
 
+/** Labels whose undo/redo restores the clock too ("End of period" = the auto-advance at 0:00). */
+const CLOCK_LABEL = /^(Clock|End of period)/;
+
 export function undo(h: History, _now: number): History {
   const prev = h.past[h.past.length - 1];
   if (!prev) return h;
-  const undoneWasClock = /^Clock/.test(h.present.lastLabel ?? '');
+  const undoneWasClock = CLOCK_LABEL.test(h.present.lastLabel ?? '');
   const present = restore(prev, h.present, !undoneWasClock, `Undo ${h.present.lastLabel ?? ''}`.trim());
   present.lastLabel = prev.lastLabel; // so the button shows the next thing to undo
   return { present, past: h.past.slice(0, -1), future: [h.present, ...h.future] };
@@ -288,7 +308,7 @@ export function undo(h: History, _now: number): History {
 export function redo(h: History, _now: number): History {
   const nxt = h.future[0];
   if (!nxt) return h;
-  const isClock = /^Clock/.test(nxt.lastLabel ?? '');
+  const isClock = CLOCK_LABEL.test(nxt.lastLabel ?? '');
   const present = restore(nxt, h.present, !isClock, nxt.lastLabel ?? 'Redo');
   return { present, past: [...h.past, h.present], future: h.future.slice(1) };
 }

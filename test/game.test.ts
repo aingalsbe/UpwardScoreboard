@@ -44,7 +44,9 @@ test('clock is derived from server timestamps (no ticking drift)', () => {
   assert.equal(remainingMs(s.clock, T0 + 200_000), 0, 'never negative');
   s = apply(s, { type: 'CLOCK_EXPIRE' }, T0 + 200_000);
   assert.equal(s.clock.running, false);
-  assert.equal(s.clock.remainingMs, 0);
+  // Release 1: at 0 the game auto-advances to the next period, clock reset and stopped.
+  assert.equal(s.period, 2);
+  assert.equal(s.clock.remainingMs, 60_000);
   s = apply(s, { type: 'CLOCK_SET', ms: 30_000 }, T0 + 201_000);
   assert.equal(s.clock.remainingMs, 30_000);
 });
@@ -89,8 +91,8 @@ test('possession toggles and commands are validated', () => {
   assert.deepEqual(parseCommand({ type: 'SCORE', team: 'away', pts: '3' }), { type: 'SCORE', team: 'away', pts: 3 });
 });
 
-test('QA #7: undo after the clock auto-expires undoes the clock start consistently', () => {
-  let h = newHistory(initialState({ periodLengthMs: 60_000 }));
+test('QA #7: undo after the clock auto-expires undoes the clock start consistently (final period: no auto-advance)', () => {
+  let h = newHistory(initialState({ periods: 1, periodLengthMs: 60_000 }));
   h = dispatch(h, { type: 'CLOCK_SET', ms: 1500 }, T0);
   h = dispatch(h, { type: 'CLOCK_START' }, T0);
   h = dispatch(h, { type: 'CLOCK_EXPIRE' }, T0 + 1600);

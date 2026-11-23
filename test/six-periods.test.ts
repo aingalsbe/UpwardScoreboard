@@ -35,11 +35,10 @@ test('period rollover: halftime after P3, fouls + timeouts reset for the 2nd hal
   s = apply(s, { type: 'PERIOD', delta: 1 }, T0); s = apply(s, { type: 'PERIOD', delta: 1 }, T0); // P3, same half
   assert.equal(s.period, 3); assert.equal(s.away.fouls, 7); assert.equal(isBonus(s, 'home'), true); assert.equal(s.home.timeoutsLeft, 1);
   assert.equal(s.banner, null);
-  // clock runs out at the end of P3 -> HALFTIME on the TV
+  // clock runs out at the end of P3 -> HALFTIME on the TV; Release 1: the game moves on to P4 by itself (clock stopped)
   s = apply(s, { type: 'CLOCK_START' }, T0); s = apply(s, { type: 'CLOCK_EXPIRE' }, T0 + 61_000);
   assert.equal(s.banner, 'HALFTIME');
-  s = apply(s, { type: 'PERIOD', delta: 1 }, T0 + 62_000); // -> P4, 2nd half
-  assert.equal(s.period, 4); assert.equal(periodLabel(s.period, 6), '2nd Half · P4');
+  assert.equal(s.period, 4); assert.equal(s.clock.running, false); assert.equal(s.clock.remainingMs, 60_000); assert.equal(periodLabel(s.period, 6), '2nd Half · P4');
   assert.equal(s.away.fouls, 0); assert.equal(isBonus(s, 'home'), false, 'bonus is per half');
   assert.equal(s.home.timeoutsLeft, 2); assert.equal(s.away.timeoutsLeft, 2, 'timeouts refill at halftime');
   assert.equal(s.banner, 'HALFTIME');
