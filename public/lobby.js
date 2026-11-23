@@ -8,7 +8,7 @@ import { nextEvent, nextEventText } from './next-event.js';
 
 // Alias (data-needs.md): /lobby?practice=cheer|basketball opens that practice TV (other query params kept).
 { const pq = new URLSearchParams(location.search), pr = pq.get('practice');
-  if (pr === 'cheer' || pr === 'basketball') { pq.delete('practice'); location.replace(`/upwardbasketballscores/practice/${pr}${pq.size ? '?' + pq : ''}`); } }
+  if (pr === 'cheer' || pr === 'basketball') { pq.delete('practice'); location.replace(`/practice/${pr}${pq.size ? '?' + pq : ''}`); } }
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search), query = new URLSearchParams();
 for (const k of ['day', 'date']) if (qs.get(k)) query.set(k, qs.get(k));

@@ -2,10 +2,12 @@
 // - Always receives a full snapshot from the server on (re)connect = exact resync.
 // - Estimates server clock offset from ping round-trips; the clock is computed
 //   from server timestamps, never by counting ticks locally.
-export function courtFromPath() {
-  const seg = location.pathname.split('/').filter(Boolean);
+export function courtFromPath(pathname = location.pathname) {
+  const seg = pathname.split('/').filter(Boolean);
   // /upwardbasketballscores/westcourt -> west ; /tv/west, /score/west, /overlay/west -> west
   if (seg[0] === 'upwardbasketballscores') return decodeURIComponent(seg[1] || '').replace(/court$/, '');
+  // Release 1 clean URLs: /westcourt, /westcourt/overlay -> west
+  if (seg[0] && /^[\w-]+court$/.test(seg[0])) return decodeURIComponent(seg[0]).replace(/court$/, '');
   return decodeURIComponent(seg[1] || '');
 }
 

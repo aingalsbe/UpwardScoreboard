@@ -6,6 +6,7 @@ Live youth-basketball scoreboard for the church league: a scorekeeper on the ben
 * **Display**: `/tv/<court>` full-screen TV board, `/overlay/<court>` transparent OBS scorebug (public, read-only)
 * **Admin**: `/admin` teams (grade + gender), colors, logos, courts, schedule (with warnings), start a game, CSV import/export
 * **Lobby TV**: `/upwardbasketballscores/lobby` (alias `/lobby`): per court the live game + exactly one next game, cheer per time slot, locker rooms, coaches. With no `?date=` or `?day=`, it opens on the next game day (today if today has games). `?day=fri|sat` (demo weekend) or `?date=YYYY-MM-DD` still pick that day. (The old full-day schedule screen was retired 2026-10-20; `/schedule` now 404s.)
+* **Clean URLs (Release 1)**: every screen also works without `/upwardbasketballscores/`: `/westcourt`, `/eastcourt`, `/fullcourt` (+ `/overlay`), `/lobby`, `/split`, `/practice/basketball`, `/practice/cheer`. Every old `/upwardbasketballscores/...` link (pages, assets, `/api/...`, the `/ws` socket) keeps working.
 * **Practice TVs**: `/upwardbasketballscores/practice/basketball` and `.../practice/cheer` (aliases `/practice/basketball`, `/practice/cheer`). With no `?day=`, each screen opens on the next day that has slots of its kind. `?day=mon`..`thu` wins; `?at=HH:MM` alone keeps today.
 
 One Node/TypeScript container + Postgres. See [docs/POC.md](docs/POC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PLAN.md](docs/PLAN.md).
@@ -23,9 +24,9 @@ The first start seeds 10 teams in 4 grades, 3 courts (`full`, `west`, `east`; Fu
 |---|---|
 | Court picker | http://localhost:3000/ |
 | Admin | http://localhost:3000/admin (password = `ADMIN_PASSWORD`) |
-| Full scorekeeper / TV / overlay | http://localhost:3000/score/full · /upwardbasketballscores/fullcourt · /upwardbasketballscores/fullcourt/overlay |
-| West scorekeeper / TV / overlay | http://localhost:3000/score/west · /upwardbasketballscores/westcourt · /upwardbasketballscores/westcourt/overlay |
-| East scorekeeper / TV / overlay | http://localhost:3000/score/east · /upwardbasketballscores/eastcourt · /upwardbasketballscores/eastcourt/overlay |
+| Full scorekeeper / TV / overlay | http://localhost:3000/score/full · /fullcourt · /fullcourt/overlay (old /upwardbasketballscores/fullcourt links still work) |
+| West scorekeeper / TV / overlay | http://localhost:3000/score/west · /westcourt · /westcourt/overlay (old /upwardbasketballscores/westcourt links still work) |
+| East scorekeeper / TV / overlay | http://localhost:3000/score/east · /eastcourt · /eastcourt/overlay (old /upwardbasketballscores/eastcourt links still work) |
 | West + East on one TV | http://localhost:3000/tv/split |
 | Lobby TV (live + next per court) | http://localhost:3000/upwardbasketballscores/lobby · /lobby · ?day=fri · ?day=sat · ?date=YYYY-MM-DD |
 | Practice TVs (basketball / cheer) | http://localhost:3000/upwardbasketballscores/practice/basketball · /practice/cheer · ?day=mon · ?at=17:00 |

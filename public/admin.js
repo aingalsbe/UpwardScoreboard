@@ -60,7 +60,7 @@ async function load() {
 }
 
 const STATUS = { scheduled: 'Scheduled', active: 'Active', complete: 'Complete' };
-const tvPath = (slug) => `/upwardbasketballscores/${encodeURIComponent(slug)}court`;
+const tvPath = (slug) => `/${encodeURIComponent(slug)}court`; // Release 1 clean URL (the /upwardbasketballscores/ form still works)
 function gameRow(g, x = {}) {
   const lbl = g.label || g.grade, warn = (g.warnings || []).length ? ` <span class="tag warn-tag" title="${esc(g.warnings.join('\n'))}">⚠ ${g.warnings.length}</span>` : '';
   return `<tr class="${g.on_court ? 'live' : ''}${warn ? ' has-warning' : ''}${x.cls ? ` ${x.cls}` : ''}" data-grade="${esc(g.grade || '')}" data-gender="${esc(g.gender || '')}"${x.data ? ` ${x.data}` : ''}><td class="when">${when(g.scheduled_at)}</td><td class="court">${esc(g.court || '—')}</td>${g.__full ? `<td>${esc(lbl || '—')}</td>` : ''}

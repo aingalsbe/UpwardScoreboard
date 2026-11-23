@@ -130,7 +130,7 @@ App on **http://localhost:3000** (health: `/api/health`). Postgres is not publis
 | Court picker | http://localhost:3000/ |
 | Admin | http://localhost:3000/admin |
 | Scorekeeper | `/score/full`, `/score/west`, `/score/east` |
-| TV | `/upwardbasketballscores/fullcourt`, `/westcourt`, `/eastcourt` (add `/overlay` for OBS) |
+| TV | `/fullcourt`, `/westcourt`, `/eastcourt` (add `/overlay` for OBS); the old `/upwardbasketballscores/<court>court` links still work. Court TVs show "Tap to enable sound" once after loading (buzzer; browser autoplay rule) unless Chrome runs with `--autoplay-policy=no-user-gesture-required` |
 | West + East on one TV | `/tv/split` |
 | Lobby TV | `/upwardbasketballscores/lobby` (alias `/lobby`, `?day=fri`, `?day=sat`, `?date=YYYY-MM-DD`) |
 

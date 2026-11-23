@@ -409,7 +409,14 @@ async function broadcastGame(gameId: number) {
 }
 
 function attachWs(server: http.Server) {
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
+  // Realtime socket at /ws; Release 1 also accepts the legacy /upwardbasketballscores/ws. Any other upgrade path gets a
+  // 400, as the ws library's `path` option did.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
+  server.on('upgrade', (req, socket, head) => {
+    const p = new URL(req.url || '/', 'http://x').pathname;
+    if (p !== '/ws' && p !== LEGACY_PREFIX + '/ws') { socket.write('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  });
   wss.on('connection', (ws, req) => {
     const u = new URL(req.url || '/', 'http://x');
     const court = u.searchParams.get('court') || '';
@@ -1705,13 +1712,28 @@ const PAGES: [RegExp, string][] = [
   // Before the <slug>court rule. The old full-day schedule screen (/schedule) was retired 2026-10-20 and 404s.
   // Lobby TV v2 (live + next per court, cheer per slot, lockers, coaches): /upwardbasketballscores/lobby, alias /lobby.
   [/^\/upwardbasketballscores\/lobby\/?$/, 'lobby.html'], [/^\/lobby\/?$/, 'lobby.html'],
-  [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/upwardbasketballscores\/split\/?$/, 'split.html'],
+  [/^\/score\/[\w-]+\/?$/, 'score.html'], [/^\/tv\/split\/?$/, 'split.html'], [/^\/(?:upwardbasketballscores\/)?split\/?$/, 'split.html'],
   // Fixed TV links: /upwardbasketballscores/{fullcourt,westcourt,eastcourt}[/overlay] (any court: <slug>court)
   [/^\/upwardbasketballscores\/[\w-]+\/overlay\/?$/, 'overlay.html'], [/^\/upwardbasketballscores\/[\w-]+\/?$/, 'tv.html'], [/^\/tv\/[\w-]+\/?$/, 'tv.html'], [/^\/overlay\/[\w-]+\/?$/, 'overlay.html'],
+  // Release 1 clean URLs (Aaron, approved 2026-11-23): /westcourt, /eastcourt, /fullcourt (any <slug>court) and
+  // /<slug>court/overlay, same pages as the /upwardbasketballscores/... links, which keep working unchanged.
+  [/^\/[\w-]+court\/overlay\/?$/, 'overlay.html'], [/^\/[\w-]+court\/?$/, 'tv.html'],
 ];
+/** Legacy prefix (Release 1): /upwardbasketballscores and /upwardbasketballscores/ open the home page. */
+const LEGACY_PREFIX = '/upwardbasketballscores';
+/**
+ * Release 1: a legacy /upwardbasketballscores/<path> that isn't one of the pages above (assets, /api/..., /logos/...,
+ * /team-logos/...) is served exactly like the clean /<path>. Returns the clean path, or null when not prefixed.
+ */
+function unprefixed(p: string): string | null {
+  if (p === LEGACY_PREFIX || p === LEGACY_PREFIX + '/') return '/';
+  return p.startsWith(LEGACY_PREFIX + '/') ? p.slice(LEGACY_PREFIX.length) : null;
+}
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url || '/', 'http://x');
+  // Legacy prefix: prefixed pages match PAGES as before; anything else under the prefix is served as its clean path.
+  if (!PAGES.some(([re]) => re.test(u.pathname)) && !/^\/upwardbasketballscores\/schedule\/?$/.test(u.pathname)) { const c = unprefixed(u.pathname); if (c) u.pathname = c; }
   try {
     if (u.pathname.startsWith('/api/')) return await api(req, res, u);
     const cm = /^\/logos\/cheer\/(\d+)(?:\/(?:home|away))?$/.exec(u.pathname); // one squad per game; old /home|/away links still work
