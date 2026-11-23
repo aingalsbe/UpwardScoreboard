@@ -1,8 +1,10 @@
 // Practice TV planning (pure, testable). Data: GET /api/public/practice. Rules from Sage's data-needs.md:
 // window = 60 min before the day's first slot .. 15 min after its end; basketball pages = 1-hour slots, the current
-// slot (from 10 min before its start) shows 12 s then the next slot 8 s; before the first slot all slots page at 12 s;
+// slot (from 30 min before its start: at 5:30 PM the 6:00 PM practice, Release 1) shows 12 s then the next slot 8 s; before the first slot all slots page at 12 s;
 // cheer has no times (one static page, 9 cards per page, paging at 12 s above 9 squads).
-export const PRE_MIN = 60, POST_MIN = 15, EARLY_MIN = 10, PAGE_S = 12, NEXT_S = 8, CHEER_PER_PAGE = 9;
+// EARLY_MIN: Release 1 (Aaron, 2026-11-23) moved the basketball switch to the :30 mark before a slot (was 10 min).
+// Cheer has no current slot, so this never changes the cheer screen.
+export const PRE_MIN = 60, POST_MIN = 15, EARLY_MIN = 30, PAGE_S = 12, NEXT_S = 8, CHEER_PER_PAGE = 9;
 export const COURTS = ['west1', 'east1', 'west2', 'east2']; // mockup order: West left, East right
 export const COURT_NAME = { west1: 'West 1', west2: 'West 2', east1: 'East 1', east2: 'East 2' };
 export const DAY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];

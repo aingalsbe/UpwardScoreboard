@@ -65,7 +65,7 @@ The scorekeeper lists today's games on its court; when there are none today it l
 
 ## Practice TVs (Mon–Thu)
 
-- Basketball: `/upwardbasketballscores/practice/basketball` (alias `/practice/basketball`, or `/lobby?practice=basketball`). Pages are the night's 1-hour slots (West 1/2, East 1/2; empty = "Open"): the current slot (from 10 min before it starts) 12 s, then the next slot 8 s. Before the first slot, all slots page at 12 s with "Starts 5:00 PM".
+- Basketball: `/upwardbasketballscores/practice/basketball` (alias `/practice/basketball`, or `/lobby?practice=basketball`). Pages are the night's 1-hour slots (West 1/2, East 1/2; empty = "Open"): the current slot (from 30 min before it starts: at 5:30 PM the 6:00 PM practice) 12 s, then the next slot 8 s. Before the first slot, all slots page at 12 s with "Starts 5:00 PM".
 - Cheer: `/upwardbasketballscores/practice/cheer` (alias `/practice/cheer`): one card per room, all evening (no times), 9 per page.
 - On from 60 min before the night's first slot to 15 min after its end; otherwise "No practice right now" + the next event. Each team/squad shows its mascot logo, or the initial badge.
 - Demo: `?day=mon&at=17:10` (also `day=wed&at=16:40`, `day=fri` for the idle screen). The route shows bottom right for the first minute (`?setup=1` always, `?setup=0` never).

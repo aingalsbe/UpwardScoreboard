@@ -37,7 +37,7 @@ test('validatePractice: double-bookings, one court/room per team/squad all seaso
     assert.match(e, re);
 });
 
-test('plan: window 60 min before .. 15 after; current from 10 min early; rotation 12 s current / 8 s next', { skip: noPub }, async () => {
+test('plan: window 60 min before .. 15 after; current from 30 min early (Release 1 :30 rule); rotation 12 s current / 8 s next', { skip: noPub }, async () => {
   const { planPractice, rotation, nextPracticeText, parsePracticeDemo } = await view();
   const t = (name: string) => ({ name, coach: 'Sam', logo: null });
   const data = { days: [{ day: 1, start: '17:00', end: '19:00' }, { day: 3, start: '16:30', end: '18:30' }],
@@ -47,8 +47,8 @@ test('plan: window 60 min before .. 15 after; current from 10 min early; rotatio
   const pre = planPractice(data, 'basketball', 1, '16:00');
   assert.equal(pre.mode, 'practice'); assert.equal(pre.current, null); assert.equal(pre.startsText, 'Starts 5:00 PM');
   assert.deepEqual([0, 11, 12, 24].map((s) => rotation(pre, s).index), [0, 0, 1, 0], 'before start: all slots, 12 s each');
-  assert.equal(planPractice(data, 'basketball', 1, '16:49').current, null);
-  assert.equal(planPractice(data, 'basketball', 1, '16:50').current, 0, '10 min early');
+  assert.equal(planPractice(data, 'basketball', 1, '16:29').current, null);
+  assert.equal(planPractice(data, 'basketball', 1, '16:30').current, 0, '30 min early (Release 1)');
   const p = planPractice(data, 'basketball', 1, '17:20');
   assert.deepEqual([rotation(p, 0), rotation(p, 11), rotation(p, 12), rotation(p, 19), rotation(p, 20)].map((r) => `${r.index}${r.state[0]}`), ['0c', '0c', '1n', '1n', '0c']);
   assert.equal(p.pages[0].courts.west1.team.name, 'A'); assert.equal(p.pages[0].courts.east1, null, 'open court');
