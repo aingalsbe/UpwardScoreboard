@@ -226,6 +226,10 @@ test('screens: no fouls/bonus on score screen and court TV; timeouts + buzzer bu
   assert.equal((score.match(/data-full-court[^>]*"TIMEOUT"/g) || []).length, 2, 'timeout buttons are full-court only');
   assert.match(score, /id="buzzer"[^>]*data-full-court[^>]*hidden/);
   assert.match(fs.readFileSync(path.join(PUB, 'admin.js'), 'utf8'), /g\.full_court \? `<p class="buzzer-row">/);
+  // QA F1: every Admin TV/overlay link (live cards AND the Courts table) uses the short /<slug>court URLs.
+  const adminJs = fs.readFileSync(path.join(PUB, 'admin.js'), 'utf8');
+  assert.equal(/href="\/(tv|overlay)\//.test(adminJs), false, 'no /tv/<slug> or /overlay/<slug> links in Admin');
+  assert.equal((adminJs.match(/href="\$\{tvPath\(c\.slug\)\}\/overlay"/g) || []).length, 2, 'live card + Courts table overlay links');
   assert.equal(/plus.?minus/i.test(score + tv), false);
 });
 

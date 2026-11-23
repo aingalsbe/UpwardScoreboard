@@ -448,12 +448,23 @@ function attachWs(server: http.Server) {
       send(client, { type: 'time', serverNow: Date.now() }); // also feeds the client-side watchdog
     }, 2000);
     ws.on('close', () => { clearInterval(hb); clients.delete(client); if (role !== 'schedule' && role !== 'season') void broadcastCourt(court); });
-    ws.on('message', async (raw) => {
+    // QA B1 (Release 1): handle this socket's messages strictly in arrival order. The handler awaits DB reads (current
+    // game, gameHidesScore, gameIsFullCourt) before mutate() queues the change, and score.js flush() resends unacked
+    // taps in one burst, so a later message could overtake an earlier one (CLOCK_SET 30000 then 45000 ending at 30 s,
+    // an undo landing before the score it was meant to undo). One promise chain per connection: auth, load, buzzer,
+    // cmd/undo/redo and resync all wait for the previous message. Each step catches its own errors so one failure never
+    // stalls the chain. Pings are answered at once (clock-sync RTT; they change nothing). Cross-socket changes are still
+    // serialized per game by mutate()'s queue.
+    let inbox: Promise<unknown> = Promise.resolve();
+    ws.on('message', (raw) => {
       lastSeen = Date.now();
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return send(client, { type: 'error', error: 'bad json' }); }
+      if (msg?.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
+      inbox = inbox.then(() => handleMessage(msg)).catch((e) => { try { send(client, { type: 'error', id: msg?.id, error: String(e?.message || e) }); } catch { /* socket gone */ } });
+    });
+    const handleMessage = async (msg: any): Promise<unknown> => {
       try {
-        if (msg.type === 'ping') return send(client, { type: 'pong', t: msg.t, serverNow: Date.now() });
         if (role === 'season') return msg.type === 'resync' ? send(client, seasonMsg()) : undefined; // read-only
         if (msg.type === 'resync') {
           if (role === 'schedule' && client.auto) {
@@ -569,7 +580,7 @@ function attachWs(server: http.Server) {
         }
         send(client, { type: 'error', error: 'unknown message' });
       } catch (e: any) { send(client, { type: 'error', id: msg?.id, error: String(e?.message || e) }); }
-    });
+    };
     void (async () => {
       if (role === 'season') return send(client, seasonMsg());
       if (role === 'schedule') {

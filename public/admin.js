@@ -155,7 +155,7 @@ function render() {
   $('#grade-list').innerHTML = grades.map((g) => `<option value="${esc(g)}">`).join('');
   renderTeams(tf);
   $('#court-rows').innerHTML = courts.map((c) => `<tr><td>${esc(c.name)}</td><td><code>${esc(c.slug)}</code></td><td>${c.has_pin ? '✔' : '<span class="bad">no PIN — scorekeeping disabled</span>'}</td>
-    <td><a href="/tv/${esc(c.slug)}" target="_blank">TV</a> · <a href="/score/${esc(c.slug)}" target="_blank">Score</a> · <a href="/overlay/${esc(c.slug)}" target="_blank">Overlay</a></td>
+    <td><a href="${tvPath(c.slug)}" target="_blank">TV</a> · <a href="/score/${esc(c.slug)}" target="_blank">Score</a> · <a href="${tvPath(c.slug)}/overlay" target="_blank">Overlay</a></td>
     <td class="right"><button class="link sm" data-del-court="${c.id}">Delete</button></td></tr>`).join('');
   const f = $('#game-form');
   // A2: the 10 s refresh rebuilds these selects; keep what's selected (an edit in progress), defaults only when empty.
