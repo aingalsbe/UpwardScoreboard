@@ -317,7 +317,13 @@ async function tickPractice() {
   try {
     const { changed, buzzed } = await serializePractice(() => syncPracticeUnlocked(false));
     if (changed || buzzed) await refreshAllCourts();
-  } catch (e) { console.error('practice clock tick:', e); }
+  } catch (e) {
+    console.error('practice clock tick:', e);
+    // A failed sync (e.g. a DB blip) never re-armed the timer; retry so a quiet practice night keeps its buzzes and slot changes.
+    if (practiceTimer) clearTimeout(practiceTimer);
+    practiceTimer = setTimeout(() => { void tickPractice(); }, 30_000);
+    practiceTimer.unref();
+  }
 }
 
 async function initPracticeClock() {
