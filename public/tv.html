@@ -56,6 +56,24 @@
       <div class="last-final" data-bind="lastFinal"></div>
       <small>Waiting for the next game</small>
     </div>
+    <!-- Release 2: practice-night countdown clocks (root .practice-mode, data-status="practice"). -->
+    <section class="practice-view" id="practice-view" aria-live="polite">
+      <div class="practice-head">
+        <h1 class="practice-title" data-bind="practice.header"></h1>
+        <span class="practice-paused-badge" id="practice-paused-badge">PAUSED</span>
+      </div>
+      <div class="practice-teams" id="practice-teams"></div>
+      <div class="practice-clocks">
+        <div class="practice-clock-card practice-devo-card">
+          <div class="practice-clock-label">DEVO</div>
+          <div class="practice-clock-val" data-practice-clock="devo">--:--</div>
+        </div>
+        <div class="practice-clock-card practice-end-card">
+          <div class="practice-clock-label">PRACTICE ENDS</div>
+          <div class="practice-clock-val" data-practice-clock="end">--:--</div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="ticker"><b>UP NEXT</b><span data-bind="upNext"></span></footer>

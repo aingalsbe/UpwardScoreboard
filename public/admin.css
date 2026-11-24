@@ -242,3 +242,16 @@ input.hex.bad { border-color: #e5484d; outline: 2px solid rgba(229,72,77,.4); }
 /* SAGE: Release 1 stopgap — Admin's manual buzzer (court card, full court games only). Restyle freely. */
 .card .buzzer-row { margin: .4rem 0; }
 button.buzzer { background: #6b3a00; color: #fff; border: 2px solid #ffb347; font-weight: 700; }
+
+/* Release 2: Practice clocks card at top of Today tab (shown only while a basketball practice slot is active). */
+.practice-clock-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 20px; border: 2px solid var(--season-light, #ffc72c); }
+.practice-clock-head { display: flex; flex-direction: column; gap: 4px; }
+.practice-clock-teams { font-size: 13px; }
+.practice-paused-tag { background: #ffe08a; color: #111; font-weight: 800; }
+.practice-clock-times { display: flex; gap: 14px; align-items: center; }
+.practice-clock-box { display: flex; flex-direction: column; align-items: center; background: #0f1320; border: 1px solid #333a55; border-radius: 10px; padding: 8px 14px; min-width: 112px; }
+.practice-clock-lbl { font-size: 11px; font-weight: 800; letter-spacing: .6px; color: #aab0c6; }
+.practice-clock-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; color: #fff; }
+.practice-clock-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button.practice-toggle { background: #6b3a00; color: #fff; border: 2px solid #ffb347; font-weight: 700; }
+button.practice-restart { background: transparent; color: #dcecff; border: 2px solid #4a6fa5; font-weight: 700; }

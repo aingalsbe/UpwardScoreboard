@@ -1,9 +1,12 @@
 // Admin logic: CRUD via REST, no framework. Styles live in admin.css.
 import { todayGames, resultOf } from './admin-today.js';
-import { connect } from './common.js';
+import { connect, clockMs, fmtClock } from './common.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let teams = [], courts = [], games = [], squads = [], slots = [], warnings = [];
+let practiceClock = null, practiceServerNow = 0, practiceFetchedAt = 0;
+const practiceNow = () => practiceServerNow + (Date.now() - practiceFetchedAt);
+const fmtPracticeClock = (ms) => (ms <= 0 ? '00:00' : fmtClock(ms));
 let slotDate = '', slotsDirty = false; // cheer slot editor: the chosen date, and unsaved edits (A2: refresh must not reset them)
 let leagueTz; // all times shown in the league time zone (server TZ), not the viewer's
 
@@ -56,7 +59,56 @@ async function load() {
   if (!slotDate) slotDate = defaultSlotDate();
   slots = await api(`/api/cheer-slots?date=${slotDate}`);
   loadSeason().catch(() => {});
+  loadPracticeClock().catch(() => {});
   render();
+}
+
+function setPracticeClock(p, serverNow) {
+  practiceClock = p || null;
+  practiceServerNow = serverNow || Date.now();
+  practiceFetchedAt = Date.now();
+  renderPracticeClock();
+}
+async function loadPracticeClock() {
+  const r = await api('/api/practice/clock');
+  setPracticeClock(r.practice, r.serverNow);
+}
+function tickPracticeClock() {
+  if (!practiceClock) return;
+  const now = practiceNow();
+  const devoEl = $('[data-admin-practice-clock="devo"]');
+  const endEl = $('[data-admin-practice-clock="end"]');
+  if (devoEl) {
+    const t = fmtPracticeClock(clockMs(practiceClock.devo, now));
+    if (devoEl.textContent !== t) devoEl.textContent = t;
+  }
+  if (endEl) {
+    const t = fmtPracticeClock(clockMs(practiceClock.end, now));
+    if (endEl.textContent !== t) endEl.textContent = t;
+  }
+}
+function renderPracticeClock() {
+  const wrap = $('#practice-clock-wrap'), card = $('#practice-clock-card');
+  if (!wrap || !card) return;
+  if (!practiceClock) { wrap.hidden = true; card.innerHTML = ''; return; }
+  wrap.hidden = false;
+  const n = (practiceClock.teams || []).length;
+  const pausedTag = practiceClock.paused ? ' <span class="tag practice-paused-tag">PAUSED</span>' : '';
+  const toggleAct = practiceClock.paused ? 'resume' : 'pause';
+  const toggleLbl = practiceClock.paused ? '▶ Resume' : '⏸ Pause';
+  card.innerHTML = `<div class="practice-clock-head">
+      <div><strong>${esc(practiceClock.label)} practice</strong> · ${n} team${n === 1 ? '' : 's'}${pausedTag}</div>
+      <div class="muted practice-clock-teams">${esc((practiceClock.teams || []).join(' · '))}</div>
+    </div>
+    <div class="practice-clock-times">
+      <div class="practice-clock-box"><span class="practice-clock-lbl">DEVO</span><b class="practice-clock-num" data-admin-practice-clock="devo">--:--</b></div>
+      <div class="practice-clock-box"><span class="practice-clock-lbl">PRACTICE ENDS</span><b class="practice-clock-num" data-admin-practice-clock="end">--:--</b></div>
+    </div>
+    <div class="practice-clock-actions">
+      <button class="sm practice-toggle" type="button" data-practice-action="${toggleAct}">${toggleLbl}</button>
+      <button class="sm practice-restart" type="button" data-practice-action="restart">↺ Restart</button>
+    </div>`;
+  tickPracticeClock();
 }
 
 const STATUS = { scheduled: 'Scheduled', active: 'Active', complete: 'Complete' };
@@ -187,6 +239,14 @@ document.addEventListener('click', guard(async (e) => {
   if (b.dataset.buzzer) { // Release 1: manual buzzer, full court games only (no confirm: it is pressed in the moment)
     const r = await api(`/api/games/${b.dataset.buzzer}/buzzer`, { method: 'POST' });
     msg(r.tvs ? 'Buzzer played on the court TV.' : 'Buzzer sent, but no TV is connected on that court.');
+  }
+  if (b.dataset.practiceAction) { // Release 2: Admin Pause/Resume/Restart for basketball practice clocks
+    const act = b.dataset.practiceAction;
+    if (act === 'restart' && !confirm(`Restart both practice clocks for the ${practiceClock?.label || 'current'} practice?`)) return;
+    const r = await api(`/api/practice/clock/${act}`, { method: 'POST' });
+    setPracticeClock(r.practice, r.serverNow);
+    const past = act === 'pause' ? 'paused' : act === 'resume' ? 'resumed' : 'restarted';
+    msg(`Practice clocks ${past}${r.tvs ? ` on ${r.tvs} TV${r.tvs === 1 ? '' : 's'}` : ''}.`);
   }
   if (b.dataset.complete && confirm('Complete this game? The final score will be locked and the court goes to "Next up".')) {
     await api(`/api/games/${b.dataset.complete}/complete`, { method: 'POST' }); msg('Game completed. Final score locked.'); await load();
@@ -392,7 +452,7 @@ for (const [id, path] of [['#import-teams', '/api/import/teams.csv'], ['#import-
   }));
 }
 
-async function boot() { $('#app').hidden = false; route(); await load(); setInterval(() => !document.hidden && load().catch(() => {}), 10000); live(); }
+async function boot() { $('#app').hidden = false; route(); await load(); setInterval(() => !document.hidden && load().catch(() => {}), 10000); setInterval(tickPracticeClock, 250); live(); }
 /**
  * Live like the TVs: the same WebSocket push the lobby TV uses (role=schedule, every court). Every score,
  * load, complete, reopen, edit, import or delete pushes a snapshot (coalesced 150 ms server-side); we then refetch
@@ -409,6 +469,7 @@ function live() {
 }
 async function refreshLive() {
   try { games = await api('/api/games'); renderLive(); } catch {}
+  try { await loadPracticeClock(); } catch {}
   // Team / season color saves also push (refreshAllCourts): keep the team-list colors current in other tabs too.
   try { [teams, seasonColors] = await Promise.all([api('/api/teams'), api('/api/settings/season')]); renderTeams(); } catch {}
 }
