@@ -19,6 +19,11 @@ import { seedSeason, SeasonRefusedError } from './seed-season.js';
 import { teamLocker, cheerLocker } from './season-config.js';
 import { loadPractice, loadPracticeRange, validatePractice, savePractice, droppedSlots, practiceDisplayOf } from './practice.js';
 import {
+  PRACTICE_BUZZ_MS, PRACTICE_CLOCK_KEY, PracticeClockControl, PracticeData, PracticeView,
+  currentPractice, dueBuzzEvents, nextPracticeEventAt, parsePracticeControlRaw,
+  pausePracticeControl, resumePracticeControl, restartPracticeControl,
+} from './practice-clock.js';
+import {
   History, Command, newHistory, initialState, dispatch, undo, redo, parseCommand, remainingMs, isBonus, normalizeStatus,
   hiddenGameRefusal, isTeamStatCommand, withFullCourtTimeouts, release1Refusal,
 } from './game.js';
@@ -190,11 +195,11 @@ async function gameHidesScore(gameId: number): Promise<boolean> {
 }
 
 /**
- * Buzzer (Release 1): 3 s on that court's TV(s) only (role tv; also each half of the split TV, which embeds /tv/<court>).
- * Never the lobby, overlay or scorekeeper. reason: 'period' (clock hit 0) | 'manual' (button on the score screen / Admin).
+ * Buzzer (Release 1 & 2): 3 s on that court's TV(s) only for games (role tv; also each half of the split TV, which embeds /tv/<court>);
+ * 5 s for practice DEVO / END clocks (durationMs override). Never the lobby, overlay or scorekeeper.
  */
-function broadcastBuzzer(slug: string, reason: 'period' | 'manual') {
-  const m = { type: 'buzzer', id: crypto.randomUUID(), reason, court: slug, serverNow: Date.now(), durationMs: 3000 };
+function broadcastBuzzer(slug: string, reason: 'period' | 'manual' | 'practice-devo' | 'practice-end', durationMs = 3000) {
+  const m = { type: 'buzzer', id: crypto.randomUUID(), reason, court: slug, serverNow: Date.now(), durationMs };
   let n = 0;
   for (const c of clients) if (c.court === slug && c.role === 'tv') { send(c, m); n++; }
   return n;
@@ -202,6 +207,131 @@ function broadcastBuzzer(slug: string, reason: 'period' | 'manual') {
 async function buzzGame(gameId: number, reason: 'period' | 'manual') {
   const { rows } = await pool.query('SELECT slug FROM courts WHERE current_game_id=$1', [gameId]);
   for (const r of rows) broadcastBuzzer(r.slug, reason);
+}
+
+// ------------------------------------------------------- practice clocks (R2)
+let practiceCache: { data: PracticeData; loadedAt: number } | null = null;
+let practiceControl: PracticeClockControl | null = null;
+const practiceBuzzFired = new Set<string>();
+let lastPracticeSlotKey: string | null = null;
+let practiceTimer: NodeJS.Timeout | null = null;
+let practiceQueue: Promise<unknown> = Promise.resolve();
+
+function serializePractice<T>(fn: () => Promise<T>): Promise<T> {
+  const run = practiceQueue.then(fn);
+  practiceQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function loadPracticeData(force = false): Promise<PracticeData> {
+  const now = Date.now();
+  if (!force && practiceCache && now - practiceCache.loadedAt < 60_000) return practiceCache.data;
+  const [sched, range] = await Promise.all([loadPractice(pool), loadPracticeRange(pool)]);
+  const data: PracticeData = { ...sched, range };
+  practiceCache = { data, loadedAt: now };
+  return data;
+}
+
+async function readPracticeControlRow(): Promise<string | undefined> {
+  const { rows } = await pool.query('SELECT value FROM settings WHERE key=$1', [PRACTICE_CLOCK_KEY]);
+  return rows[0]?.value;
+}
+
+async function writePracticeControlRow(ctrl: PracticeClockControl): Promise<void> {
+  await pool.query(
+    'INSERT INTO settings(key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value',
+    [PRACTICE_CLOCK_KEY, JSON.stringify(ctrl)],
+  );
+}
+
+async function deletePracticeControlRow(): Promise<void> {
+  await pool.query('DELETE FROM settings WHERE key=$1', [PRACTICE_CLOCK_KEY]);
+}
+
+async function practiceCourtsWithoutActiveGame(): Promise<string[]> {
+  const { rows } = await pool.query(
+    `SELECT c.slug FROM courts c WHERE NOT EXISTS (SELECT 1 FROM games g WHERE g.court_id=c.id AND g.status='active') ORDER BY c.id`,
+  );
+  return rows.map((r) => r.slug as string);
+}
+
+async function broadcastPracticeBuzzer(reason: 'practice-devo' | 'practice-end'): Promise<number> {
+  const slugs = await practiceCourtsWithoutActiveGame();
+  let n = 0;
+  for (const slug of slugs) n += broadcastBuzzer(slug, reason, PRACTICE_BUZZ_MS);
+  return n;
+}
+
+async function practiceTvCount(): Promise<number> {
+  const slugs = new Set(await practiceCourtsWithoutActiveGame());
+  let n = 0;
+  for (const c of clients) if (c.role === 'tv' && slugs.has(c.court)) n++;
+  return n;
+}
+
+function armPracticeTimer(data: PracticeData, nowMs: number, ctrl: PracticeClockControl | null) {
+  if (practiceTimer) clearTimeout(practiceTimer);
+  const nextAt = nextPracticeEventAt(data, nowMs, ctrl);
+  const delay = Math.min(nextAt != null ? Math.max(5, nextAt - nowMs + 5) : 30_000, 30_000);
+  practiceTimer = setTimeout(() => { void tickPractice(); }, delay);
+  practiceTimer.unref();
+}
+
+async function syncPracticeUnlocked(forceReload = false, nowOverride?: number) {
+  const data = await loadPracticeData(forceReload);
+  const nowMs = nowOverride ?? Date.now();
+  const raw = await readPracticeControlRow();
+  const stored = parsePracticeControlRaw(raw);
+
+  // Check zero crossings before clearing any previous slot's control (so a paused/restarted prior slot never falsely buzzes).
+  const buzzCtrl = practiceControl ?? stored;
+  const due = dueBuzzEvents(data, nowMs, buzzCtrl, practiceBuzzFired);
+  let buzzed = false;
+  for (const ev of due) {
+    practiceBuzzFired.add(ev.key);
+    await broadcastPracticeBuzzer(ev.reason);
+    buzzed = true;
+  }
+
+  const cur = currentPractice(data, nowMs, stored);
+  if (stored && cur && stored.slotKey === cur.slot.slotKey) {
+    practiceControl = stored;
+  } else {
+    practiceControl = null;
+    if (raw !== undefined) await deletePracticeControlRow();
+  }
+
+  // Prune buzz keys from earlier league dates.
+  const todayPrefix = localDate(nowMs) + ' ';
+  for (const k of practiceBuzzFired) if (!k.startsWith(todayPrefix)) practiceBuzzFired.delete(k);
+
+  const curKey = cur?.slot.slotKey ?? null;
+  const changed = curKey !== lastPracticeSlotKey;
+  lastPracticeSlotKey = curKey;
+
+  armPracticeTimer(data, nowMs, practiceControl);
+  return { cur, changed, buzzed, data };
+}
+
+async function tickPractice() {
+  try {
+    const { changed, buzzed } = await serializePractice(() => syncPracticeUnlocked(false));
+    if (changed || buzzed) await refreshAllCourts();
+  } catch (e) { console.error('practice clock tick:', e); }
+}
+
+async function initPracticeClock() {
+  await serializePractice(() => syncPracticeUnlocked(true));
+}
+
+async function reloadPracticeAndRefresh() {
+  await serializePractice(() => syncPracticeUnlocked(true));
+  await refreshAllCourts();
+}
+
+async function currentPracticeView(nowOverride?: number): Promise<PracticeView | null> {
+  const { cur } = await serializePractice(() => syncPracticeUnlocked(false, nowOverride));
+  return cur?.view ?? null;
 }
 
 // ------------------------------------------------------------ view models
@@ -274,13 +404,15 @@ function normalizeRow(r: any) {
   return r;
 }
 
-async function courtSnapshot(slug: string) {
+async function courtSnapshot(slug: string, nowOverride?: number) {
   const c = (await pool.query('SELECT * FROM courts WHERE slug=$1', [slug])).rows[0];
   if (!c) return null;
-  // Displays always show the court's ACTIVE game; with none, an idle "Next up" screen.
+  // Displays always show the court's ACTIVE game; with none, practice mode (during basketball practice) or idle "Next up".
   const active = (await pool.query(`SELECT id FROM games WHERE court_id=$1 AND status='active'`, [c.id])).rows[0];
   const game = active ? await gameViewNorm(active.id) : null;
-  const NOW = new Date(); // app clock, not SQL now(): the test clock (SCOREBOARD_TEST_NOW) must shift "today" too
+  const serverNow = nowOverride ?? Date.now();
+  const practice = game ? null : await currentPracticeView(serverNow);
+  const NOW = new Date(serverNow); // app clock, not SQL now(): the test clock (SCOREBOARD_TEST_NOW) must shift "today" too
   const lite = `SELECT g.id, g.status, to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'HH24:MI') AS time,
       to_char(g.scheduled_at AT TIME ZONE current_setting('TimeZone'), 'Dy Mon FMDD') AS day, (g.scheduled_at::date = $2::timestamptz::date) AS is_today,
       COALESCE(h.grade, a.grade) AS grade, concat_ws(' ', COALESCE(h.grade, a.grade), CASE WHEN COALESCE(h.grade, a.grade) = 'Kindergarten' THEN NULL ELSE COALESCE(h.gender, a.gender) END) AS label, h.name AS home, a.name AS away, g.home_locker, g.away_locker, g.final_home, g.final_away
@@ -301,7 +433,7 @@ async function courtSnapshot(slug: string) {
   // Young grades (2nd and below): flag rows so publicView() strips their scores for non-scorekeeper clients.
   const flag = (x: any) => (x ? Object.assign(x, { hideScore: isScoreHiddenGrade(x.grade) }) : x);
   [nextUp, lastFinal, ...today, ...upNext].forEach(flag);
-  return { type: 'state', serverNow: Date.now(), league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, upNext, nextUp, lastFinal, today };
+  return { type: 'state', serverNow, league: LEAGUE_NAME, church: { name: CHURCH_NAME, logo: CHURCH_LOGO_URL }, season, court: { slug: c.slug, name: c.name }, game, practice, upNext, nextUp, lastFinal, today };
 }
 
 async function gameViewNorm(gameId: number) {
@@ -396,11 +528,11 @@ const seasonMsg = () => ({ type: 'state', kind: 'season', serverNow: Date.now(),
 function broadcastSeason() { const m = seasonMsg(); for (const c of clients) if (c.role === 'season') send(c, m); }
 /** Inline <style> with the season variables, injected into every HTML page so the first paint already has them. */
 function seasonStyle() { return seasonCss(season); }
-async function broadcastCourt(slug: string) {
+async function broadcastCourt(slug: string, nowOverride?: number) {
   scheduleChanged();
   const targets = [...clients].filter((c) => c.court === slug);
   if (!targets.length) return;
-  const snap = await courtSnapshot(slug);
+  const snap = await courtSnapshot(slug, nowOverride);
   if (!snap) return;
   const controllers = targets.filter((c) => c.role === 'score' && c.authed).length;
   const tvs = targets.filter((c) => c.role === 'tv' || c.role === 'overlay').length;
@@ -698,7 +830,11 @@ async function upsertTeamRaw(b: any, id?: number) {
   return r.rows[0].id as number;
 }
 
-async function refreshAllCourts() { const { rows } = await pool.query('SELECT slug FROM courts'); for (const r of rows) await broadcastCourt(r.slug); }
+async function refreshAllCourts() {
+  const nowMs = Date.now();
+  const { rows } = await pool.query('SELECT slug FROM courts');
+  for (const r of rows) await broadcastCourt(r.slug, nowMs);
+}
 
 /**
  * Shared-floor rule: returns a message naming the first game on a conflicting court (see
@@ -1415,7 +1551,35 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, u: URL):
       await savePractice(client, schedule); await client.query('COMMIT'); }
     catch (e: any) { await client.query('ROLLBACK'); if (e.code === '23503') return json(res, 400, { error: 'unknown team or cheer squad', errors: ['unknown team or cheer squad (reload the page; it may have been deleted)'] }); throw e; }
     finally { client.release(); }
+    await reloadPracticeAndRefresh();
     return json(res, 200, { ok: true, ...(await loadPractice(pool)) });
+  }
+  if (p === '/api/practice/clock' && m === 'GET') {
+    const serverNow = Date.now();
+    const practice = await currentPracticeView(serverNow);
+    return json(res, 200, { practice, serverNow });
+  }
+  if (m === 'POST' && (p === '/api/practice/clock/pause' || p === '/api/practice/clock/resume' || p === '/api/practice/clock/restart')) {
+    const action = p.slice('/api/practice/clock/'.length) as 'pause' | 'resume' | 'restart';
+    const { practice, serverNow } = await serializePractice(async () => {
+      const { cur, data } = await syncPracticeUnlocked(false);
+      if (!cur) throw new HttpError(409, 'No basketball practice is running right now.');
+      const nowMs = Date.now();
+      const next = action === 'pause'
+        ? pausePracticeControl(cur.slot.slotKey, cur.control, nowMs)
+        : action === 'resume'
+          ? resumePracticeControl(cur.slot.slotKey, cur.control, nowMs)
+          : restartPracticeControl(cur.slot.slotKey, nowMs);
+      await writePracticeControlRow(next);
+      practiceControl = next;
+      const updated = currentPractice(data, nowMs, next);
+      lastPracticeSlotKey = updated?.slot.slotKey ?? null;
+      armPracticeTimer(data, nowMs, practiceControl);
+      return { practice: updated?.view ?? null, serverNow: nowMs };
+    });
+    await refreshAllCourts();
+    const tvs = await practiceTvCount();
+    return json(res, 200, { ok: true, practice, tvs, serverNow });
   }
 
   if (seg[1] === 'teams') {
@@ -1833,6 +1997,7 @@ async function main() {
   }
   await migrateColors(); // seeds write lowercase hex; normalize to #RRGGBB (idempotent)
   await loadSeason();
+  await initPracticeClock();
   attachWs(server);
   server.listen(PORT, () => console.log(`Scoreboard listening on :${(server.address() as any)?.port ?? PORT}`)); // PORT=0 -> OS-picked port (tests)
 }
