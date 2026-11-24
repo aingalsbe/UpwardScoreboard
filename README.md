@@ -111,6 +111,10 @@ With no `?day=`, each practice screen opens on the next day that has slots of **
 
 A future practice day (Friday looking at Monday) previews that weekday: header `MONDAY` or `MONDAY CHEER`, every slot paging at 12 seconds, `Starts Monday 5:00 PM`, and no current slot. If that screen's kind has no slots at all, it stays on today and shows "No practice right now". `?day=mon` through `thu` wins over the default. `?at=HH:MM` alone keeps today and the previous window (idle outside 60 minutes before through 15 minutes after).
 
+## Practice clocks (Release 2)
+
+On scheduled basketball practice nights (Mon–Thu, non-empty 1-hour slots), every court TV (`/westcourt`, `/eastcourt`, `/fullcourt`, and both halves of `/split`) automatically switches from idle to practice mode at the exact slot start time. The screen shows the slot header, a banner of all teams practicing in that hour, and two synchronized countdown clocks running together: **DEVO** (25:00) and **PRACTICE ENDS** (60:00). Each clock buzzes for 5 s on every court TV at 0:00 (DEVO shows "Devo time!" for 10 s after reaching 0, then `00:00`), and both restart automatically at the next slot. After the last slot's END 0:00, TVs return to idle. Any court with an active game stays in game mode without practice buzzes. In Admin → Today, a **Practice clocks** card appears during active slots with **Pause/Resume** and **Restart** controls; pause and restart state is persisted in `settings` (`practice_clock`) scoped to the current hour so it survives server restarts.
+
 ## Known limitations
 
 Practice is a weekly Monday–Thursday template. No season start or end is stored, so the practice screens keep rolling to the next weekday that has slots even outside the basketball season. That is intentional: nothing was added to the database to bound it.
