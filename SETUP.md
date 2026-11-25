@@ -117,7 +117,7 @@ Teams match on name + division ("5th Grade Boys"), squads on name, ignoring case
 
 Tables `practice_days` (day 1–4, basketball hours) and `practice_slots` (basketball: day, 1-hour start, court west1/west2/east1/east2, team; cheer: day, room, squad) are created by the normal start-up migration (additive, no data change). The demo seed fills a demo week; an existing database: `docker compose exec upward-app node dist/src/seed-practice.js` (only when no practice schedule exists). Real teams: Admin > Practice (`/admin/practice`). Displays: `/upwardbasketballscores/practice/basketball` and `/upwardbasketballscores/practice/cheer`.
 
-### Practice clocks (Release 2)
+### Practice clocks (v1.1.0)
 
 During scheduled basketball practice slots (slots with at least one team, within the optional season practice range), court TVs without an active game switch automatically to practice mode with **DEVO** (25:00) and **PRACTICE ENDS** (60:00) countdowns and a 5 s buzzer on each 0:00 crossing. Admin → Today shows a **Practice clocks** card during active slots with Pause/Resume (`POST /api/practice/clock/pause`, `/resume`) and Restart (`POST /api/practice/clock/restart`); status is available at `GET /api/practice/clock`. Pause/restart control state is stored in `settings` under key `practice_clock` (no schema change), scoped to the current practice hour so it survives restarts and clears automatically when the next hour starts or practice ends.
 

@@ -72,7 +72,7 @@ The scorekeeper lists today's games on its court; when there are none today it l
 - Demo week (seeded with the demo weekend): Mon + Tue 5–9 PM, Wed 4:30–6:30 PM, Thu 5–6 PM (44 teams, once each); cheer Mon + Thu: Room 20, Room 28/30, Kids Street, Foundry.
 - Edit: Admin > **Practice (Mon–Thu)** (`/admin/practice`): night on/off + hours, a team per court per slot, cheer rooms, "Copy this night to", Save week. Changing a night's hours never drops teams silently: slots outside the new hours are listed and you confirm removing them (or Cancel).
 
-### Practice clocks (Release 2)
+### Practice clocks (v1.1.0)
 
 At each scheduled basketball practice hour (not cheer, not empty slots), every court TV (`/westcourt`, `/eastcourt`, `/fullcourt`, `/split`) switches to practice mode with all teams in the slot plus synchronized **DEVO (25:00)** and **PRACTICE ENDS (60:00)** clocks that each buzz for 5 s at 0:00. Admin → Today shows a **Practice clocks** card with Pause/Resume and Restart (persisted across server restarts for the current hour). To preview locally with the test clock, start a scratch server with `SCOREBOARD_TEST_CLOCK=1 SCOREBOARD_TEST_NOW=2026-11-30T22:59:30Z` (Mon 4:59:30 PM CST) and open `/westcourt`, `/split`, and `/admin`.
 
